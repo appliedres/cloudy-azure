@@ -9,9 +9,9 @@ import (
 
 func TestBlobAccount(t *testing.T) {
 	ctx := cloudy.StartContext()
-
-	account := "publictest"
-	accountKey := "/D13RjfAT3d/p45rM94SgF48BwQEwTIPuXxn9tMa958bJLRGB2Oa1ApHmqTvRTY7tQH+vyP60WbF+AStkqA4RQ=="
+	testutil.LoadEnv("test.env")
+	account := cloudy.ForceEnv("account", "")
+	accountKey := cloudy.ForceEnv("accountKey", "")
 
 	bsa := NewBlobStorageAccount(ctx, account, accountKey, "")
 

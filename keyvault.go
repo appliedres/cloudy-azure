@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/secrets"
@@ -111,9 +112,17 @@ func (k *KeyVault) SaveSecret(ctx context.Context, key string, data string) erro
 func (k *KeyVault) DeleteSecret(ctx context.Context, key string) error {
 
 	_, err := k.Client.BeginDeleteSecret(ctx, key, nil)
+
 	if err != nil {
-		fmt.Println(err.Error())
-		return err
+		// SEE : https://github.com/Azure/azure-sdk-for-go/issues/18321
+		// This can happen if the keyvault does not have soft delete enabled.
+		// This behavior is a bug and will be fixed by MS soon
+		var respErr *azcore.ResponseError
+		if !errors.As(err, &respErr) || respErr.StatusCode != 400 {
+			fmt.Println(err.Error())
+			return err
+		}
+		// nothing to do, got the expected error
 	}
 
 	return nil
