@@ -4,16 +4,23 @@ import (
 	"context"
 	"testing"
 
+	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/secrets"
+	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestKeyVault(t *testing.T) {
 
+	testutil.LoadEnv("test.env")
+	tenantID := cloudy.ForceEnv("TenantID", "")
+	ClientID := cloudy.ForceEnv("ClientID", "")
+	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
+
 	creds := AzureCredentials{
-		TenantID:     "848c7ae1-3864-4c5c-8ec0-dc90b8e05ade",
-		ClientID:     "84bed11f-3739-404b-879d-5d27d7648d60",
-		ClientSecret: "6U_.4Lh-jW0ofss~fzcGf-hRmYlcZl25kY",
+		TenantID:     tenantID,
+		ClientID:     ClientID,
+		ClientSecret: ClientSecret,
 	}
 	vaultURL := "https://gokeyvault.vault.usgovcloudapi.net/"
 
