@@ -66,7 +66,7 @@ func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error)
 	return client, err
 }
 
-func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient) ([]*cloudyvm.VirtualMachineStatus, error) {
+func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg string) ([]*cloudyvm.VirtualMachineStatus, error) {
 	var err error
 	if ctx == nil {
 		ctx = cloudy.StartContext()
@@ -86,7 +86,7 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient) ([]
 			// log.Printf("name: %s", *vm.Name)
 
 			var vmStatus *cloudyvm.VirtualMachineStatus
-			vmStatus, err = VmStatus(ctx, vmClient, *vm.Name)
+			vmStatus, err = VmStatus(ctx, vmClient, *vm.Name, rg)
 
 			if err == nil {
 				returnList = append(returnList, vmStatus)
@@ -97,7 +97,7 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient) ([]
 	return returnList, err
 }
 
-func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string) (*cloudyvm.VirtualMachineStatus, error) {
+func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string) (*cloudyvm.VirtualMachineStatus, error) {
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
@@ -112,7 +112,7 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 		}
 	}
 
-	resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
+	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
 
 	// resp, err := vmClient.Get(context.Background(), resourceGroup, vmName, &armcompute.VirtualMachinesGetOptions{Expand: armcompute.InstanceViewTypesUserData.ToPtr()})
 	// if err != nil {
@@ -180,7 +180,7 @@ func VMAddTag(ctx context.Context) {
 
 }
 
-func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmAction cloudyvm.VirtualMachineAction, vmName string, wait bool) (*cloudyvm.VirtualMachineStatus, error) {
+func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmAction cloudyvm.VirtualMachineAction, vmName string, resourceGroup string, wait bool) (*cloudyvm.VirtualMachineStatus, error) {
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
@@ -189,11 +189,11 @@ func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 	var err error = nil
 
 	if vmAction == cloudyvm.VirtualMachineStart {
-		err = VmStart(ctx, vmClient, vmName, wait)
+		err = VmStart(ctx, vmClient, vmName, resourceGroup, wait)
 	} else if vmAction == cloudyvm.VirtualMachineStop {
-		err = VmStop(ctx, vmClient, vmName, wait)
+		err = VmStop(ctx, vmClient, vmName, resourceGroup, wait)
 	} else if vmAction == cloudyvm.VirtualMachineTerminate {
-		err = VmTerminate(ctx, vmClient, vmName, wait)
+		err = VmTerminate(ctx, vmClient, vmName, resourceGroup, wait)
 	} else {
 		err = fmt.Errorf("invalid state requested: %s", vmAction)
 		return vmStatus, err
@@ -203,17 +203,17 @@ func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 		return nil, err
 	}
 
-	vmStatus, err = VmStatus(ctx, vmClient, vmName)
+	vmStatus, err = VmStatus(ctx, vmClient, vmName, resourceGroup)
 
 	return vmStatus, err
 }
 
-func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, wait bool) error {
+func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
 
-	resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
+	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
 
 	poller, err := vmClient.BeginStart(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
 
@@ -238,12 +238,12 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 	return nil
 }
 
-func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, wait bool) error {
+func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
 
-	resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
+	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
 
 	poller, err := vmClient.BeginPowerOff(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginPowerOffOptions{})
 
@@ -269,11 +269,11 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 	return nil
 }
 
-func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, wait bool) error {
+func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
-	resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
+	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
 
 	poller, err := vmClient.BeginDeallocate(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
 

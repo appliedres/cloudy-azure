@@ -41,27 +41,27 @@ func (f *AzureVMControllerFactory) ToConfig(config map[string]interface{}) (inte
 	var found bool
 
 	cfg := &AzureVMControllerConfig{}
-	cfg.SubscriptionID, found = cloudy.MapKeyStr(config, "SubscriptionID", true)
+	cfg.SubscriptionID, found = cloudy.EnvKeyStr(config, "SubscriptionID")
 	if !found {
 		return nil, errors.New("SubscriptionID required")
 	}
-	cfg.ResourceGroup, found = cloudy.MapKeyStr(config, "ResourceGroup", true)
+	cfg.ResourceGroup, found = cloudy.EnvKeyStr(config, "ResourceGroup")
 	if !found {
 		return nil, errors.New("ResourceGroup required")
 	}
-	cfg.TenantID, found = cloudy.MapKeyStr(config, "TenantID", true)
+	cfg.TenantID, found = cloudy.EnvKeyStr(config, "TenantID")
 	if !found {
 		return nil, errors.New("TenantID required")
 	}
-	cfg.ClientID, found = cloudy.MapKeyStr(config, "ClientID", true)
+	cfg.ClientID, found = cloudy.EnvKeyStr(config, "ClientID")
 	if !found {
 		return nil, errors.New("ClientID required")
 	}
-	cfg.ClientSecret, found = cloudy.MapKeyStr(config, "ClientSecret", true)
+	cfg.ClientSecret, found = cloudy.EnvKeyStr(config, "ClientSecret")
 	if !found {
 		return nil, errors.New("ClientSecret required")
 	}
-	cfg.Region, found = cloudy.MapKeyStr(config, "Region", true)
+	cfg.Region, found = cloudy.EnvKeyStr(config, "Region")
 	if !found {
 		return nil, errors.New("Region required")
 	}
@@ -81,29 +81,29 @@ func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) 
 }
 
 func (vmc *AzureVMController) ListAll(ctx context.Context) ([]*cloudyvm.VirtualMachineStatus, error) {
-	return VmList(ctx, vmc.Client)
+	return VmList(ctx, vmc.Client, vmc.Config.ResourceGroup)
 }
 
 func (vmc *AzureVMController) ListWithTag(ctx context.Context, tag string) ([]*cloudyvm.VirtualMachineStatus, error) {
-	return VmList(ctx, vmc.Client)
+	return VmList(ctx, vmc.Client, vmc.Config.ResourceGroup)
 }
 
 func (vmc *AzureVMController) Status(ctx context.Context, vmName string) (*cloudyvm.VirtualMachineStatus, error) {
-	return VmStatus(ctx, vmc.Client, vmName)
+	return VmStatus(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup)
 }
 
 func (vmc *AzureVMController) SetState(ctx context.Context, state cloudyvm.VirtualMachineAction, vmName string, wait bool) (*cloudyvm.VirtualMachineStatus, error) {
-	return VmState(ctx, vmc.Client, state, vmName, wait)
+	return VmState(ctx, vmc.Client, state, vmName, vmc.Config.ResourceGroup, wait)
 }
 
 func (vmc *AzureVMController) Start(ctx context.Context, vmName string, wait bool) error {
-	return VmStart(ctx, vmc.Client, vmName, wait)
+	return VmStart(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
 }
 
 func (vmc *AzureVMController) Stop(ctx context.Context, vmName string, wait bool) error {
-	return VmStop(ctx, vmc.Client, vmName, wait)
+	return VmStop(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
 }
 
 func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait bool) error {
-	return VmTerminate(ctx, vmc.Client, vmName, wait)
+	return VmTerminate(ctx, vmc.Client, vmc.Config.ResourceGroup, vmName, wait)
 }
