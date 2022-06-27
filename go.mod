@@ -11,7 +11,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/a8m/documentdb v1.3.0
-	github.com/appliedres/cloudy v0.0.0-00010101000000-000000000000
+	github.com/appliedres/cloudy v0.0.4
 	github.com/stretchr/testify v1.7.0
 )
 
