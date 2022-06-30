@@ -32,6 +32,22 @@ func NewVMClient(ctx context.Context, config *AzureVMControllerConfig) (*armcomp
 	return client, err
 }
 
+func NewUsageClient(ctx context.Context, config *AzureVMControllerConfig) (*armcompute.UsageClient, error) {
+	cred, err := GetAzureCredentials(config.AzureCredentials)
+	if err != nil {
+		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
+	}
+
+	client, err := armcompute.NewUsageClient(config.SubscriptionID, cred,
+		&arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Cloud: cloud.AzureGovernment,
+			},
+		})
+
+	return client, err
+}
+
 func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error) {
 	if ctx == nil {
 		ctx = cloudy.StartContext()

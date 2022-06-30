@@ -23,6 +23,7 @@ type AzureVMControllerConfig struct {
 
 type AzureVMController struct {
 	Client *armcompute.VirtualMachinesClient
+	Usage  *armcompute.UsageClient
 	Config *AzureVMControllerConfig
 }
 
@@ -74,8 +75,15 @@ func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) 
 	if err != nil {
 		return nil, err
 	}
+
+	usage, err := NewUsageClient(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
 	return &AzureVMController{
 		Client: client,
+		Usage:  usage,
 		Config: config,
 	}, nil
 }
@@ -106,4 +114,29 @@ func (vmc *AzureVMController) Stop(ctx context.Context, vmName string, wait bool
 
 func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait bool) error {
 	return VmTerminate(ctx, vmc.Client, vmc.Config.ResourceGroup, vmName, wait)
+}
+
+func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.VirtualMachineLimit, error) {
+	pager := vmc.Usage.NewListPager()
+	var rtn []*cloudyvm.VirtualMachineLimit
+
+	for {
+		if !pager.More() {
+			break
+		}
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+
+		for _, u := range resp.Value {
+			rtn = append(rtn, &cloudyvm.VirtualMachineLimit{
+				Name:    *u.Name.Value,
+				Current: int(*u.CurrentValue),
+				Limit:   int(*u.Limit),
+			})
+		}
+	}
+
+	return rtn, nil
 }
