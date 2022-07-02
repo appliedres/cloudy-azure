@@ -285,6 +285,10 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 	return nil
 }
 
+func VmCreate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error){
+	return nil, nil
+}
+
 func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
 	if ctx == nil {
 		ctx = cloudy.StartContext()

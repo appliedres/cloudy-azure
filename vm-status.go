@@ -104,6 +104,11 @@ func (vmc *AzureVMController) SetState(ctx context.Context, state cloudyvm.Virtu
 	return VmState(ctx, vmc.Client, state, vmName, vmc.Config.ResourceGroup, wait)
 }
 
+func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
+	return VmCreate(ctx, vmc.Client, vm)
+}
+	
+
 func (vmc *AzureVMController) Start(ctx context.Context, vmName string, wait bool) error {
 	return VmStart(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
 }
@@ -117,7 +122,9 @@ func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait
 }
 
 func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.VirtualMachineLimit, error) {
-	pager := vmc.Usage.NewListPager()
+	// pager := vmc.Usage.NewListPager()
+	pager := vmc.Usage.NewListPager("", &armcompute.UsageClientListOptions{})
+
 	var rtn []*cloudyvm.VirtualMachineLimit
 
 	for {
@@ -126,7 +133,7 @@ func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.Virtua
 		}
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, u := range resp.Value {
