@@ -107,7 +107,6 @@ func (vmc *AzureVMController) SetState(ctx context.Context, state cloudyvm.Virtu
 func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
 	return VmCreate(ctx, vmc.Client, vm)
 }
-	
 
 func (vmc *AzureVMController) Start(ctx context.Context, vmName string, wait bool) error {
 	return VmStart(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
@@ -147,3 +146,53 @@ func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.Virtua
 
 	return rtn, nil
 }
+
+// func (vmc *AzureVMController) CheckQuota(ctx context.Context, vm *models.VirtualMachine) (bool, error) {
+
+// 	resourceName := ""
+// 	resourceScope := "subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute/locations/eastus"
+
+// 	quotaClient, err := armquota.NewClient(vmc.Config.AzureCredentials, &arm.ClientOptions{
+// 		ClientOptions: policy.ClientOptions{
+// 			Cloud: cloud.AzureGovernment,
+// 		},
+// 	})
+// 	if err != nil {
+// 		return false, err
+// 	}
+
+// 	quotaClientResponse, err := quotaClient.Get(ctx, resourceName, resourceScope, nil)
+// 	if err != nil {
+// 		// log.Fatalf("failed to finish the request: %v", err)
+// 		return false, err
+// 	}
+
+// 	// TODO: Figure out how to get the actual quota value from the JSON object
+// 	// https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/quota/armquota#LimitJSONObjectClassification
+// 	quotaValue := quotaClientResponse.CurrentQuotaLimitBase.Properties.Limit.GetLimitJSONObject()
+// 	quotaValue.GetLimitJSONObject()
+
+// 	usagesClient, err := armquota.NewUsagesClient(cred, &arm.ClientOptions{
+// 		ClientOptions: policy.ClientOptions{
+// 			Cloud: cloud.AzureGovernment,
+// 		},
+// 	})
+// 	if err != nil {
+// 		return false, err
+// 	}
+
+// 	usagesClientResponse, err := usagesClient.Get(ctx, resourceName, resourceScope, nil)
+// 	if err != nil {
+// 		// log.Fatalf("failed to finish the request: %v", err)
+// 		return false, err
+// 	}
+
+// 	usageValue := usagesClientResponse.CurrentUsagesBase.Properties.Usages.Value
+
+// 	// TODO: Remove hard coded value
+// 	if *usageValue < 100 {
+// 		return true, nil
+// 	}
+
+// 	return false, nil
+// }

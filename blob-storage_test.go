@@ -1,6 +1,7 @@
 package cloudyazure
 
 import (
+	"log"
 	"testing"
 
 	"github.com/appliedres/cloudy"
@@ -13,7 +14,11 @@ func TestBlobAccount(t *testing.T) {
 	account := cloudy.ForceEnv("account", "")
 	accountKey := cloudy.ForceEnv("accountKey", "")
 
-	bsa := NewBlobStorageAccount(ctx, account, accountKey, "")
+	bsa, err := NewBlobStorageAccount(ctx, account, accountKey, "")
+	if err != nil {
+		log.Fatal(err)
+		// t.FailNow()
+	}
 
 	testutil.TestObjectStorageManager(t, bsa)
 }
