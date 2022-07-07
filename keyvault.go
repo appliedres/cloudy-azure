@@ -23,7 +23,7 @@ type KeyVaultFactory struct{}
 
 type KeyVaultConfig struct {
 	AzureCredentials
-	VaultURL string
+	VaultURL string `cloudyenv:"AZ_VAULT_URL"`
 }
 
 func (c *KeyVaultFactory) Create(cfg interface{}) (secrets.SecretProvider, error) {
@@ -34,13 +34,10 @@ func (c *KeyVaultFactory) Create(cfg interface{}) (secrets.SecretProvider, error
 	return NewKeyVault(context.Background(), sec.VaultURL, sec.AzureCredentials)
 }
 
-func (c *KeyVaultFactory) ToConfig(config map[string]interface{}) (interface{}, error) {
-	var found bool
+func (c *KeyVaultFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
 	cfg := &KeyVaultConfig{}
-	cfg.VaultURL, found = cloudy.MapKeyStr(config, "VaultURL", true)
-	if !found {
-		return nil, errors.New("VaultURL required")
-	}
+	cfg.VaultURL = env.Force("AZ_VAULT_URL")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
 	return cfg, nil
 }
 

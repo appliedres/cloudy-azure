@@ -2,7 +2,6 @@ package cloudyazure
 
 import (
 	"context"
-	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/appliedres/cloudy"
@@ -38,34 +37,12 @@ func (f *AzureVMControllerFactory) Create(cfg interface{}) (cloudyvm.VMControlle
 	return NewAzureVMController(context.Background(), azCfg)
 }
 
-func (f *AzureVMControllerFactory) ToConfig(config map[string]interface{}) (interface{}, error) {
-	var found bool
-
+func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
 	cfg := &AzureVMControllerConfig{}
-	cfg.SubscriptionID, found = cloudy.EnvKeyStr(config, "SubscriptionID")
-	if !found {
-		return nil, errors.New("SubscriptionID required")
-	}
-	cfg.ResourceGroup, found = cloudy.EnvKeyStr(config, "ResourceGroup")
-	if !found {
-		return nil, errors.New("ResourceGroup required")
-	}
-	cfg.TenantID, found = cloudy.EnvKeyStr(config, "TenantID")
-	if !found {
-		return nil, errors.New("TenantID required")
-	}
-	cfg.ClientID, found = cloudy.EnvKeyStr(config, "ClientID")
-	if !found {
-		return nil, errors.New("ClientID required")
-	}
-	cfg.ClientSecret, found = cloudy.EnvKeyStr(config, "ClientSecret")
-	if !found {
-		return nil, errors.New("ClientSecret required")
-	}
-	cfg.Region, found = cloudy.EnvKeyStr(config, "Region")
-	if !found {
-		return nil, errors.New("Region required")
-	}
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+	cfg.ResourceGroup = env.Force("AZ_RESOURCE_GROUP")
+	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 
 	return cfg, nil
 }

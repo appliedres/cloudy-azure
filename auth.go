@@ -6,6 +6,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/appliedres/cloudy"
 )
 
 type AzureCredentials struct {
@@ -30,4 +31,17 @@ func GetAzureCredentials(azCfg AzureCredentials) (*azidentity.ClientSecretCreden
 	}
 
 	return cred, err
+}
+
+func GetAzureCredentialsFromEnv(env *cloudy.SegmentedEnvironment) AzureCredentials {
+	region, _ := env.Get("AZ_REGION")
+	if region == "" {
+		region = "usgovvirginia"
+	}
+	return AzureCredentials{
+		Region: region,
+		TenantID: env.Force("AZ_TENANT_ID"),
+		ClientID: env.Force("AZ_CLIENT_ID"),
+		ClientSecret: env.Force("AZ_CLIENT_SECRET"),
+	}
 }
