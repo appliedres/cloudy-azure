@@ -67,7 +67,7 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 	cfg.NetworkSecurityGroupID = env.Force("AZ_NETWORK_SECURITY_GROUP_ID")
 	cfg.VaultURL = env.Force("AZ_VAULT_URL")
 
-	subnets := env.Force("SUBNETS")
+	subnets := env.Force("SUBNETS") //SUBNET1,SUBNET2
 	cfg.AvailableSubnets = strings.Split(subnets, ",")
 
 	return cfg, nil
