@@ -28,7 +28,6 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 	}
 
 	// Check / Create the Network Security Group
-	vmc.CreateNSG(ctx, vm)
 	subnetId, err := vmc.FindBestSubnet(ctx, vmc.Config.AvailableSubnets)
 	if err != nil {
 		return vm, err
@@ -81,7 +80,11 @@ func (vmc *AzureVMController) FindBestSubnet(ctx context.Context, availableSubne
 
 // Finds the best subnet based on IP availabilty
 func (vmc *AzureVMController) GetAvailableIPS(ctx context.Context, subnet string) (int, error) {
-	client, err := armnetwork.NewSubnetsClient(vmc.Config.SubscriptionID, vmc.cred, nil)
+	client, err := armnetwork.NewSubnetsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
 	if err != nil {
 		return -1, cloudy.Error(ctx, "failed to create client: %v", err)
 	}
@@ -151,6 +154,23 @@ func (vmc *AzureVMController) CreateNSG(ctx context.Context, vm *cloudyvm.Virtua
 	return *res.SecurityGroup.ID, nil
 }
 
+func (vmc *AzureVMController) GetNSG(ctx context.Context, name string) (*armnetwork.SecurityGroup, error) {
+	client, err := armnetwork.NewSecurityGroupsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return nil, cloudy.Error(ctx, "could not create the network security group client. Configuration error, %v", err)
+	}
+
+	resp, err := client.Get(ctx, vmc.Config.NetworkResourceGroup, name, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &resp.SecurityGroup, err
+}
+
 /*
 CreateNIC - Creates the Network Interface for the virtual machine. It mimics the terraform code listed below.
 The elements used by this method are:
@@ -161,6 +181,12 @@ The elements used by this method are:
 
 Once created the NIC has an ID and an IP address that we care about. The VirtualMachineConfiguration input is
 mutated to add the appropriate information.
+
+ az network nic create \
+ 	--resource-group go-on-azure  \
+	--vnet-name go-on-azure-vmVNET \
+	--subnet go-on-azure-vmSubnet \
+	--name uvm-gotest-ip
 
 resource "azurerm_network_interface" "main-nic" {
     name                      = join("-", [var.vdi-name, random_string.random.result])
@@ -173,35 +199,47 @@ resource "azurerm_network_interface" "main-nic" {
 		private_ip_address_allocation = "Dynamic"
     }
 }*/
+//NOT WORKING YET
 func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration, subnetId string) error {
 	random := cloudy.GenerateRandom(6)
 	nicName := fmt.Sprintf("%v-%v", vm.ID, random)
 	region := vmc.Config.Region
 	rg := vmc.Config.ResourceGroup
 
-	params := armnetwork.Interface{
+	nsg, err := vmc.GetNSG(ctx, vmc.Config.NetworkSecurityGroupName)
+	if err != nil {
+		return err
+	}
+
+	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	poller, err := nicClient.BeginCreateOrUpdate(ctx, rg, nicName, armnetwork.Interface{
 		Location: &region,
+
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
-				&armnetwork.InterfaceIPConfiguration{
-					Name: to.Ptr(fmt.Sprintf("%v-ID", vm.ID)),
+				{
+					Name: to.Ptr(fmt.Sprintf("%v-ip", vm.ID)),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Subnet: &armnetwork.Subnet{
 							ID: to.Ptr(subnetId),
+							Properties: &armnetwork.SubnetPropertiesFormat{
+								NetworkSecurityGroup: nsg,
+							},
 						},
 						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
 					},
 				},
 			},
 		},
-	}
-
-	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, nil)
-	if err != nil {
-		return err
-	}
-
-	poller, err := nicClient.BeginCreateOrUpdate(ctx, rg, nicName, params, nil)
+	}, nil)
 	if err != nil {
 		return err
 	}
@@ -296,6 +334,9 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 						DiskSizeGB:   to.Ptr(sizeinGB),
 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 						//TODO: Set storage_account_type = "Standard_LRS"
+						ManagedDisk: &armcompute.ManagedDiskParameters{
+							StorageAccountType: to.Ptr(armcompute.StorageAccountTypesStandardLRS),
+						},
 					},
 				},
 
@@ -408,6 +449,9 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 						DiskSizeGB:   to.Ptr(sizeinGB),
 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 						//TODO: Set storage_account_type = "Standard_LRS"
+						ManagedDisk: &armcompute.ManagedDiskParameters{
+							StorageAccountType: to.Ptr(armcompute.StorageAccountTypesStandardLRS),
+						},
 					},
 				},
 
