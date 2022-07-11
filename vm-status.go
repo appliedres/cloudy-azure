@@ -29,7 +29,6 @@ type AzureVMControllerConfig struct {
 	NetworkSecurityGroupName string   // From Environment Variable
 	NetworkSecurityGroupID   string   // From Environment Variable
 	SaltCmd                  string
-	WindowsSaltFileBase64    string
 	VaultURL                 string
 }
 

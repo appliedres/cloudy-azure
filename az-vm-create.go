@@ -2,6 +2,7 @@ package cloudyazure
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"math"
@@ -269,6 +270,9 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	adminPassword := vm.Credientials.AdminPassword
 	sshKey := vm.Credientials.SSHKey // <-- From KeyVault?
 
+	//TODO: Set Disk Options
+	sizeinGB := int32(1000) //Look up
+
 	client := vmc.Client
 	poller, err := client.BeginCreateOrUpdate(
 		ctx,
@@ -287,6 +291,11 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 				StorageProfile: &armcompute.StorageProfile{
 					ImageReference: &armcompute.ImageReference{
 						SharedGalleryImageID: &imageId,
+					},
+					OSDisk: &armcompute.OSDisk{
+						DiskSizeGB:   to.Ptr(sizeinGB),
+						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
+						//TODO: Set storage_account_type = "Standard_LRS"
 					},
 				},
 
@@ -374,6 +383,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
+	sizeinGB := int32(1000) //Look up
 
 	client := vmc.Client
 	poller, err := client.BeginCreateOrUpdate(
@@ -393,6 +403,11 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 				StorageProfile: &armcompute.StorageProfile{
 					ImageReference: &armcompute.ImageReference{
 						SharedGalleryImageID: &imageId,
+					},
+					OSDisk: &armcompute.OSDisk{
+						DiskSizeGB:   to.Ptr(sizeinGB),
+						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
+						//TODO: Set storage_account_type = "Standard_LRS"
 					},
 				},
 
@@ -482,7 +497,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 
 func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 	// windowsSaltCommandb64 := "${base64encode(data.template_file.tfSalt.rendered)}"
-	windowsSaltCommandb64 := vmc.Config.WindowsSaltFileBase64
+	windowsSaltCommandb64 := base64.StdEncoding.EncodeToString([]byte(WindowsSaltInstallCmd))
 	saltCmd := vmc.Config.SaltCmd
 	fullCmd := fmt.Sprintf("powershell -command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%v')) | Out-File -filepath install.ps1\" && powershell -ExecutionPolicy Unrestricted -File install.ps1 %s", windowsSaltCommandb64, saltCmd)
 
@@ -542,3 +557,73 @@ func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
 	}
 	return nil
 }
+
+var WindowsSaltInstallCmd = `
+[CmdletBinding()]
+Param(
+    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
+    [string]$minion = "not-specified",
+
+    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
+    [string]$master = "not-specified",
+
+    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
+    [string]$masterkey = "not-specified",
+
+    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
+    [string]$saltUrl = "not-specified",
+
+    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
+    [string]$defaultminionurl = "not-specified"
+)
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]'Tls12'
+$webclient = New-Object System.Net.WebClient
+New-Item C:\tmp\ -ItemType directory -Force | Out-Null
+# Download default minion 
+If ($defaultminionurl -ne "not-specified") {
+    $webclient.DownloadFile($defaultminionurl, 'c:\tmp\minion')
+}
+If (Test-Path C:\tmp\minion.pem) {
+    New-Item C:\salt\conf\pki\minion\ -ItemType Directory -Force | Out-Null
+    Copy-Item -Path C:\tmp\minion.pem -Destination C:\salt\conf\pki\minion\ -Force | Out-Null
+    Copy-Item -Path C:\tmp\minion.pub -Destination C:\salt\conf\pki\minion\ -Force | Out-Null
+    }
+
+If (Test-Path C:\tmp\minion) {
+    New-Item C:\salt\conf\ -ItemType Directory -Force | Out-Null
+    Copy-Item -Path C:\tmp\minion -Destination C:\salt\conf\ -Force | Out-Null
+}
+If (Test-Path C:\tmp\grains) {
+    New-Item C:\salt\conf\ -ItemType Directory -Force | Out-Null
+    Copy-Item -Path C:\tmp\grains -Destination C:\salt\conf\ -Force | Out-Null
+}
+#dl/install
+$saltExe = "Salt-Minion-Setup.exe"
+$file = "C:\tmp\$saltExe"
+If ($saltUrl -ne "not-specified") {$webclient.DownloadFile($saltUrl, $file)}
+$parameters = ""
+If ($minion -ne "not-specified") { $parameters = "/minion-name=$minion" }
+If ($master -ne "not-specified") { $parameters = "$parameters /master=$master" }
+Write-Output "Salt Installing"
+Start-Process $file -ArgumentList "/S $parameters" -Wait -NoNewWindow -PassThru 
+Write-Output "Salt Installed"
+#install service
+$service = Get-Service salt-minion -ErrorAction SilentlyContinue
+While (!$service) {
+    Start-Sleep -s 2
+    $service = Get-Service salt-minion -ErrorAction SilentlyContinue
+}
+Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
+$try = 0
+While (($service.Status -ne "Running") -and ($try -ne 4)) {
+    Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
+    $service = Get-Service salt-minion -ErrorAction SilentlyContinue
+    Start-Sleep -s 2
+    $try += 1
+}
+If ($service.Status -eq "Stopped") {
+    Write-Output -NoNewline "Failed to start salt minion"
+    exit 1
+}
+Write-Output "Salt Complete"
+`
