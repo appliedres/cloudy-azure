@@ -2,7 +2,9 @@ package cloudyazure
 
 import (
 	"context"
+	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/appliedres/cloudy"
 	cloudyvm "github.com/appliedres/cloudy/vm"
@@ -18,12 +20,25 @@ type AzureVMControllerConfig struct {
 	AzureCredentials
 	SubscriptionID string
 	ResourceGroup  string
+
+	// ??
+	NetworkResourceGroup     string   // From Environment Variable
+	SourceImageGalleryName   string   // From Environment Variable
+	Vnet                     string   // From Environment Variable
+	AvailableSubnets         []string // From Environment Variable
+	NetworkSecurityGroupName string   // From Environment Variable
+	NetworkSecurityGroupID   string   // From Environment Variable
+	SaltCmd                  string
+	WindowsSaltFileBase64    string
+	VaultURL                 string
 }
 
 type AzureVMController struct {
+	Vault  *KeyVault
 	Client *armcompute.VirtualMachinesClient
 	Usage  *armcompute.UsageClient
 	Config *AzureVMControllerConfig
+	cred   *azidentity.ClientSecretCredential
 }
 
 type AzureVMControllerFactory struct{}
@@ -44,10 +59,26 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 	cfg.ResourceGroup = env.Force("AZ_RESOURCE_GROUP")
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 
+	// Not always necessary but needed for creation
+	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")
+	cfg.SourceImageGalleryName = env.Force("AZ_SOURCE_IMAGE_GALLERY_NAME")
+	cfg.Vnet = env.Force("AZ_VNET")
+	cfg.NetworkSecurityGroupName = env.Force("AZ_NETWORK_SECURITY_GROUP_NAME")
+	cfg.NetworkSecurityGroupID = env.Force("AZ_NETWORK_SECURITY_GROUP_ID")
+	cfg.VaultURL = env.Force("AZ_VAULT_URL")
+
+	subnets := env.Force("SUBNETS")
+	cfg.AvailableSubnets = strings.Split(subnets, ",")
+
 	return cfg, nil
 }
 
 func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) (*AzureVMController, error) {
+	cred, err := GetAzureCredentials(config.AzureCredentials)
+	if err != nil {
+		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
+	}
+
 	client, err := NewVMClient(ctx, config)
 	if err != nil {
 		return nil, err
@@ -58,10 +89,17 @@ func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) 
 		return nil, err
 	}
 
+	v, err := NewKeyVault(ctx, config.VaultURL, config.AzureCredentials)
+	if err != nil {
+		return nil, err
+	}
+
 	return &AzureVMController{
 		Client: client,
 		Usage:  usage,
 		Config: config,
+		cred:   cred,
+		Vault:  v,
 	}, nil
 }
 
@@ -79,10 +117,6 @@ func (vmc *AzureVMController) Status(ctx context.Context, vmName string) (*cloud
 
 func (vmc *AzureVMController) SetState(ctx context.Context, state cloudyvm.VirtualMachineAction, vmName string, wait bool) (*cloudyvm.VirtualMachineStatus, error) {
 	return VmState(ctx, vmc.Client, state, vmName, vmc.Config.ResourceGroup, wait)
-}
-
-func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
-	return VmCreate(ctx, vmc.Client, vm)
 }
 
 func (vmc *AzureVMController) Start(ctx context.Context, vmName string, wait bool) error {
