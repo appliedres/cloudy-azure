@@ -39,6 +39,11 @@ func TestVMCreate(t *testing.T) {
 	})
 	assert.Nil(t, err)
 
+	// vmc.GetVMSize(ctx, "asdfaf")
+
+	cache := &AzureVMSizeCache{}
+	cache.Load(ctx, vmc)
+
 	/*
 	   "imageReference": {
 	   	"publisher": "canonical",
@@ -48,13 +53,15 @@ func TestVMCreate(t *testing.T) {
 	   },
 	*/
 	vmConfig := &cloudyvm.VirtualMachineConfiguration{
-		ID:     "uvm-gotest",
-		Name:   "uvm-gotest-name",
-		Size:   "Standard_DS1_v2",
-		OSType: "linux",
+		ID:           "uvm-gotest",
+		Name:         "uvm-gotest",
+		Size:         "Standard_DS1_v2",
+		OSType:       "linux",
+		Image:        "canonical::ubuntuserver::19.04",
+		ImageVersion: "latest",
 		Credientials: cloudyvm.Credientials{
 			AdminUser:     "testadmin",
-			AdminPassword: "testpassword",
+			AdminPassword: "TestPassword12#$",
 		},
 	}
 
@@ -70,5 +77,16 @@ func TestVMCreate(t *testing.T) {
 	assert.NotNil(t, vmConfig.PrimaryNetwork.ID)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.Name)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.PrivateIP)
+
+	defer vmc.DeleteNIC(ctx, vmConfig.PrimaryNetwork.Name)
+
+	// Test Create
+	err = vmc.CreateLinuxVirtualMachine(ctx, vmConfig)
+	assert.Nil(t, err)
+
+	if err == nil {
+		err = vmc.DeleteVM(ctx, vmConfig.Name)
+		assert.Nil(t, err)
+	}
 
 }

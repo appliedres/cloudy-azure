@@ -192,6 +192,19 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 	return returnStatus, err
 }
 
+func VMGetPowerState(vm *armcompute.VirtualMachine) string {
+	if vm == nil || vm.Properties == nil || vm.Properties.InstanceView == nil {
+		return "NO POWERSTATE"
+	}
+
+	for _, status := range vm.Properties.InstanceView.Statuses {
+		if strings.Contains(*status.Code, "PowerState") {
+			return strings.Split(*status.Code, "/")[1]
+		}
+	}
+	return ""
+}
+
 func VMAddTag(ctx context.Context) {
 
 }
@@ -285,7 +298,7 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 	return nil
 }
 
-func VmCreate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error){
+func VmCreate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
 	return nil, nil
 }
 

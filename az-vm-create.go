@@ -201,8 +201,10 @@ resource "azurerm_network_interface" "main-nic" {
 }*/
 //NOT WORKING YET
 func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration, subnetId string) error {
-	random := cloudy.GenerateRandom(6)
-	nicName := fmt.Sprintf("%v-%v", vm.ID, random)
+	// Not sure why a random nic is created
+	// random := cloudy.GenerateRandom(6)
+	// nicName := fmt.Sprintf("%v-%v", vm.ID, random)
+	nicName := fmt.Sprintf("%v-nic-primary", vm.ID)
 	region := vmc.Config.Region
 	rg := vmc.Config.ResourceGroup
 
@@ -210,6 +212,12 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	if err != nil {
 		return err
 	}
+
+	sizeResource, err := vmc.GetVMSize(ctx, vm.Size)
+	if err != nil {
+		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
+	}
+	acceleratedNetworking := sizeResource.AcceleratedNetworking
 
 	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
@@ -220,18 +228,25 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 		return err
 	}
 
+	fullSubId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s", vmc.Config.SubscriptionID, vmc.Config.NetworkResourceGroup, vmc.Config.Vnet, subnetId)
+
 	poller, err := nicClient.BeginCreateOrUpdate(ctx, rg, nicName, armnetwork.Interface{
 		Location: &region,
 
 		Properties: &armnetwork.InterfacePropertiesFormat{
+			EnableAcceleratedNetworking: to.Ptr(acceleratedNetworking),
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
 					Name: to.Ptr(fmt.Sprintf("%v-ip", vm.ID)),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Subnet: &armnetwork.Subnet{
-							ID: to.Ptr(subnetId),
+							ID: &fullSubId,
+							// Name: to.Ptr(subnetId),
 							Properties: &armnetwork.SubnetPropertiesFormat{
-								NetworkSecurityGroup: nsg,
+								// NetworkSecurityGroup: nsg,
+								NetworkSecurityGroup: &armnetwork.SecurityGroup{
+									ID: nsg.ID,
+								},
 							},
 						},
 						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
@@ -256,6 +271,19 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 		PrivateIP: *resp.Interface.Properties.IPConfigurations[0].Properties.PrivateIPAddress,
 	}
 	return nil
+}
+
+func (vmc *AzureVMController) DeleteNIC(ctx context.Context, nicName string) error {
+	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = nicClient.BeginDelete(ctx, vmc.Config.ResourceGroup, nicName, nil)
+	return err
 }
 
 /*
@@ -291,7 +319,6 @@ resource "azurerm_linux_virtual_machine" "main-vm" {
 }
 */
 func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
-
 	// Input Parameters
 	region := vmc.Config.Region
 	subscriptionId := vmc.Config.SubscriptionID
@@ -306,10 +333,44 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
-	sshKey := vm.Credientials.SSHKey // <-- From KeyVault?
+	// sshKey := vm.Credientials.SSHKey // <-- From KeyVault?
 
-	//TODO: Set Disk Options
-	sizeinGB := int32(1000) //Look up
+	sizeResource, err := vmc.GetVMSize(ctx, string(*vmSize))
+	if err != nil {
+		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
+	}
+
+	// Configure Disk SIze
+	sizeinGB := int32(30)
+	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
+		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
+		if err != nil {
+			cloudy.Warn(ctx, "Invalid Size for OS Disk [%v] using defaul 30GB", vm.OSDisk.Size)
+		} else {
+			sizeinGB = int32(size)
+		}
+	}
+
+	// Configure Disk type
+	diskType := armcompute.StorageAccountTypesStandardLRS
+	if sizeResource.PremiumIO {
+		diskType = armcompute.StorageAccountTypesPremiumLRS
+	}
+
+	imageReference := &armcompute.ImageReference{
+		Version: to.Ptr(vm.ImageVersion),
+	}
+
+	if strings.Contains(vm.Image, "::") {
+		parts := strings.Split(vm.Image, "::")
+		if len(parts) == 3 {
+			imageReference.Publisher = to.Ptr(parts[0])
+			imageReference.Offer = to.Ptr(parts[1])
+			imageReference.SKU = to.Ptr(parts[2])
+		}
+	} else {
+		imageReference.SharedGalleryImageID = to.Ptr(imageId)
+	}
 
 	client := vmc.Client
 	poller, err := client.BeginCreateOrUpdate(
@@ -327,15 +388,13 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 				},
 
 				StorageProfile: &armcompute.StorageProfile{
-					ImageReference: &armcompute.ImageReference{
-						SharedGalleryImageID: &imageId,
-					},
+					ImageReference: imageReference,
 					OSDisk: &armcompute.OSDisk{
+						OSType:       to.Ptr(armcompute.OperatingSystemTypesLinux),
 						DiskSizeGB:   to.Ptr(sizeinGB),
 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-						//TODO: Set storage_account_type = "Standard_LRS"
 						ManagedDisk: &armcompute.ManagedDiskParameters{
-							StorageAccountType: to.Ptr(armcompute.StorageAccountTypesStandardLRS),
+							StorageAccountType: to.Ptr(diskType),
 						},
 					},
 				},
@@ -344,25 +403,22 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 					ComputerName:  to.Ptr(vmName),
 					AdminUsername: to.Ptr(adminUser),
 					AdminPassword: to.Ptr(adminPassword),
-					LinuxConfiguration: &armcompute.LinuxConfiguration{
-						SSH: &armcompute.SSHConfiguration{
-							PublicKeys: []*armcompute.SSHPublicKey{
-								{
-									Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", adminUser)),
-									KeyData: to.Ptr(sshKey),
-								},
-							},
-						},
-					},
+					// LinuxConfiguration: &armcompute.LinuxConfiguration{
+					// 	SSH: &armcompute.SSHConfiguration{
+					// 		PublicKeys: []*armcompute.SSHPublicKey{
+					// 			{
+					// 				Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", adminUser)),
+					// 				KeyData: to.Ptr(sshKey),
+					// 			},
+					// 		},
+					// 	},
+					// },
 				},
 
 				NetworkProfile: &armcompute.NetworkProfile{
 					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-						&armcompute.NetworkInterfaceReference{
+						{
 							ID: to.Ptr(vm.PrimaryNetwork.ID),
-							Properties: &armcompute.NetworkInterfaceReferenceProperties{
-								Primary: to.Ptr(true),
-							},
 						},
 					},
 				},
@@ -371,14 +427,45 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		nil,
 	)
 	if err != nil {
+		// var azErr *azcore.ResponseError
+		// if errors.As(err, azErr) {
+		// 	azErr.RawResponse.Body
+		// }
+
 		cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
 		cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
-	cloudy.Info(ctx, "Created VM ID: %v", *resp.VirtualMachine.ID)
+	cloudy.Info(ctx, "Created VM ID: %v - %v - %v", *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
 	return nil
+}
+
+func (vmc *AzureVMController) DeleteVM(ctx context.Context, vmName string) error {
+	// Try to terminate the VM if it is running
+	// resp, err := vmc.Client.Get(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	// if err != nil {
+	// 	cloudy.Error(ctx, "failed to obtain a response: %v", err)
+	// 	return err
+	// }
+
+	poller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	if err != nil {
+		cloudy.Error(ctx, "failed to terminate: %v", err)
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		cloudy.Error(ctx, "failed to terminate: %v", err)
+		return err
+	}
+
+	_, err = vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	if err != nil {
+		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+	}
+	return err
 }
 
 /*
@@ -464,7 +551,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 
 				NetworkProfile: &armcompute.NetworkProfile{
 					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-						&armcompute.NetworkInterfaceReference{
+						{
 							ID: to.Ptr(vm.PrimaryNetwork.ID),
 							Properties: &armcompute.NetworkInterfaceReferenceProperties{
 								Primary: to.Ptr(true),
@@ -593,6 +680,38 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	return nil
 }
 
+func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*AzVmSize, error) {
+	client, err := armcompute.NewResourceSKUsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return nil, cloudy.Error(ctx, "could not create NewResourceSKUsClient, %v", err)
+	}
+
+	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{})
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, cloudy.Error(ctx, "could not get NextPage, %v", err)
+		}
+
+		for _, r := range resp.Value {
+			if *r.ResourceType == "virtualMachines" {
+				if strings.EqualFold(*r.Name, size) {
+					return SizeFromResource(ctx, r), nil
+				}
+				if strings.HasPrefix(*r.Size, "N") {
+					fmt.Println("STOP")
+				}
+			}
+		}
+	}
+
+	return nil, nil
+}
+
 func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
 	for _, s := range armcompute.PossibleVirtualMachineSizeTypesValues() {
 		if strings.EqualFold(string(s), size) {
@@ -600,6 +719,50 @@ func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
 		}
 	}
 	return nil
+}
+
+type AzVmSize struct {
+	Name                  string
+	Family                string
+	Size                  string
+	MaxNics               int
+	AcceleratedNetworking bool
+	VCPU                  int
+	PremiumIO             bool
+	MemoryGB              float64
+	GpuVendor             string
+	GPU                   float64
+}
+
+func SizeFromResource(ctx context.Context, res *armcompute.ResourceSKU) *AzVmSize {
+	rtn := &AzVmSize{
+		Name:   *res.Name,
+		Family: *res.Family,
+		Size:   *res.Size,
+	}
+
+	for _, c := range res.Capabilities {
+		if *c.Name == "MaxNetworkInterfaces" {
+			rtn.MaxNics, _ = strconv.Atoi(*c.Value)
+		}
+		if *c.Name == "AcceleratedNetworkingEnabled" {
+			rtn.AcceleratedNetworking, _ = strconv.ParseBool(*c.Value)
+		}
+		if *c.Name == "PremiumIO" {
+			rtn.PremiumIO, _ = strconv.ParseBool(*c.Value)
+		}
+		if *c.Name == "vCPUs" {
+			rtn.VCPU, _ = strconv.Atoi(*c.Value)
+		}
+		if *c.Name == "MemoryGB" {
+			rtn.MemoryGB, _ = strconv.ParseFloat(*c.Value, 64)
+		}
+		if *c.Name == "GPUs" {
+			rtn.GPU, _ = strconv.ParseFloat(*c.Value, 64)
+		}
+	}
+
+	return rtn
 }
 
 var WindowsSaltInstallCmd = `
