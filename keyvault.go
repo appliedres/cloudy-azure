@@ -62,10 +62,7 @@ func (k *KeyVault) Configure(ctx context.Context) error {
 		return err
 	}
 
-	client, err := azsecrets.NewClient(k.VaultURL, cred, nil)
-	if err != nil {
-		return err
-	}
+	client := azsecrets.NewClient(k.VaultURL, cred, nil)
 
 	k.Client = client
 	return nil
@@ -89,7 +86,7 @@ func (k *KeyVault) GetSecretBinary(ctx context.Context, key string) ([]byte, err
 }
 
 func (k *KeyVault) GetSecret(ctx context.Context, key string) (string, error) {
-	resp, err := k.Client.GetSecret(ctx, key, nil)
+	resp, err := k.Client.GetSecret(ctx, key, "", nil)
 
 	if err != nil {
 		if k.IsNotFound(err) {
@@ -102,13 +99,13 @@ func (k *KeyVault) GetSecret(ctx context.Context, key string) (string, error) {
 }
 
 func (k *KeyVault) SaveSecret(ctx context.Context, key string, data string) error {
-	_, err := k.Client.SetSecret(ctx, key, data, nil)
+	_, err := k.Client.SetSecret(ctx, key,
+		azsecrets.SetSecretParameters{Value: &data}, nil)
 	return err
 }
 
 func (k *KeyVault) DeleteSecret(ctx context.Context, key string) error {
-
-	_, err := k.Client.BeginDeleteSecret(ctx, key, nil)
+	_, err := k.Client.DeleteSecret(ctx, key, nil)
 
 	if err != nil {
 		// SEE : https://github.com/Azure/azure-sdk-for-go/issues/18321
