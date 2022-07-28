@@ -10,10 +10,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/appliedres/cloudy"
+	"github.com/appliedres/cloudy/datastore"
+	cloudyvm "github.com/appliedres/cloudy/vm"
 )
 
 type AzureVMSizeCache struct {
-	sizes map[string]*AzVmSize
+	sizes map[string]*cloudyvm.VmSize
+}
+
+func (azs *AzureVMSizeCache) Merge(ctx context.Context, datatype datastore.Datatype[any]) {
+
 }
 
 func (azs *AzureVMSizeCache) Load(ctx context.Context, vmc *AzureVMController) error {
@@ -26,7 +32,7 @@ func (azs *AzureVMSizeCache) Load(ctx context.Context, vmc *AzureVMController) e
 		return cloudy.Error(ctx, "could not create NewResourceSKUsClient, %v", err)
 	}
 
-	azs.sizes = make(map[string]*AzVmSize)
+	azs.sizes = make(map[string]*cloudyvm.VmSize)
 	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{})
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
@@ -47,32 +53,4 @@ func (azs *AzureVMSizeCache) Load(ctx context.Context, vmc *AzureVMController) e
 	}
 
 	return nil
-}
-
-func (azs *AzureVMSizeCache) GetEquivilent(ctx context.Context, vCPUmin int, vCPUmax int, minMemoryGB float64, vGPUmin float64, vGPUmax float64, gpuVendor string) []*AzVmSize {
-	var rtn []*AzVmSize
-
-	for _, size := range azs.sizes {
-		if size.VCPU < vCPUmin {
-			continue
-		}
-		if size.VCPU > vCPUmin {
-			continue
-		}
-		if size.GPU < vGPUmin {
-			continue
-		}
-		if size.GPU > vGPUmax {
-			continue
-		}
-		if size.MemoryGB < minMemoryGB {
-			continue
-		}
-		if size.GpuVendor != gpuVendor {
-			continue
-		}
-		rtn = append(rtn, size)
-	}
-
-	return rtn
 }

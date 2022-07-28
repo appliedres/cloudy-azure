@@ -213,7 +213,7 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 		return err
 	}
 
-	sizeResource, err := vmc.GetVMSize(ctx, vm.Size)
+	sizeResource, err := vmc.GetVMSize(ctx, vm.Size.Size)
 	if err != nil {
 		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
 	}
@@ -329,7 +329,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	vmName := vm.ID
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	vmSize := findVmSize(vm.Size)
+	vmSize := findVmSize(vm.Size.Size)
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
@@ -359,6 +359,9 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 
 	imageReference := &armcompute.ImageReference{
 		Version: to.Ptr(vm.ImageVersion),
+	}
+	if vm.ImageVersion == "" {
+		imageReference.Version = to.Ptr("latest")
 	}
 
 	if strings.Contains(vm.Image, "::") {
@@ -507,7 +510,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	vmName := vm.ID
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	vmSize := findVmSize(vm.Size)
+	vmSize := findVmSize(vm.Size.Size)
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
@@ -680,7 +683,7 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	return nil
 }
 
-func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*AzVmSize, error) {
+func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*cloudyvm.VmSize, error) {
 	client, err := armcompute.NewResourceSKUsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
@@ -702,9 +705,6 @@ func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*AzVm
 				if strings.EqualFold(*r.Name, size) {
 					return SizeFromResource(ctx, r), nil
 				}
-				if strings.HasPrefix(*r.Size, "N") {
-					fmt.Println("STOP")
-				}
 			}
 		}
 	}
@@ -721,21 +721,8 @@ func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
 	return nil
 }
 
-type AzVmSize struct {
-	Name                  string
-	Family                string
-	Size                  string
-	MaxNics               int
-	AcceleratedNetworking bool
-	VCPU                  int
-	PremiumIO             bool
-	MemoryGB              float64
-	GpuVendor             string
-	GPU                   float64
-}
-
-func SizeFromResource(ctx context.Context, res *armcompute.ResourceSKU) *AzVmSize {
-	rtn := &AzVmSize{
+func SizeFromResource(ctx context.Context, res *armcompute.ResourceSKU) *cloudyvm.VmSize {
+	rtn := &cloudyvm.VmSize{
 		Name:   *res.Name,
 		Family: *res.Family,
 		Size:   *res.Size,

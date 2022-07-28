@@ -2,12 +2,17 @@ package cloudyazure
 
 import (
 	"context"
+	"sort"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/appliedres/cloudy"
 	cloudyvm "github.com/appliedres/cloudy/vm"
+	"github.com/hashicorp/go-version"
 )
 
 const AzureArmCompute = "azure-arm-compute"
@@ -155,6 +160,66 @@ func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.Virtua
 	}
 
 	return rtn, nil
+}
+
+func (vmc *AzureVMController) GetLatestImageVersion(ctx context.Context, imageName string) (string, error) {
+	c, err := armcompute.NewSharedGalleryImageVersionsClient(vmc.Config.SubscriptionID, vmc.cred, nil)
+	if err != nil {
+		return "", err
+	}
+	pager := c.NewListPager(vmc.Config.Region, vmc.Config.SourceImageGalleryName, imageName, &armcompute.SharedGalleryImageVersionsClientListOptions{})
+
+	var allVersions []*version.Version
+
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return "", err
+		}
+		for _, imageVersion := range resp.Value {
+			v, err := version.NewVersion(*imageVersion.Name)
+			if err != nil {
+				cloudy.Error(ctx, "Skipping Invalid Version : %v, %v", *imageVersion.Name, err)
+				continue
+			}
+			allVersions = append(allVersions, v)
+		}
+	}
+
+	sort.Sort(version.Collection(allVersions))
+
+	latest := allVersions[len(allVersions)-1]
+
+	return latest.Original(), nil
+}
+
+func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloudyvm.VmSize, error) {
+	client, err := armcompute.NewResourceSKUsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return nil, cloudy.Error(ctx, "could not create NewResourceSKUsClient, %v", err)
+	}
+
+	sizes := make(map[string]*cloudyvm.VmSize)
+	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{})
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return sizes, cloudy.Error(ctx, "could not get NextPage, %v", err)
+		}
+
+		for _, r := range resp.Value {
+			if *r.ResourceType == "virtualMachines" {
+				size := SizeFromResource(ctx, r)
+				sizes[size.Name] = size
+			}
+		}
+	}
+
+	return sizes, nil
 }
 
 // func (vmc *AzureVMController) CheckQuota(ctx context.Context, vm *models.VirtualMachine) (bool, error) {
