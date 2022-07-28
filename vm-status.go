@@ -64,7 +64,7 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 
 	// Not always necessary but needed for creation
-	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")
+	cfg.NetworkResourceGroup = cfg.ResourceGroup
 	cfg.SourceImageGalleryName = env.Force("AZ_SOURCE_IMAGE_GALLERY_NAME")
 	cfg.Vnet = env.Force("AZ_VNET")
 	cfg.NetworkSecurityGroupName = env.Force("AZ_NETWORK_SECURITY_GROUP_NAME")
@@ -137,7 +137,7 @@ func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait
 
 func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.VirtualMachineLimit, error) {
 	// pager := vmc.Usage.NewListPager()
-	pager := vmc.Usage.NewListPager("", &armcompute.UsageClientListOptions{})
+	pager := vmc.Usage.NewListPager(vmc.Config.Region, &armcompute.UsageClientListOptions{})
 
 	var rtn []*cloudyvm.VirtualMachineLimit
 
