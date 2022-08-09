@@ -43,7 +43,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		err = vmc.CreateLinuxVirtualMachine(ctx, vm)
 		return vm, err
 	} else if strings.EqualFold(vm.OSType, "windows") {
-		err = vmc.CreateLinuxVirtualMachine(ctx, vm)
+		err = vmc.CreateWindowsVirtualMachine(ctx, vm)
 		return vm, err
 	}
 
