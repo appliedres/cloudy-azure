@@ -333,7 +333,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
-	// sshKey := vm.Credientials.SSHKey // <-- From KeyVault?
+	sshKey := vm.Credientials.SSHKey
 
 	sizeResource, err := vmc.GetVMSize(ctx, string(*vmSize))
 	if err != nil {
@@ -406,16 +406,16 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 					ComputerName:  to.Ptr(vmName),
 					AdminUsername: to.Ptr(adminUser),
 					AdminPassword: to.Ptr(adminPassword),
-					// LinuxConfiguration: &armcompute.LinuxConfiguration{
-					// 	SSH: &armcompute.SSHConfiguration{
-					// 		PublicKeys: []*armcompute.SSHPublicKey{
-					// 			{
-					// 				Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", adminUser)),
-					// 				KeyData: to.Ptr(sshKey),
-					// 			},
-					// 		},
-					// 	},
-					// },
+					LinuxConfiguration: &armcompute.LinuxConfiguration{
+						SSH: &armcompute.SSHConfiguration{
+							PublicKeys: []*armcompute.SSHPublicKey{
+								{
+									Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", adminUser)),
+									KeyData: to.Ptr(sshKey),
+								},
+							},
+						},
+					},
 				},
 
 				NetworkProfile: &armcompute.NetworkProfile{

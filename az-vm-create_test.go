@@ -1,12 +1,16 @@
 package cloudyazure
 
 import (
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"testing"
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
 	cloudyvm "github.com/appliedres/cloudy/vm"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/ssh"
 )
 
 func TestVMCreate(t *testing.T) {
@@ -44,6 +48,19 @@ func TestVMCreate(t *testing.T) {
 	cache := &AzureVMSizeCache{}
 	cache.Load(ctx, vmc)
 
+	sshPublicKeySecretName := "VMSSHPublicKey"
+	keyVault, err := NewKeyVault(ctx, vmc.Config.VaultURL, vmc.Config.AzureCredentials)
+	assert.Nil(t, err)
+
+	sshPublicKey, err := keyVault.GetSecret(ctx, sshPublicKeySecretName)
+	assert.Nil(t, err)
+	assert.NotNil(t, sshPublicKey)
+
+	sshPrivateKeySecretName := "VMSSHPrivateKey"
+	sshPrivateKey, err := keyVault.GetSecret(ctx, sshPrivateKeySecretName)
+	assert.Nil(t, err)
+	assert.NotNil(t, sshPrivateKey)
+
 	/*
 	   "imageReference": {
 	   	"publisher": "canonical",
@@ -53,15 +70,18 @@ func TestVMCreate(t *testing.T) {
 	   },
 	*/
 	vmConfig := &cloudyvm.VirtualMachineConfiguration{
-		ID:           "uvm-gotest",
-		Name:         "uvm-gotest",
-		Size:         "Standard_DS1_v2",
+		ID:   "uvm-gotest",
+		Name: "uvm-gotest",
+		Size: &cloudyvm.VmSize{
+			Size: "Standard_DS1_v2",
+		},
 		OSType:       "linux",
 		Image:        "canonical::ubuntuserver::19.04",
 		ImageVersion: "latest",
 		Credientials: cloudyvm.Credientials{
 			AdminUser:     "testadmin",
 			AdminPassword: "TestPassword12#$",
+			SSHKey:        sshPublicKey,
 		},
 	}
 
@@ -85,6 +105,31 @@ func TestVMCreate(t *testing.T) {
 	assert.Nil(t, err)
 
 	if err == nil {
+		block, _ := pem.Decode([]byte(sshPrivateKey))
+		assert.NotNil(t, block)
+
+		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		assert.Nil(t, err)
+
+		signer, err := ssh.NewSignerFromKey(key)
+		assert.Nil(t, err)
+		assert.NotNil(t, signer)
+
+		config := &ssh.ClientConfig{
+			User:            vmConfig.Credientials.AdminUser,
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		}
+
+		addr := fmt.Sprintf("%s:22", vmConfig.PrimaryNetwork.PublicIP)
+		conn, err := ssh.Dial("tcp", addr, config)
+		assert.Nil(t, err)
+		defer conn.Close()
+
+		session, err := conn.NewSession()
+		assert.Nil(t, err)
+		session.Close()
+
 		err = vmc.DeleteVM(ctx, vmConfig.Name)
 		assert.Nil(t, err)
 	}
