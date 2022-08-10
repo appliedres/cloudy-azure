@@ -27,9 +27,9 @@ func TestBlobFileshare(t *testing.T) {
 	bfa, err := NewBlobFileShare(ctx, &BlobFileShare{
 		Credentials:        creds,
 		StorageAccountName: account,
-		ContainerName:      "test-share",
-		ResourceGroupName:  resourceGroup,
-		SubscriptionID:     subscriptionId,
+		// ContainerName:      "test-share",
+		ResourceGroupName: resourceGroup,
+		SubscriptionID:    subscriptionId,
 	})
 	if err != nil {
 		log.Fatal(err)

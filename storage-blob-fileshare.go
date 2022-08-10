@@ -4,10 +4,36 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/storage"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
+
+var AzureBlob = "azure-blob"
+
+func init() {
+	storage.FileShareProviders.Register(AzureBlob, &AzureBlobFileShareFactory{})
+}
+
+type AzureBlobFileShareFactory struct{}
+
+func (f *AzureBlobFileShareFactory) Create(cfg interface{}) (storage.FileStorageManager, error) {
+	azCfg := cfg.(*BlobContainerShare)
+	if azCfg == nil {
+		return nil, cloudy.ErrInvalidConfiguration
+	}
+
+	return NewBlobContainerShare(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
+}
+
+func (f *AzureBlobFileShareFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
+	cfg := &BlobContainerShare{}
+	cfg.Account = env.Force("AZ_ACCOUNT")
+	cfg.AccountKey = env.Force("AZ_ACCOUNT_KEY")
+
+	return cfg, nil
+}
 
 // THe BlobContainerShare provides file shares based on the Azure Blob Storage
 type BlobContainerShare struct {
@@ -98,120 +124,6 @@ func (bfs *BlobContainerShare) Exists(ctx context.Context, key string) (bool, er
 
 	return true, nil
 }
-
-// func (bfs *BlobContainerShare) ContainerExists(ctx context.Context) (bool, error) {
-// 	cred, err := GetAzureCredentials(bfs.Credentials)
-// 	if err != nil {
-// 		return false, err
-// 	}
-
-// 	blobContainerClient, err := armstorage.NewBlobContainersClient(bfs.SubscriptionID,
-// 		cred,
-// 		&arm.ClientOptions{
-// 			ClientOptions: policy.ClientOptions{
-// 				Cloud: cloud.AzureGovernment,
-// 			},
-// 		})
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	_, err = blobContainerClient.Get(ctx, bfs.ResourceGroupName, bfs.StorageAccountName, bfs.ContainerName, &armstorage.BlobContainersClientGetOptions{})
-// 	if err != nil {
-// 		if is404(err) {
-// 			return false, nil
-// 		}
-// 		return false, err
-// 	}
-// 	return true, nil
-// }
-
-// func (bfs *BlobContainerShare) ContainerCreate(ctx context.Context) error {
-// 	cred, err := GetAzureCredentials(bfs.Credentials)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	serviceUrl := fmt.Sprintf("https://%s.%s/", bfs.StorageAccountName, "blob.core.usgovcloudapi.net")
-// 	client, err := azblob.NewServiceClient(serviceUrl,cred, &azblob.ClientOptions{} )
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	metadata := map[string]string{
-// 		"Drive_name":        "Personal",
-// 		"Drive_owner":       bfs.UPN,
-// 		"Drive_description": "Your personal drive. Keep personal files here",
-// 	}
-
-// 	client.CreateContainer(ctx, bfs.ContainerName, &azblob.ContainerCreateOptions{
-// 		Metadata: metadata,
-// 	})
-
-// 	_, err = client.Create(ctx,
-// 		bfs.ResourceGroupName,
-// 		bfs.StorageAccountName,
-// 		bfs.ContainerName,
-// 		armstorage.BlobContainer{
-// 			ContainerProperties: &armstorage.ContainerProperties{
-// 				PublicAccess:          to.Ptr(armstorage.PublicAccessNone),
-// 				EnableNfsV3RootSquash: to.Ptr(false),
-// 				Metadata:              metadata,
-// 			},
-// 		},
-// 		nil)
-
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
-// func (bfs *BlobContainerShare) ContainerCreate2(ctx context.Context) error {
-// 	cred, err := GetAzureCredentials(bfs.Credentials)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	blobContainerClient, err := armstorage.NewBlobContainersClient(bfs.SubscriptionID,
-// 		cred,
-// 		&arm.ClientOptions{
-// 			ClientOptions: policy.ClientOptions{
-// 				Cloud: cloud.AzureGovernment,
-// 			},
-// 		})
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	metadata := map[string]*string{
-// 		"Drive_name":        to.Ptr("Personal"),
-// 		"Drive_owner":       to.Ptr(bfs.UPN),
-// 		"Drive_description": to.Ptr("Your personal drive. Keep personal files here"),
-// 	}
-
-// 	_, err = blobContainerClient.Create(ctx,
-// 		bfs.ResourceGroupName,
-// 		bfs.StorageAccountName,
-// 		bfs.ContainerName,
-// 		armstorage.BlobContainer{
-// 			ContainerProperties: &armstorage.ContainerProperties{
-// 				PublicAccess:          to.Ptr(armstorage.PublicAccessNone),
-// 				EnableNfsV3RootSquash: to.Ptr(false),
-// 				Metadata:              metadata,
-// 			},
-// 		},
-// 		nil)
-
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
 
 func (bfs *BlobContainerShare) Create(ctx context.Context, key string, tags map[string]string) (*storage.FileShare, error) {
 	// Create the file share if necessary

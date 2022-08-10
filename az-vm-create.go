@@ -213,11 +213,10 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 		return err
 	}
 
-	sizeResource, err := vmc.GetVMSize(ctx, vm.Size.Size)
-	if err != nil {
+	if vm.Size == nil {
 		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
 	}
-	acceleratedNetworking := sizeResource.AcceleratedNetworking
+	acceleratedNetworking := vm.Size.AcceleratedNetworking
 
 	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
@@ -335,8 +334,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	adminPassword := vm.Credientials.AdminPassword
 	sshKey := vm.Credientials.SSHKey
 
-	sizeResource, err := vmc.GetVMSize(ctx, string(*vmSize))
-	if err != nil {
+	if vm.Size == nil {
 		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
 	}
 
@@ -353,7 +351,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 
 	// Configure Disk type
 	diskType := armcompute.StorageAccountTypesStandardLRS
-	if sizeResource.PremiumIO {
+	if vm.Size.PremiumIO {
 		diskType = armcompute.StorageAccountTypesPremiumLRS
 	}
 
@@ -435,7 +433,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		// 	azErr.RawResponse.Body
 		// }
 
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
@@ -709,7 +707,7 @@ func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*clou
 		}
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("size not found: %v", size)
 }
 
 func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {

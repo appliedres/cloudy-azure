@@ -72,8 +72,8 @@ func TestLinuxVMCreate(t *testing.T) {
 	vmConfig := &cloudyvm.VirtualMachineConfiguration{
 		ID:   "uvm-gotest",
 		Name: "uvm-gotest",
-		Size: &cloudyvm.VmSize{
-			Size: "Standard_DS1_v2",
+		SizeRequest: &cloudyvm.VmSizeRequest{
+			SpecificSize: "Standard_DS1_v2",
 		},
 		OSType:       "linux",
 		Image:        "canonical::ubuntuserver::19.04",
