@@ -191,7 +191,7 @@ func TestWindowsVMCreate(t *testing.T) {
 			Size: "Standard_DS1_v2",
 		},
 		OSType:       "windows",
-		Image:        "MicrosoftWindowsDesktop::Windows-10::win10-21h1-ent",
+		Image:        "MicrosoftWindowsDesktop::Windows-10::21h1-ent",
 		ImageVersion: "latest",
 		Credientials: cloudyvm.Credientials{
 			AdminUser:     "testadmin",

@@ -515,6 +515,25 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	sizeinGB := int32(1000) //Look up
 
 	client := vmc.Client
+
+	imageReference := &armcompute.ImageReference{
+		Version: to.Ptr(vm.ImageVersion),
+	}
+	if vm.ImageVersion == "" {
+		imageReference.Version = to.Ptr("latest")
+	}
+
+	if strings.Contains(vm.Image, "::") {
+		parts := strings.Split(vm.Image, "::")
+		if len(parts) == 3 {
+			imageReference.Publisher = to.Ptr(parts[0])
+			imageReference.Offer = to.Ptr(parts[1])
+			imageReference.SKU = to.Ptr(parts[2])
+		}
+	} else {
+		imageReference.SharedGalleryImageID = to.Ptr(imageId)
+	}
+
 	poller, err := client.BeginCreateOrUpdate(
 		ctx,
 		resourceGroup,
@@ -530,9 +549,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 				},
 
 				StorageProfile: &armcompute.StorageProfile{
-					ImageReference: &armcompute.ImageReference{
-						SharedGalleryImageID: &imageId,
-					},
+					ImageReference: imageReference,
 					OSDisk: &armcompute.OSDisk{
 						DiskSizeGB:   to.Ptr(sizeinGB),
 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
