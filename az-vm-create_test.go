@@ -135,7 +135,7 @@ func TestLinuxVMCreate(t *testing.T) {
 		// assert.Nil(t, err)
 		// session.Close()
 
-		err = vmc.DeleteVM(ctx, vmConfig.Name)
+		err = vmc.DeleteVM(ctx, vmConfig)
 		assert.Nil(t, err)
 	}
 
@@ -219,7 +219,7 @@ func TestWindowsVMCreate(t *testing.T) {
 	assert.Nil(t, err)
 
 	if err == nil {
-		err = vmc.DeleteVM(ctx, vmConfig.Name)
+		err = vmc.DeleteVM(ctx, vmConfig)
 		assert.Nil(t, err)
 	}
 
