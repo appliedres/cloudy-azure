@@ -596,6 +596,11 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	if err != nil {
 		cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
+
+	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
+		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
+	}
+
 	cloudy.Info(ctx, "Created VM ID: %v", *resp.VirtualMachine.ID)
 	return nil
 }
