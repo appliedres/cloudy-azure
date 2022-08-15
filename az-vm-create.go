@@ -582,11 +582,12 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 		nil,
 	)
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
+
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
 	cloudy.Info(ctx, "Created VM ID: %v", *resp.VirtualMachine.ID)
 	return nil
