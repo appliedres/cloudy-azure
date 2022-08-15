@@ -355,23 +355,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		diskType = armcompute.StorageAccountTypesPremiumLRS
 	}
 
-	imageReference := &armcompute.ImageReference{
-		Version: to.Ptr(vm.ImageVersion),
-	}
-	if vm.ImageVersion == "" {
-		imageReference.Version = to.Ptr("latest")
-	}
-
-	if strings.Contains(vm.Image, "::") {
-		parts := strings.Split(vm.Image, "::")
-		if len(parts) == 3 {
-			imageReference.Publisher = to.Ptr(parts[0])
-			imageReference.Offer = to.Ptr(parts[1])
-			imageReference.SKU = to.Ptr(parts[2])
-		}
-	} else {
-		imageReference.SharedGalleryImageID = to.Ptr(imageId)
-	}
+	imageReference := parseImageReference(vm, imageId)
 
 	client := vmc.Client
 	poller, err := client.BeginCreateOrUpdate(
@@ -439,11 +423,16 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	if err != nil {
 		cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
+
+	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
+		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
+	}
+
 	cloudy.Info(ctx, "Created VM ID: %v - %v - %v", *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
 	return nil
 }
 
-func (vmc *AzureVMController) DeleteVM(ctx context.Context, vmName string) error {
+func (vmc *AzureVMController) DeleteVM(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 	// Try to terminate the VM if it is running
 	// resp, err := vmc.Client.Get(ctx, vmc.Config.ResourceGroup, vmName, nil)
 	// if err != nil {
@@ -451,21 +440,56 @@ func (vmc *AzureVMController) DeleteVM(ctx context.Context, vmName string) error
 	// 	return err
 	// }
 
-	poller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	vmName := vm.Name
+
+	deallocatePoller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vmName, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to terminate: %v", err)
+		cloudy.Error(ctx, "failed to obtain a response: %v", err)
 		return err
 	}
-	_, err = poller.PollUntilDone(ctx, nil)
+	_, err = deallocatePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to terminate: %v", err)
+		cloudy.Error(ctx, "failed to deallocate: %v", err)
 		return err
 	}
 
-	_, err = vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	deletePoller, err := vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vmName, nil)
 	if err != nil {
 		cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
+
+	_, err = deletePoller.PollUntilDone(ctx, nil)
+	if err != nil {
+		cloudy.Error(ctx, "failed to delete: %v", err)
+		return err
+	}
+
+	vmc.DeleteVMOSDisk(ctx, vm)
+
+	return err
+}
+
+func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
+	diskClient, err := armcompute.NewDisksClient(vmc.Config.SubscriptionID, vmc.cred,
+		&arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Cloud: cloud.AzureGovernment,
+			},
+		})
+	if err != nil {
+		cloudy.Error(ctx, "failed to create disks client: %v", err)
+	}
+
+	pollerResponse, err := diskClient.BeginDelete(ctx, vmc.Config.ResourceGroup, vm.OSDisk.Name, nil)
+	if err != nil {
+		cloudy.Error(ctx, "failed to terminate: %v", err)
+	}
+
+	_, err = pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+	}
+
 	return err
 }
 
@@ -516,23 +540,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 
 	client := vmc.Client
 
-	imageReference := &armcompute.ImageReference{
-		Version: to.Ptr(vm.ImageVersion),
-	}
-	if vm.ImageVersion == "" {
-		imageReference.Version = to.Ptr("latest")
-	}
-
-	if strings.Contains(vm.Image, "::") {
-		parts := strings.Split(vm.Image, "::")
-		if len(parts) == 3 {
-			imageReference.Publisher = to.Ptr(parts[0])
-			imageReference.Offer = to.Ptr(parts[1])
-			imageReference.SKU = to.Ptr(parts[2])
-		}
-	} else {
-		imageReference.SharedGalleryImageID = to.Ptr(imageId)
-	}
+	imageReference := parseImageReference(vm, imageId)
 
 	poller, err := client.BeginCreateOrUpdate(
 		ctx,
@@ -589,6 +597,11 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	if err != nil {
 		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
 	}
+
+	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
+		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
+	}
+
 	cloudy.Info(ctx, "Created VM ID: %v", *resp.VirtualMachine.ID)
 	return nil
 }
@@ -735,6 +748,28 @@ func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
 		}
 	}
 	return nil
+}
+
+func parseImageReference(vm *cloudyvm.VirtualMachineConfiguration, imageId string) *armcompute.ImageReference {
+	imageReference := &armcompute.ImageReference{
+		Version: to.Ptr(vm.ImageVersion),
+	}
+	if vm.ImageVersion == "" {
+		imageReference.Version = to.Ptr("latest")
+	}
+
+	if strings.Contains(vm.Image, "::") {
+		parts := strings.Split(vm.Image, "::")
+		if len(parts) == 3 {
+			imageReference.Publisher = to.Ptr(parts[0])
+			imageReference.Offer = to.Ptr(parts[1])
+			imageReference.SKU = to.Ptr(parts[2])
+		}
+	} else {
+		imageReference.SharedGalleryImageID = to.Ptr(imageId)
+	}
+
+	return imageReference
 }
 
 func SizeFromResource(ctx context.Context, res *armcompute.ResourceSKU) *cloudyvm.VmSize {
