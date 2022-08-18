@@ -109,6 +109,7 @@ func (bfs *BlobContainerShare) Get(ctx context.Context, key string) (*storage.Fi
 }
 
 func (bfs *BlobContainerShare) Exists(ctx context.Context, key string) (bool, error) {
+	key = sanitizeContainerName(key)
 	client, err := bfs.Client.NewContainerClient(key)
 	if err != nil {
 		return false, err
@@ -134,6 +135,7 @@ func (bfs *BlobContainerShare) Create(ctx context.Context, key string, tags map[
 	// 	--enabled-protocol NFS
 	// 	--root-squash NoRootSquash
 	// 	--quota 100
+	key = sanitizeContainerName(key)
 	client, err := bfs.Client.NewContainerClient(key)
 	if err != nil {
 		return nil, err
@@ -155,6 +157,7 @@ func (bfs *BlobContainerShare) Create(ctx context.Context, key string, tags map[
 }
 
 func (bfs *BlobContainerShare) Delete(ctx context.Context, key string) error {
+	key = sanitizeContainerName(key)
 	client, err := bfs.Client.NewContainerClient(key)
 	if err != nil {
 		return err

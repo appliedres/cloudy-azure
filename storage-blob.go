@@ -89,6 +89,7 @@ func (sa *BlobStorageAccount) Exists(ctx context.Context, key string) (bool, err
 }
 
 func (sa *BlobStorageAccount) Get(ctx context.Context, key string) (storage.ObjectStorage, error) {
+	key = sanitizeContainerName(key)
 	containerClient, err := sa.Client.NewContainerClient(key)
 	if err != nil {
 		return nil, err
@@ -134,6 +135,7 @@ func (sa *BlobStorageAccount) Create(ctx context.Context, key string, openToPubl
 	}
 
 	// Created
+	key = sanitizeContainerName(key)
 	containerClient, err := sa.Client.NewContainerClient(key)
 	if err != nil {
 		return nil, err
@@ -171,6 +173,7 @@ func NewBlobContainer(ctx context.Context, account string, accountKey string, co
 		return nil, err
 	}
 
+	container = sanitizeContainerName(container)
 	c, err := bsa.Client.NewContainerClient(container)
 	if err != nil {
 		return nil, err

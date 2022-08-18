@@ -2,6 +2,7 @@ package cloudyazure
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -18,4 +19,11 @@ func is404(err error) bool {
 		return true
 	}
 	return false
+}
+
+func sanitizeContainerName(name string) string {
+	name = strings.ReplaceAll(name, ".", "-")
+	name = strings.ReplaceAll(name, "'", "-")
+
+	return name
 }
