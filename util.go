@@ -21,7 +21,7 @@ func is404(err error) bool {
 	return false
 }
 
-func sanitizeContainerName(name string) string {
+func sanitizeName(name string) string {
 	name = strings.ReplaceAll(name, ".", "-")
 	name = strings.ReplaceAll(name, "'", "-")
 

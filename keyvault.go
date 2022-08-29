@@ -69,12 +69,16 @@ func (k *KeyVault) Configure(ctx context.Context) error {
 }
 
 func (k *KeyVault) SaveSecretBinary(ctx context.Context, key string, secret []byte) error {
+	key = sanitizeName(key)
+
 	// Convert the binary to base64
 	secretStr := base64.StdEncoding.EncodeToString(secret)
 	return k.SaveSecret(ctx, key, secretStr)
 }
 
 func (k *KeyVault) GetSecretBinary(ctx context.Context, key string) ([]byte, error) {
+	key = sanitizeName(key)
+
 	secretStr, err := k.GetSecret(ctx, key)
 	if err != nil {
 		return nil, err
@@ -86,6 +90,8 @@ func (k *KeyVault) GetSecretBinary(ctx context.Context, key string) ([]byte, err
 }
 
 func (k *KeyVault) GetSecret(ctx context.Context, key string) (string, error) {
+	key = sanitizeName(key)
+
 	resp, err := k.Client.GetSecret(ctx, key, "", nil)
 
 	if err != nil {
@@ -99,12 +105,16 @@ func (k *KeyVault) GetSecret(ctx context.Context, key string) (string, error) {
 }
 
 func (k *KeyVault) SaveSecret(ctx context.Context, key string, data string) error {
+	key = sanitizeName(key)
+
 	_, err := k.Client.SetSecret(ctx, key,
 		azsecrets.SetSecretParameters{Value: &data}, nil)
 	return err
 }
 
 func (k *KeyVault) DeleteSecret(ctx context.Context, key string) error {
+	key = sanitizeName(key)
+
 	_, err := k.Client.DeleteSecret(ctx, key, nil)
 
 	if err != nil {

@@ -64,7 +64,7 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 
 	// Not always necessary but needed for creation
-	cfg.NetworkResourceGroup = cfg.ResourceGroup
+	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")
 	cfg.SourceImageGalleryName = env.Force("AZ_SOURCE_IMAGE_GALLERY_NAME")
 	cfg.Vnet = env.Force("AZ_VNET")
 	cfg.NetworkSecurityGroupName = env.Force("AZ_NETWORK_SECURITY_GROUP_NAME")

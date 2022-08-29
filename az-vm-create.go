@@ -28,21 +28,28 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 	}
 
 	// Check / Create the Network Security Group
+	cloudy.Info(ctx, "[%s] Starting FindBestSubnet: %s", vm.ID, vmc.Config.AvailableSubnets)
 	subnetId, err := vmc.FindBestSubnet(ctx, vmc.Config.AvailableSubnets)
 	if err != nil {
 		return vm, err
 	}
+	if subnetId == "" {
+		return vm, fmt.Errorf("no available subnets")
+	}
 
 	// Check / Create the Network Interface
+	cloudy.Info(ctx, "[%s] Starting CreateNIC", vm.ID)
 	err = vmc.CreateNIC(ctx, vm, subnetId)
 	if err != nil {
 		return vm, err
 	}
 
-	if strings.EqualFold(vm.OSType, "linux") {
+	if strings.Contains(strings.ToLower(vm.OSType), "linux") {
+		cloudy.Info(ctx, "[%s] Starting CreateLinuxVirtualMachine", vm.ID)
 		err = vmc.CreateLinuxVirtualMachine(ctx, vm)
 		return vm, err
 	} else if strings.EqualFold(vm.OSType, "windows") {
+		cloudy.Info(ctx, "[%s] Starting CreateWindowsVirtualMachine", vm.ID)
 		err = vmc.CreateWindowsVirtualMachine(ctx, vm)
 		return vm, err
 	}
@@ -51,7 +58,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 }
 
 func (vmc *AzureVMController) ValidateConfiguration(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
-	if strings.EqualFold(vm.OSType, "linux") {
+	if strings.Contains(strings.ToLower(vm.OSType), "linux") {
 	} else if strings.EqualFold(vm.OSType, "windows") {
 	} else {
 		return cloudy.Error(ctx, "invalid OS Type: %v, cannot create vm", vm.OSType)
@@ -68,6 +75,7 @@ func (vmc *AzureVMController) FindBestSubnet(ctx context.Context, availableSubne
 		if err != nil {
 			return "", err
 		}
+		cloudy.Info(ctx, "Available IPs for subnet %s: %d", subnet, available)
 
 		if available > 0 {
 			return subnet, nil
@@ -206,7 +214,7 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	// nicName := fmt.Sprintf("%v-%v", vm.ID, random)
 	nicName := fmt.Sprintf("%v-nic-primary", vm.ID)
 	region := vmc.Config.Region
-	rg := vmc.Config.ResourceGroup
+	rg := vmc.Config.NetworkResourceGroup
 
 	nsg, err := vmc.GetNSG(ctx, vmc.Config.NetworkSecurityGroupName)
 	if err != nil {
@@ -328,7 +336,10 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	vmName := vm.ID
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	vmSize := findVmSize(vm.Size.Size)
+	vmSize := findVmSize(vm.Size.Name)
+	if vmSize == nil {
+		return fmt.Errorf("no matching VM size for %s", vm.Size.Name)
+	}
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
@@ -358,6 +369,8 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	imageReference := parseImageReference(vm, imageId)
 
 	client := vmc.Client
+	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]", vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, adminUser, vm.PrimaryNetwork.ID)
+
 	poller, err := client.BeginCreateOrUpdate(
 		ctx,
 		resourceGroup,
@@ -532,7 +545,10 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	vmName := vm.ID
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	vmSize := findVmSize(vm.Size.Size)
+	vmSize := findVmSize(vm.Size.Name)
+	if vmSize == nil {
+		return fmt.Errorf("no matching VM size for %s", vm.Size.Name)
+	}
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
@@ -752,10 +768,7 @@ func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
 
 func parseImageReference(vm *cloudyvm.VirtualMachineConfiguration, imageId string) *armcompute.ImageReference {
 	imageReference := &armcompute.ImageReference{
-		Version: to.Ptr(vm.ImageVersion),
-	}
-	if vm.ImageVersion == "" {
-		imageReference.Version = to.Ptr("latest")
+		// Version: to.Ptr(vm.ImageVersion), "The property 'imageReference.id' cannot be used together with property 'imageReference.version'."
 	}
 
 	if strings.Contains(vm.Image, "::") {
