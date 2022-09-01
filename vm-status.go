@@ -35,6 +35,8 @@ type AzureVMControllerConfig struct {
 	NetworkSecurityGroupID   string   // From Environment Variable
 	SaltCmd                  string
 	VaultURL                 string
+
+	LogBody bool
 }
 
 type AzureVMController struct {
@@ -73,6 +75,11 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 
 	subnets := env.Force("SUBNETS") //SUBNET1,SUBNET2
 	cfg.AvailableSubnets = strings.Split(subnets, ",")
+
+	logBody, got := env.Get("AZ_LOG_BODY")
+	if got && strings.ToUpper(logBody) == "TRUE" {
+		cfg.LogBody = true
+	}
 
 	return cfg, nil
 }

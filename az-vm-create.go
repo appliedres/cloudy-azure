@@ -335,6 +335,11 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	imageVersion := vm.ImageVersion
 	vmName := vm.ID
 
+	tags := map[string]*string{}
+	for k, v := range vm.Tags {
+		tags[k] = to.Ptr(v)
+	}
+
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
 	vmSize := findVmSize(vm.Size.Name)
 	if vmSize == nil {
@@ -342,7 +347,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	}
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
-	adminPassword := vm.Credientials.AdminPassword
+	//adminPassword := vm.Credientials.AdminPassword
 	sshKey := vm.Credientials.SSHKey
 
 	if vm.Size == nil {
@@ -379,6 +384,10 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 			Name:     to.Ptr(vmName),
 			Location: to.Ptr(region),
 
+			Identity: &armcompute.VirtualMachineIdentity{
+				Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
+			},
+
 			Properties: &armcompute.VirtualMachineProperties{
 
 				HardwareProfile: &armcompute.HardwareProfile{
@@ -390,6 +399,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 					OSDisk: &armcompute.OSDisk{
 						OSType:       to.Ptr(armcompute.OperatingSystemTypesLinux),
 						DiskSizeGB:   to.Ptr(sizeinGB),
+						Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 						ManagedDisk: &armcompute.ManagedDiskParameters{
 							StorageAccountType: to.Ptr(diskType),
@@ -400,8 +410,9 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 				OSProfile: &armcompute.OSProfile{
 					ComputerName:  to.Ptr(vmName),
 					AdminUsername: to.Ptr(adminUser),
-					AdminPassword: to.Ptr(adminPassword),
+					//AdminPassword: to.Ptr(adminPassword),
 					LinuxConfiguration: &armcompute.LinuxConfiguration{
+						DisablePasswordAuthentication: to.Ptr(true),
 						SSH: &armcompute.SSHConfiguration{
 							PublicKeys: []*armcompute.SSHPublicKey{
 								{
@@ -410,7 +421,9 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 								},
 							},
 						},
+						ProvisionVMAgent: to.Ptr(true),
 					},
+					AllowExtensionOperations: to.Ptr(true),
 				},
 
 				NetworkProfile: &armcompute.NetworkProfile{
@@ -421,6 +434,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 					},
 				},
 			},
+			Tags: tags,
 		},
 		nil,
 	)
@@ -544,6 +558,11 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	imageVersion := vm.ImageVersion
 	vmName := vm.ID
 
+	tags := map[string]*string{}
+	for k, v := range vm.Tags {
+		tags[k] = to.Ptr(v)
+	}
+
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
 	vmSize := findVmSize(vm.Size.Name)
 	if vmSize == nil {
@@ -602,6 +621,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 					},
 				},
 			},
+			Tags: tags,
 		},
 		nil,
 	)
@@ -779,7 +799,7 @@ func parseImageReference(vm *cloudyvm.VirtualMachineConfiguration, imageId strin
 			imageReference.SKU = to.Ptr(parts[2])
 		}
 	} else {
-		imageReference.SharedGalleryImageID = to.Ptr(imageId)
+		imageReference.ID = to.Ptr(imageId)
 	}
 
 	return imageReference

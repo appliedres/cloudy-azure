@@ -26,6 +26,9 @@ func NewVMClient(ctx context.Context, config *AzureVMControllerConfig) (*armcomp
 		&arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
 				Cloud: cloud.AzureGovernment,
+				Logging: policy.LogOptions{
+					IncludeBody: config.LogBody,
+				},
 			},
 		})
 
