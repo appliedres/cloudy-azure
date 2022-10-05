@@ -27,30 +27,48 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		return vm, err
 	}
 
-	// Check / Create the Network Security Group
-	cloudy.Info(ctx, "[%s] Starting FindBestSubnet: %s", vm.ID, vmc.Config.AvailableSubnets)
-	subnetId, err := vmc.FindBestSubnet(ctx, vmc.Config.AvailableSubnets)
+	// Check if NIC already exists
+	cloudy.Info(ctx, "[%s] Starting GetNIC", vm.ID)
+	network, err := vmc.GetNIC(ctx, vm)
 	if err != nil {
-		return vm, err
-	}
-	if subnetId == "" {
-		return vm, fmt.Errorf("no available subnets")
+		cloudy.Error(ctx, "[%s] Error looking for NIC: %s", vm.ID, err.Error())
 	}
 
-	// Check / Create the Network Interface
-	cloudy.Info(ctx, "[%s] Starting CreateNIC", vm.ID)
-	err = vmc.CreateNIC(ctx, vm, subnetId)
-	if err != nil {
-		return vm, err
+	if network != nil {
+		cloudy.Info(ctx, "[%s] Using existing NIC: %s", vm.ID, network.ID)
+		vm.PrimaryNetwork = network
+	} else {
+		// Check / Create the Network Security Group
+		cloudy.Info(ctx, "[%s] Starting FindBestSubnet: %s", vm.ID, vmc.Config.AvailableSubnets)
+		subnetId, err := vmc.FindBestSubnet(ctx, vmc.Config.AvailableSubnets)
+		if err != nil {
+			return vm, err
+		}
+		if subnetId == "" {
+			return vm, fmt.Errorf("no available subnets")
+		}
+
+		// Check / Create the Network Interface
+		cloudy.Info(ctx, "[%s] Starting CreateNIC", vm.ID)
+		err = vmc.CreateNIC(ctx, vm, subnetId)
+		if err != nil {
+			return vm, err
+		}
 	}
 
 	if strings.Contains(strings.ToLower(vm.OSType), "linux") {
 		cloudy.Info(ctx, "[%s] Starting CreateLinuxVirtualMachine", vm.ID)
 		err = vmc.CreateLinuxVirtualMachine(ctx, vm)
+		if err != nil {
+			cloudy.Error(ctx, "[%s] CreateLinuxVirtualMachine err: %s", vm.ID, err.Error())
+		}
 		return vm, err
 	} else if strings.EqualFold(vm.OSType, "windows") {
 		cloudy.Info(ctx, "[%s] Starting CreateWindowsVirtualMachine", vm.ID)
 		err = vmc.CreateWindowsVirtualMachine(ctx, vm)
+		if err != nil {
+			cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
+		}
 		return vm, err
 	}
 
@@ -280,6 +298,44 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	return nil
 }
 
+// Find NIC if it already exists
+func (vmc *AzureVMController) GetNIC(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineNetwork, error) {
+	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	opts := &armnetwork.InterfacesClientListAllOptions{}
+
+	pager := nicClient.NewListAllPager(opts)
+
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, nic := range resp.Value {
+			// Match by name
+			if nic.Name != nil && strings.Contains(*nic.Name, vm.ID) {
+				network := &cloudyvm.VirtualMachineNetwork{
+					ID:        *nic.ID,
+					Name:      *nic.Name,
+					PrivateIP: *nic.Properties.IPConfigurations[0].Properties.PrivateIPAddress,
+				}
+
+				return network, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
 func (vmc *AzureVMController) DeleteNIC(ctx context.Context, nicName string) error {
 	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
@@ -341,10 +397,14 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	}
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	vmSize := findVmSize(vm.Size.Name)
+	// TODO: SDK does not include all possible sizes, need to make dynamic
+	/* vmSize := findVmSize(vm.Size.Name)
 	if vmSize == nil {
 		return fmt.Errorf("no matching VM size for %s", vm.Size.Name)
-	}
+	}*/
+
+	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
+
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	//adminPassword := vm.Credientials.AdminPassword
@@ -391,7 +451,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 			Properties: &armcompute.VirtualMachineProperties{
 
 				HardwareProfile: &armcompute.HardwareProfile{
-					VMSize: vmSize,
+					VMSize: &vmSize,
 				},
 
 				StorageProfile: &armcompute.StorageProfile{

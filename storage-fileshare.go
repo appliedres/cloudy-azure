@@ -139,9 +139,9 @@ func (bfs *BlobFileShare) Create(ctx context.Context, key string, tags map[strin
 		key,
 		armstorage.FileShare{
 			FileShareProperties: &armstorage.FileShareProperties{
-				// ShareQuota:       to.Ptr(int32(100)),
-				RootSquash: to.Ptr(armstorage.RootSquashTypeNoRootSquash),
-				// EnabledProtocols: to.Ptr(armstorage.EnabledProtocolsNFS),
+				ShareQuota:       to.Ptr(int32(100)),
+				RootSquash:       to.Ptr(armstorage.RootSquashTypeNoRootSquash),
+				EnabledProtocols: to.Ptr(armstorage.EnabledProtocolsNFS),
 			}},
 		&armstorage.FileSharesClientCreateOptions{
 			Expand: nil,
