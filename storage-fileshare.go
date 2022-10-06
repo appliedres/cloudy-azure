@@ -92,6 +92,7 @@ func (bfs *BlobFileShare) List(ctx context.Context) ([]*storage.FileShare, error
 }
 
 func (bfs *BlobFileShare) Get(ctx context.Context, key string) (*storage.FileShare, error) {
+	key = sanitizeName(key)
 	resp, err := bfs.Client.Get(ctx, bfs.ResourceGroupName, bfs.StorageAccountName, key, &armstorage.FileSharesClientGetOptions{})
 	if err != nil {
 		return nil, err
@@ -110,7 +111,7 @@ func (bfs *BlobFileShare) Exists(ctx context.Context, key string) (bool, error) 
 	// 	-g $AZ_APP_RESOURCE_GROUP
 	// 	--storage-account $AZ_HOME_DIRS_STORAGE_ACCOUNT
 	// 	--name $UPN_short_lower
-
+	key = sanitizeName(key)
 	_, err := bfs.Client.Get(ctx, bfs.ResourceGroupName,
 		bfs.StorageAccountName, key, &armstorage.FileSharesClientGetOptions{})
 	if err != nil {
@@ -132,6 +133,8 @@ func (bfs *BlobFileShare) Create(ctx context.Context, key string, tags map[strin
 	// 	--enabled-protocol NFS
 	// 	--root-squash NoRootSquash
 	// 	--quota 100
+
+	key = sanitizeName(key)
 
 	resp, err := bfs.Client.Create(ctx,
 		bfs.ResourceGroupName,
@@ -160,6 +163,7 @@ func (bfs *BlobFileShare) Create(ctx context.Context, key string, tags map[strin
 }
 
 func (bfs *BlobFileShare) Delete(ctx context.Context, key string) error {
+	key = sanitizeName(key)
 	_, err := bfs.Client.Delete(ctx, bfs.ResourceGroupName, bfs.StorageAccountName, key, &armstorage.FileSharesClientDeleteOptions{})
 	return err
 }
