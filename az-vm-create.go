@@ -65,6 +65,8 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		return vm, err
 	} else if strings.EqualFold(vm.OSType, "windows") {
 		cloudy.Info(ctx, "[%s] Starting CreateWindowsVirtualMachine", vm.ID)
+		// Temp Overwrite of Admin Password to random string
+		vm.Credientials.AdminPassword = cloudy.GeneratePassword(16, 1, 1, 1)
 		err = vmc.CreateWindowsVirtualMachine(ctx, vm)
 		if err != nil {
 			cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
@@ -382,6 +384,7 @@ resource "azurerm_linux_virtual_machine" "main-vm" {
 }
 */
 func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
+
 	// Input Parameters
 	region := vmc.Config.Region
 	subscriptionId := vmc.Config.SubscriptionID
@@ -411,7 +414,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	sshKey := vm.Credientials.SSHKey
 
 	if vm.Size == nil {
-		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
+		return cloudy.Error(ctx, "[%s] Invalid VM Size %v", vm.ID, vm.Size)
 	}
 
 	// Configure Disk SIze
@@ -419,7 +422,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
 		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
 		if err != nil {
-			cloudy.Warn(ctx, "Invalid Size for OS Disk [%v] using defaul 30GB", vm.OSDisk.Size)
+			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
 		} else {
 			sizeinGB = int32(size)
 		}
@@ -504,11 +507,11 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		// 	azErr.RawResponse.Body
 		// }
 
-		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
@@ -624,18 +627,39 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 	}
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	vmSize := findVmSize(vm.Size.Name)
-	if vmSize == nil {
-		return fmt.Errorf("no matching VM size for %s", vm.Size.Name)
-	}
+	// TODO: SDK does not include all possible sizes, need to make dynamic
+	// vmSize := findVmSize(vm.Size.Name)
+	// if vmSize == nil {
+	// 	return cloudy.Error(ctx, "[%s] no matching VM size for %s", vm.ID, vm.Size.Name)
+	// }
+
+	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
+
 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
 	adminUser := vm.Credientials.AdminUser
 	adminPassword := vm.Credientials.AdminPassword
-	sizeinGB := int32(1000) //Look up
 
-	client := vmc.Client
+	// Configure Disk SIze
+	sizeinGB := int32(30)
+	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
+		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
+		if err != nil {
+			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
+		} else {
+			sizeinGB = int32(size)
+		}
+	}
+
+	// Configure Disk type
+	diskType := armcompute.StorageAccountTypesStandardLRS
+	if vm.Size.PremiumIO {
+		diskType = armcompute.StorageAccountTypesPremiumLRS
+	}
 
 	imageReference := parseImageReference(vm, imageId)
+
+	client := vmc.Client
+	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]", vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, adminUser, vm.PrimaryNetwork.ID)
 
 	poller, err := client.BeginCreateOrUpdate(
 		ctx,
@@ -648,17 +672,18 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 			Properties: &armcompute.VirtualMachineProperties{
 
 				HardwareProfile: &armcompute.HardwareProfile{
-					VMSize: vmSize,
+					VMSize: &vmSize,
 				},
 
 				StorageProfile: &armcompute.StorageProfile{
 					ImageReference: imageReference,
 					OSDisk: &armcompute.OSDisk{
+						OSType:       to.Ptr(armcompute.OperatingSystemTypesWindows),
 						DiskSizeGB:   to.Ptr(sizeinGB),
+						Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-						//TODO: Set storage_account_type = "Standard_LRS"
 						ManagedDisk: &armcompute.ManagedDiskParameters{
-							StorageAccountType: to.Ptr(armcompute.StorageAccountTypesStandardLRS),
+							StorageAccountType: to.Ptr(diskType),
 						},
 					},
 				},
@@ -686,19 +711,19 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 		nil,
 	)
 	if err != nil {
-		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		return cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
 	}
 
-	cloudy.Info(ctx, "Created VM ID: %v", *resp.VirtualMachine.ID)
+	cloudy.Info(ctx, "Created VM ID: %v - %v - %v", *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
 	return nil
 }
 
