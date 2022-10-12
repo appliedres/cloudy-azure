@@ -650,6 +650,13 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 		}
 	}
 
+	// the size of the corresponding disk in the VM image: 127 GB
+	// temporarilty setting minimum to 200 for wiggle room
+	minWindowsVMSize := int32(200)
+	if sizeinGB < minWindowsVMSize {
+		sizeinGB = minWindowsVMSize
+	}
+
 	// Configure Disk type
 	diskType := armcompute.StorageAccountTypesStandardLRS
 	if vm.Size.PremiumIO {
