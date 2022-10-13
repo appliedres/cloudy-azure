@@ -932,60 +932,52 @@ var WindowsSaltInstallCmd = `
 [CmdletBinding()]
 Param(
     [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$minion = "not-specified",
-
+    [string]$minionname = "not-specified",
     [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
     [string]$master = "not-specified",
-
+    [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+    [string]$winminiondownloadurl = "not-specified",
     [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$masterkey = "not-specified",
-
-    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$saltUrl = "not-specified",
-
-    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$defaultminionurl = "not-specified"
+    [string]$defaultminionconfigurl = "not-specified"
 )
+
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]'Tls12'
 $webclient = New-Object System.Net.WebClient
-New-Item C:\tmp\ -ItemType directory -Force | Out-Null
-# Download default minion 
-If ($defaultminionurl -ne "not-specified") {
-    $webclient.DownloadFile($defaultminionurl, 'c:\tmp\minion')
-}
-If (Test-Path C:\tmp\minion.pem) {
-    New-Item C:\salt\conf\pki\minion\ -ItemType Directory -Force | Out-Null
-    Copy-Item -Path C:\tmp\minion.pem -Destination C:\salt\conf\pki\minion\ -Force | Out-Null
-    Copy-Item -Path C:\tmp\minion.pub -Destination C:\salt\conf\pki\minion\ -Force | Out-Null
-    }
 
-If (Test-Path C:\tmp\minion) {
-    New-Item C:\salt\conf\ -ItemType Directory -Force | Out-Null
-    Copy-Item -Path C:\tmp\minion -Destination C:\salt\conf\ -Force | Out-Null
+# Download default minion config if specified
+If ($defaultminionconfigurl -ne "not-specified") {
+    $webclient.DownloadFile($defaultminionconfigurl, 'c:\windows\temp\minion')
 }
-If (Test-Path C:\tmp\grains) {
-    New-Item C:\salt\conf\ -ItemType Directory -Force | Out-Null
-    Copy-Item -Path C:\tmp\grains -Destination C:\salt\conf\ -Force | Out-Null
-}
-#dl/install
+
+# Download minion setup
 $saltExe = "Salt-Minion-Setup.exe"
-$file = "C:\tmp\$saltExe"
-If ($saltUrl -ne "not-specified") {$webclient.DownloadFile($saltUrl, $file)}
-$parameters = ""
-If ($minion -ne "not-specified") { $parameters = "/minion-name=$minion" }
-If ($master -ne "not-specified") { $parameters = "$parameters /master=$master" }
+$file = "C:\windows\temp\$saltExe"
+If ($winminiondownloadurl -ne "not-specified") {$webclient.DownloadFile($winminiondownloadurl, $file)}
+
+# build installer params
+$parameters = "/S "
+If ($defaultminionconfigurl -ne "not-specified") { $parameters += "/custom-config=c:\windows\temp\minion " }
+If ($master -ne "not-specified") { $parameters += "$parameters /master=$master " }
+If ($minionname -ne "not-specified") { $parameters += "$parameters /minion-name=$minionname " }
+
+# Install minion
 Write-Output "Salt Installing"
-Start-Process $file -ArgumentList "/S $parameters" -Wait -NoNewWindow -PassThru 
+Write-Output "$file $parameters"
+Start-Process $file -ArgumentList "$parameters" -Wait -NoNewWindow -PassThru 
 Write-Output "Salt Installed"
-#install service
+
+# Install service
 $service = Get-Service salt-minion -ErrorAction SilentlyContinue
 While (!$service) {
     Start-Sleep -s 2
     $service = Get-Service salt-minion -ErrorAction SilentlyContinue
 }
+
+# Start service and wait
 Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
 $try = 0
-While (($service.Status -ne "Running") -and ($try -ne 4)) {
+While (($service.Status -ne "Running") -and ($try -ne 10)) {
     Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
     $service = Get-Service salt-minion -ErrorAction SilentlyContinue
     Start-Sleep -s 2
