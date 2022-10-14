@@ -280,6 +280,9 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 					},
 				},
 			},
+			DNSSettings: &armnetwork.InterfaceDNSSettings{
+				DNSServers: vmc.Config.DomainControllers,
+			},
 		},
 	}, nil)
 	if err != nil {
@@ -706,11 +709,18 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
 						{
 							ID: to.Ptr(vm.PrimaryNetwork.ID),
-							Properties: &armcompute.NetworkInterfaceReferenceProperties{
-								Primary: to.Ptr(true),
-							},
 						},
 					},
+					// NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
+					// 	{
+					// 		Name: to.Ptr(fmt.Sprintf("%s-%s", vm.Name, cloudy.GenerateRandom(6))),
+					// 		Properties: &armcompute.VirtualMachineNetworkInterfaceConfigurationProperties{
+					// 			DNSSettings: &armcompute.VirtualMachineNetworkInterfaceDNSSettingsConfiguration{
+					// 				DNSServers: vmc.Config.DomainControllers,
+					// 			},
+					// 		},
+					// 	},
+					// },
 				},
 			},
 			Tags: tags,
@@ -726,6 +736,16 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
+	err = vmc.AddADJoinExtensionWindows(ctx, vm)
+	if err != nil {
+		return cloudy.Error(ctx, "[%s] failed to join AD domain: %v", vm.ID, err)
+	}
+
+	err = vmc.AddInstallSaltMinionExt(ctx, vm)
+	if err != nil {
+		return cloudy.Error(ctx, "[%s] failed to install salt minion: %v", vm.ID, err)
+	}
+
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
 	}
@@ -737,15 +757,15 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
 	if err != nil {
-		return cloudy.Error(ctx, "could not  read AdDomainName from vault, %v", err)
+		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
 	}
 	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
 	if err != nil {
-		return cloudy.Error(ctx, "could not  read AdDomainName from vault, %v", err)
+		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
 	}
 	AdJoinPassword, err := vmc.Vault.GetSecret(ctx, "AdJoinPassword")
 	if err != nil {
-		return cloudy.Error(ctx, "could not read AdJoinUser from vault, %v", err)
+		return cloudy.Error(ctx, "[%s] could not read AdJoinUser from vault, %v", vm.ID, err)
 	}
 
 	client, err := armcompute.NewVirtualMachineExtensionsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
@@ -754,7 +774,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 		},
 	})
 	if err != nil {
-		return cloudy.Error(ctx, "could not create extensions client")
+		return cloudy.Error(ctx, "[%s] could not create extensions client", vm.ID)
 	}
 
 	poller, err := client.BeginCreateOrUpdate(ctx, vmc.Config.ResourceGroup, vm.ID, "ADJoin", armcompute.VirtualMachineExtension{
@@ -776,13 +796,14 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 		},
 	}, nil)
 	if err != nil {
-		return cloudy.Error(ctx, "could not create adjoin extension: %v", err)
+		return cloudy.Error(ctx, "[%s] could not create adjoin extension: %v", vm.ID, err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
-	cloudy.Info(ctx, "Created ADJoin Extension: %v", *resp.ID)
+
+	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
 	return nil
 }
 
@@ -790,16 +811,18 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	// windowsSaltCommandb64 := "${base64encode(data.template_file.tfSalt.rendered)}"
 	windowsSaltCommandb64 := base64.StdEncoding.EncodeToString([]byte(WindowsSaltInstallCmd))
 	saltCmd := vmc.Config.SaltCmd
-	fullCmd := fmt.Sprintf("powershell -command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%v')) | Out-File -filepath install.ps1\" && powershell -ExecutionPolicy Unrestricted -File install.ps1 %s", windowsSaltCommandb64, saltCmd)
+	fullCmd := fmt.Sprintf("powershell -command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%v')) | Out-File -filepath c:\\windows\\temp\\install.ps1\" && powershell -ExecutionPolicy Unrestricted -File c:\\windows\\temp\\install.ps1 %s", windowsSaltCommandb64, saltCmd)
+
+	cloudy.Info(ctx, "[%s] saltCmd: %s", vm.ID, saltCmd)
 
 	// Look up from keyvault
 	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
 	if err != nil {
-		return cloudy.Error(ctx, "could not  read AdDomainName from vault, %v", err)
+		return cloudy.Error(ctx, "[%s] could not  read AdDomainName from vault, %v", vm.ID, err)
 	}
 	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
 	if err != nil {
-		return cloudy.Error(ctx, "could not  read AdDomainName from vault, %v", err)
+		return cloudy.Error(ctx, "[%s] could not  read AdDomainName from vault, %v", vm.ID, err)
 	}
 
 	client, err := armcompute.NewVirtualMachineExtensionsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
@@ -808,7 +831,7 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 		},
 	})
 	if err != nil {
-		return cloudy.Error(ctx, "could not create extensions client")
+		return cloudy.Error(ctx, "[%s] could not create extensions client", vm.ID)
 	}
 
 	poller, err := client.BeginCreateOrUpdate(ctx, vmc.Config.ResourceGroup, vm.ID, "SaltMinion", armcompute.VirtualMachineExtension{
@@ -830,13 +853,13 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 		},
 	}, nil)
 	if err != nil {
-		return cloudy.Error(ctx, "could not create adjoin extension: %v", err)
+		return cloudy.Error(ctx, "could not create adjoin extension: %v", vm.ID, err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
-	cloudy.Info(ctx, "Created ADJoin Extension: %v", *resp.ID)
+	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
 	return nil
 }
 

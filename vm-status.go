@@ -33,8 +33,10 @@ type AzureVMControllerConfig struct {
 	AvailableSubnets         []string // From Environment Variable
 	NetworkSecurityGroupName string   // From Environment Variable
 	NetworkSecurityGroupID   string   // From Environment Variable
-	SaltCmd                  string
+	SaltCmd                  string   // From Environment Variable
 	VaultURL                 string
+
+	DomainControllers []*string // From Environment Variable
 
 	LogBody bool
 }
@@ -64,6 +66,7 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 	cfg.ResourceGroup = env.Force("AZ_RESOURCE_GROUP")
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+	cfg.SaltCmd = env.Force(("SALT_CMD"))
 
 	// Not always necessary but needed for creation
 	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")
@@ -75,6 +78,11 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 
 	subnets := env.Force("SUBNETS") //SUBNET1,SUBNET2
 	cfg.AvailableSubnets = strings.Split(subnets, ",")
+
+	domainControllers := strings.Split(env.Force("DOMAIN_CONTROLLERS"), ",") // DC1, DC2
+	for i := range domainControllers {
+		cfg.DomainControllers = append(cfg.DomainControllers, &domainControllers[i])
+	}
 
 	logBody, got := env.Get("AZ_LOG_BODY")
 	if got && strings.ToUpper(logBody) == "TRUE" {
