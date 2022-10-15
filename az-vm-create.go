@@ -759,13 +759,31 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	if err != nil {
 		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
 	}
+
+	if AdDomainName == "" {
+		AdDomainName = cloudy.GetEnv("AD_DOMAIN_NAME", "")
+	}
+
 	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
 	if err != nil {
 		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
 	}
+
+	if AdJoinUser == "" {
+		AdJoinUser = cloudy.GetEnv("AD_JOIN_USER", "")
+	}
+
 	AdJoinPassword, err := vmc.Vault.GetSecret(ctx, "AdJoinPassword")
 	if err != nil {
 		return cloudy.Error(ctx, "[%s] could not read AdJoinUser from vault, %v", vm.ID, err)
+	}
+
+	if AdJoinPassword == "" {
+		AdJoinPassword = cloudy.GetEnv("AD_JOIN_PASSWORD", "")
+	}
+
+	if AdDomainName == "" || AdJoinUser == "" || AdJoinPassword == "" {
+		return cloudy.Error(ctx, "[%s] error loading ad details %s - %s - %s", vm.ID, AdDomainName, AdJoinUser, AdJoinPassword)
 	}
 
 	client, err := armcompute.NewVirtualMachineExtensionsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
@@ -818,11 +836,24 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	// Look up from keyvault
 	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
 	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not  read AdDomainName from vault, %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
 	}
+
+	if AdDomainName == "" {
+		AdDomainName = cloudy.GetEnv("AD_DOMAIN_NAME", "")
+	}
+
 	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
 	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not  read AdDomainName from vault, %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
+	}
+
+	if AdJoinUser == "" {
+		AdJoinUser = cloudy.GetEnv("AD_JOIN_USER", "")
+	}
+
+	if AdDomainName == "" || AdJoinUser == "" {
+		return cloudy.Error(ctx, "[%s] error loading ad details %s - %s", vm.ID, AdDomainName, AdJoinUser)
 	}
 
 	client, err := armcompute.NewVirtualMachineExtensionsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
