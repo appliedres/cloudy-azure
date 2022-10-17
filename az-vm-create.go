@@ -236,10 +236,10 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	region := vmc.Config.Region
 	rg := vmc.Config.NetworkResourceGroup
 
-	nsg, err := vmc.GetNSG(ctx, vmc.Config.NetworkSecurityGroupName)
-	if err != nil {
-		return err
-	}
+	// nsg, err := vmc.GetNSG(ctx, vmc.Config.NetworkSecurityGroupName)
+	// if err != nil {
+	// 	return err
+	// }
 
 	if vm.Size == nil {
 		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
@@ -271,9 +271,9 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 							// Name: to.Ptr(subnetId),
 							Properties: &armnetwork.SubnetPropertiesFormat{
 								// NetworkSecurityGroup: nsg,
-								NetworkSecurityGroup: &armnetwork.SecurityGroup{
-									ID: nsg.ID,
-								},
+								// NetworkSecurityGroup: &armnetwork.SecurityGroup{
+								// 	ID: nsg.ID,
+								// },
 							},
 						},
 						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
