@@ -257,6 +257,12 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 
 	fullSubId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s", vmc.Config.SubscriptionID, vmc.Config.NetworkResourceGroup, vmc.Config.Vnet, subnetId)
 
+	dnsServers := []*string{}
+
+	if strings.EqualFold(vm.OSType, "windows") {
+		dnsServers = vmc.Config.DomainControllers
+	}
+
 	poller, err := nicClient.BeginCreateOrUpdate(ctx, rg, nicName, armnetwork.Interface{
 		Location: &region,
 
@@ -281,7 +287,7 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 				},
 			},
 			DNSSettings: &armnetwork.InterfaceDNSSettings{
-				DNSServers: vmc.Config.DomainControllers,
+				DNSServers: dnsServers,
 			},
 		},
 	}, nil)
@@ -736,10 +742,10 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
-	err = vmc.AddADJoinExtensionWindows(ctx, vm)
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] failed to join AD domain: %v", vm.ID, err)
-	}
+	// err = vmc.AddADJoinExtensionWindows(ctx, vm)
+	// if err != nil {
+	// 	return cloudy.Error(ctx, "[%s] failed to join AD domain: %v", vm.ID, err)
+	// }
 
 	err = vmc.AddInstallSaltMinionExt(ctx, vm)
 	if err != nil {
