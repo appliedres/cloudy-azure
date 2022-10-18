@@ -218,7 +218,7 @@ func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 	}
 
 	var vmStatus *cloudyvm.VirtualMachineStatus
-	var err error = nil
+	var err error
 
 	if vmAction == cloudyvm.VirtualMachineStart {
 		err = VmStart(ctx, vmClient, vmName, resourceGroup, wait)

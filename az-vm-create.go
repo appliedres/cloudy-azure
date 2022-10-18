@@ -22,6 +22,7 @@ import (
 )
 
 func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
+	cloudy.Info(ctx, "[%s] Starting ValidateConfiguration", vm.ID)
 	err := vmc.ValidateConfiguration(ctx, vm)
 	if err != nil {
 		return vm, err
@@ -31,7 +32,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 	cloudy.Info(ctx, "[%s] Starting GetNIC", vm.ID)
 	network, err := vmc.GetNIC(ctx, vm)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] Error looking for NIC: %s", vm.ID, err.Error())
+		cloudy.Info(ctx, "[%s] Error looking for NIC: %s", vm.ID, err.Error())
 	}
 
 	if network != nil {
@@ -45,7 +46,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 			return vm, err
 		}
 		if subnetId == "" {
-			return vm, fmt.Errorf("no available subnets")
+			return vm, fmt.Errorf("[%s] no available subnets", vm.ID)
 		}
 
 		// Check / Create the Network Interface
@@ -60,7 +61,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		cloudy.Info(ctx, "[%s] Starting CreateLinuxVirtualMachine", vm.ID)
 		err = vmc.CreateLinuxVirtualMachine(ctx, vm)
 		if err != nil {
-			cloudy.Error(ctx, "[%s] CreateLinuxVirtualMachine err: %s", vm.ID, err.Error())
+			_ = cloudy.Error(ctx, "[%s] CreateLinuxVirtualMachine err: %s", vm.ID, err.Error())
 		}
 		return vm, err
 	} else if strings.EqualFold(vm.OSType, "windows") {
@@ -69,7 +70,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		vm.Credientials.AdminPassword = cloudy.GeneratePassword(16, 1, 1, 1)
 		err = vmc.CreateWindowsVirtualMachine(ctx, vm)
 		if err != nil {
-			cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
+			_ = cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
 		}
 		return vm, err
 	}
@@ -81,7 +82,7 @@ func (vmc *AzureVMController) ValidateConfiguration(ctx context.Context, vm *clo
 	if strings.Contains(strings.ToLower(vm.OSType), "linux") {
 	} else if strings.EqualFold(vm.OSType, "windows") {
 	} else {
-		return cloudy.Error(ctx, "invalid OS Type: %v, cannot create vm", vm.OSType)
+		return cloudy.Error(ctx, "[%s] invalid OS Type: %v, cannot create vm", vm.ID, vm.OSType)
 	}
 
 	return nil
@@ -242,7 +243,7 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	// }
 
 	if vm.Size == nil {
-		return cloudy.Error(ctx, "Invalid VM Size %v", vm.Size)
+		return cloudy.Error(ctx, "[%s] Invalid VM Size %v", vm.ID, vm.Size)
 	}
 	acceleratedNetworking := vm.Size.AcceleratedNetworking
 
@@ -527,7 +528,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
 	}
 
-	cloudy.Info(ctx, "Created VM ID: %v - %v - %v", *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
+	cloudy.Info(ctx, "[%s] Created VM ID: %v - %v - %v", vm.ID, *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
 	return nil
 }
 
@@ -541,29 +542,31 @@ func (vmc *AzureVMController) DeleteVM(ctx context.Context, vm *cloudyvm.Virtual
 
 	vmName := vm.Name
 
+	cloudy.Info(ctx, "[%s] Starting BeginDeallocate", vm.ID)
 	deallocatePoller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vmName, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 		return err
 	}
 	_, err = deallocatePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to deallocate: %v", err)
+		cloudy.Error(ctx, "[%s] failed to deallocate: %v", vm.ID, err)
 		return err
 	}
 
+	cloudy.Info(ctx, "[%s] Starting BeginDelete", vm.ID)
 	deletePoller, err := vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vmName, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	_, err = deletePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to delete: %v", err)
+		cloudy.Error(ctx, "[%s] failed to delete: %v", vm.ID, err)
 		return err
 	}
 
-	vmc.DeleteVMOSDisk(ctx, vm)
+	err = vmc.DeleteVMOSDisk(ctx, vm)
 
 	return err
 }
@@ -576,17 +579,18 @@ func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.V
 			},
 		})
 	if err != nil {
-		cloudy.Error(ctx, "failed to create disks client: %v", err)
+		cloudy.Error(ctx, "[%s] failed to create disks client: %v", vm.ID, err)
 	}
 
+	cloudy.Info(ctx, "[%s] Starting diskClient.BeginDelete", vm.ID)
 	pollerResponse, err := diskClient.BeginDelete(ctx, vmc.Config.ResourceGroup, vm.OSDisk.Name, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to terminate: %v", err)
+		cloudy.Error(ctx, "[%s] failed to terminate: %v", vm.ID, err)
 	}
 
 	_, err = pollerResponse.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	return err
@@ -717,16 +721,6 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 							ID: to.Ptr(vm.PrimaryNetwork.ID),
 						},
 					},
-					// NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
-					// 	{
-					// 		Name: to.Ptr(fmt.Sprintf("%s-%s", vm.Name, cloudy.GenerateRandom(6))),
-					// 		Properties: &armcompute.VirtualMachineNetworkInterfaceConfigurationProperties{
-					// 			DNSSettings: &armcompute.VirtualMachineNetworkInterfaceDNSSettingsConfiguration{
-					// 				DNSServers: vmc.Config.DomainControllers,
-					// 			},
-					// 		},
-					// 	},
-					// },
 				},
 			},
 			Tags: tags,
@@ -756,7 +750,7 @@ func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, v
 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
 	}
 
-	cloudy.Info(ctx, "Created VM ID: %v - %v - %v", *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
+	cloudy.Info(ctx, "[%s] Created VM ID: %v - %v - %v", vm.ID, *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
 	return nil
 }
 
@@ -890,11 +884,11 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 		},
 	}, nil)
 	if err != nil {
-		return cloudy.Error(ctx, "could not create adjoin extension: %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] could not create adjoin extension: %v", vm.ID, err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
 	return nil
