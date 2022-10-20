@@ -149,7 +149,7 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 	// 	return nil, nil
 	// }
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vmName, err)
 		// Not returning error since "Not Found" is an error
 		return nil, nil
 	}
@@ -245,12 +245,10 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 		ctx = cloudy.StartContext()
 	}
 
-	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
-
 	poller, err := vmClient.BeginStart(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
 
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
@@ -259,14 +257,13 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 			Frequency: 30 * time.Second,
 		})
 		if err != nil {
-			cloudy.Error(ctx, "failed to start the vm: %v", err)
+			cloudy.Error(ctx, "[%s] Failed to start the vm: %v", vmName, err)
 			return err
 		}
 
-		cloudy.Error(ctx, "start response")
-
-		return err
+		cloudy.Error(ctx, "[%s] Started", vmName)
 	}
+
 	return nil
 }
 
@@ -275,12 +272,10 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 		ctx = cloudy.StartContext()
 	}
 
-	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
-
 	poller, err := vmClient.BeginPowerOff(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginPowerOffOptions{})
 
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		_ = cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
@@ -289,13 +284,11 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 			Frequency: 30 * time.Second,
 		})
 		if err != nil {
-			cloudy.Error(ctx, "failed to start the vm: %v", err)
+			_ = cloudy.Error(ctx, "[%s] Failed to stop the vm: %v", vmName, err)
 			return err
 		}
 
-		cloudy.Info(ctx, "stop")
-
-		return err
+		cloudy.Info(ctx, "[%s] Stopped", vmName)
 	}
 
 	return nil
@@ -306,15 +299,16 @@ func VmCreate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 }
 
 func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
+	cloudy.Info(ctx, "[%s] Starting VmTerminate (cloudy-azure>vm-connection)", vmName)
+
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
-	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
 
 	poller, err := vmClient.BeginDeallocate(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
 
 	if err != nil {
-		cloudy.Error(ctx, "failed to obtain a response: %v", err)
+		_ = cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
@@ -323,13 +317,11 @@ func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient
 			Frequency: 30 * time.Second,
 		})
 		if err != nil {
-			cloudy.Error(ctx, "failed to start the vm: %v", err)
+			_ = cloudy.Error(ctx, "[%s] Failed to terminate the vm: %v", vmName, err)
 			return err
 		}
 
-		cloudy.Info(ctx, "terminate ")
-
-		return err
+		cloudy.Info(ctx, "[%s] terminated ", vmName)
 	}
 
 	return nil

@@ -103,7 +103,7 @@ func TestLinuxVMCreate(t *testing.T) {
 	assert.NotNil(t, vmConfig.PrimaryNetwork.Name)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.PrivateIP)
 
-	defer vmc.DeleteNIC(ctx, vmConfig.PrimaryNetwork.Name)
+	defer vmc.DeleteNIC(ctx, vmConfig.ID, vmConfig.PrimaryNetwork.Name)
 
 	// Test Create
 	err = vmc.CreateLinuxVirtualMachine(ctx, vmConfig)
@@ -212,7 +212,7 @@ func TestWindowsVMCreate(t *testing.T) {
 	assert.NotNil(t, vmConfig.PrimaryNetwork.Name)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.PrivateIP)
 
-	defer vmc.DeleteNIC(ctx, vmConfig.PrimaryNetwork.Name)
+	defer vmc.DeleteNIC(ctx, vmConfig.ID, vmConfig.PrimaryNetwork.Name)
 
 	// Test Create
 	err = vmc.CreateWindowsVirtualMachine(ctx, vmConfig)

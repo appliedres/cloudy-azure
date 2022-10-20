@@ -75,6 +75,7 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		return vm, err
 	}
 
+	// Why is this here?
 	return VmCreate(ctx, vmc.Client, vm)
 }
 
@@ -310,6 +311,40 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	return nil
 }
 
+func (vmc *AzureVMController) GetVmOsDisk(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineDisk, error) {
+	cloudy.Info(ctx, "[%s] Starting GetVmOsDisk Subscription: %s", vm.ID, vmc.Config.SubscriptionID)
+	diskClient, err := armcompute.NewDisksClient(vmc.Config.SubscriptionID, vmc.cred,
+		&arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Cloud: cloud.AzureGovernment,
+			},
+		})
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] failed to create disks client: %v", vm.ID, err)
+		return nil, err
+	}
+
+	pager := diskClient.NewListPager(&armcompute.DisksClientListOptions{})
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, disk := range nextResult.Value {
+			if disk.Name != nil && strings.Contains(*disk.Name, vm.ID) {
+				vmDisk := cloudyvm.VirtualMachineDisk{
+					Name: *disk.Name,
+				}
+
+				return &vmDisk, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
 // Find NIC if it already exists
 func (vmc *AzureVMController) GetNIC(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineNetwork, error) {
 	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
@@ -348,7 +383,7 @@ func (vmc *AzureVMController) GetNIC(ctx context.Context, vm *cloudyvm.VirtualMa
 	return nil, nil
 }
 
-func (vmc *AzureVMController) DeleteNIC(ctx context.Context, nicName string) error {
+func (vmc *AzureVMController) DeleteNIC(ctx context.Context, vmId string, nicName string) error {
 	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
@@ -357,7 +392,20 @@ func (vmc *AzureVMController) DeleteNIC(ctx context.Context, nicName string) err
 	if err != nil {
 		return err
 	}
-	_, err = nicClient.BeginDelete(ctx, vmc.Config.ResourceGroup, nicName, nil)
+
+	cloudy.Info(ctx, "[%s] Starting nicClient.BeginDelete '%s' '%s'", vmId, vmc.Config.NetworkResourceGroup, nicName)
+
+	poller, err := nicClient.BeginDelete(ctx, vmc.Config.NetworkResourceGroup, nicName, nil)
+	if err != nil {
+		_ = cloudy.Error(ctx, "failed to delete the nic: %v", err)
+		return err
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		_ = cloudy.Error(ctx, "failed to poll while deleting the nic: %v", err)
+	}
+
 	return err
 }
 
@@ -521,7 +569,7 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
@@ -532,46 +580,72 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	return nil
 }
 
-func (vmc *AzureVMController) DeleteVM(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
-	// Try to terminate the VM if it is running
-	// resp, err := vmc.Client.Get(ctx, vmc.Config.ResourceGroup, vmName, nil)
-	// if err != nil {
-	// 	cloudy.Error(ctx, "failed to obtain a response: %v", err)
-	// 	return err
-	// }
-
-	vmName := vm.Name
+func (vmc *AzureVMController) Delete(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
+	cloudy.Info(ctx, "[%s] Starting Delete (az-vm-create)", vm.ID)
 
 	cloudy.Info(ctx, "[%s] Starting BeginDeallocate", vm.ID)
-	deallocatePoller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	deallocatePoller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vm.ID, nil)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
-		return err
+		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		return nil, err
 	}
 	_, err = deallocatePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to deallocate: %v", vm.ID, err)
-		return err
+		_ = cloudy.Error(ctx, "[%s] failed to deallocate: %v", vm.ID, err)
+		return nil, err
 	}
 
-	cloudy.Info(ctx, "[%s] Starting BeginDelete", vm.ID)
-	deletePoller, err := vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vmName, nil)
+	cloudy.Info(ctx, "[%s] Starting vmc.Client.BeginDelete", vm.ID)
+	deletePoller, err := vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vm.ID, nil)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
+	cloudy.Info(ctx, "[%s] Starting deletePoller.PollUntilDone", vm.ID)
 	_, err = deletePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to delete: %v", vm.ID, err)
-		return err
+		_ = cloudy.Error(ctx, "[%s] failed to delete: %v", vm.ID, err)
+		return nil, err
 	}
 
-	err = vmc.DeleteVMOSDisk(ctx, vm)
+	cloudy.Info(ctx, "[%s] Starting GetVmOsDisk", vm.ID)
+	vm.OSDisk, err = vmc.GetVmOsDisk(ctx, vm)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] failed to find vm os disk: %v", vm.ID, err)
+		return nil, err
+	}
 
+	cloudy.Info(ctx, "[%s] Starting DeleteVMOSDisk", vm.ID)
+	err = vmc.DeleteVMOSDisk(ctx, vm)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] failed to delete vm os disk: %v", vm.ID, err)
+		return nil, err
+	}
+
+	cloudy.Info(ctx, "[%s] Starting GetNIC", vm.ID)
+	vmn, err := vmc.GetNIC(ctx, vm)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] failed to find vm nic: %v", vm.ID, err)
+		return nil, err
+	}
+
+	cloudy.Info(ctx, "[%s] Starting DeleteNIC", vm.ID)
+	err = vmc.DeleteNIC(ctx, vm.ID, vmn.Name)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] failed to delete vm nic: %v", vm.ID, err)
+		return nil, err
+	}
+
+	return vm, nil
+}
+
+func (vmc *AzureVMController) DeleteVM(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
+	_, err := vmc.Delete(ctx, vm)
 	return err
 }
 
 func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
+	cloudy.Info(ctx, "[%s] Starting armcompute.NewDisksClient Subscription: %s", vm.ID, vmc.Config.SubscriptionID)
 	diskClient, err := armcompute.NewDisksClient(vmc.Config.SubscriptionID, vmc.cred,
 		&arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
@@ -579,18 +653,28 @@ func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.V
 			},
 		})
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to create disks client: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] failed to create disks client: %v", vm.ID, err)
+		return err
 	}
 
-	cloudy.Info(ctx, "[%s] Starting diskClient.BeginDelete", vm.ID)
+	if vmc.Config == nil {
+		return cloudy.Error(ctx, "[%s] vmc.config == nil", vm.ID)
+	}
+
+	if vm.OSDisk == nil {
+		return cloudy.Error(ctx, "[%s] vmc.config == nil", vm.ID)
+	}
+
+	cloudy.Info(ctx, "[%s] Starting diskClient.BeginDelete '%s' '%s'", vm.ID, vmc.Config.ResourceGroup, vm.OSDisk.Name)
 	pollerResponse, err := diskClient.BeginDelete(ctx, vmc.Config.ResourceGroup, vm.OSDisk.Name, nil)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to terminate: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] failed to delete vm os %v", vm.ID, err)
+		return err
 	}
 
 	_, err = pollerResponse.PollUntilDone(ctx, nil)
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	return err
@@ -818,7 +902,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
 	}
 
 	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
