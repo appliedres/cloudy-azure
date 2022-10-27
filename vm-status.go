@@ -156,10 +156,7 @@ func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.Virtua
 
 	var rtn []*cloudyvm.VirtualMachineLimit
 
-	for {
-		if !pager.More() {
-			break
-		}
+	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, err

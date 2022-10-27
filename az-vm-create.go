@@ -57,26 +57,33 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		}
 	}
 
-	if strings.Contains(strings.ToLower(vm.OSType), "linux") {
-		cloudy.Info(ctx, "[%s] Starting CreateLinuxVirtualMachine", vm.ID)
-		err = vmc.CreateLinuxVirtualMachine(ctx, vm)
-		if err != nil {
-			_ = cloudy.Error(ctx, "[%s] CreateLinuxVirtualMachine err: %s", vm.ID, err.Error())
-		}
-		return vm, err
-	} else if strings.EqualFold(vm.OSType, "windows") {
-		cloudy.Info(ctx, "[%s] Starting CreateWindowsVirtualMachine", vm.ID)
-		// Temp Overwrite of Admin Password to random string
-		vm.Credientials.AdminPassword = cloudy.GeneratePassword(16, 1, 1, 1)
-		err = vmc.CreateWindowsVirtualMachine(ctx, vm)
-		if err != nil {
-			_ = cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
-		}
-		return vm, err
+	cloudy.Info(ctx, "[%s] Starting CreateVirtualMachine", vm.ID)
+	err = vmc.CreateVirtualMachine(ctx, vm)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] CreateVirtualMachine err: %s", vm.ID, err.Error())
 	}
+	return vm, err
+
+	// if strings.Contains(strings.ToLower(vm.OSType), "linux") {
+	// 	cloudy.Info(ctx, "[%s] Starting CreateLinuxVirtualMachine", vm.ID)
+	// 	err = vmc.CreateLinuxVirtualMachine(ctx, vm)
+	// 	if err != nil {
+	// 		_ = cloudy.Error(ctx, "[%s] CreateLinuxVirtualMachine err: %s", vm.ID, err.Error())
+	// 	}
+	// 	return vm, err
+	// } else if strings.EqualFold(vm.OSType, "windows") {
+	// 	cloudy.Info(ctx, "[%s] Starting CreateWindowsVirtualMachine", vm.ID)
+	// 	// Temp Overwrite of Admin Password to random string
+	// 	vm.Credientials.AdminPassword = cloudy.GeneratePassword(16, 1, 1, 1)
+	// 	err = vmc.CreateWindowsVirtualMachine(ctx, vm)
+	// 	if err != nil {
+	// 		_ = cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
+	// 	}
+	// 	return vm, err
+	// }
 
 	// Why is this here?
-	return VmCreate(ctx, vmc.Client, vm)
+	// return VmCreate(ctx, vmc.Client, vm)
 }
 
 func (vmc *AzureVMController) ValidateConfiguration(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
@@ -345,6 +352,34 @@ func (vmc *AzureVMController) GetVmOsDisk(ctx context.Context, vm *cloudyvm.Virt
 	return nil, nil
 }
 
+// Find VM if it already exists
+func (vmc *AzureVMController) GetVM(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
+	vmClient, err := armcompute.NewVirtualMachinesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	vmResponse, err := vmClient.Get(ctx,
+		vmc.Config.ResourceGroup,
+		vm.ID,
+		&armcompute.VirtualMachinesClientGetOptions{Expand: nil})
+	if err != nil {
+		return nil, err
+	}
+
+	foundVM := vmResponse.VirtualMachine
+
+	returnVM := &cloudyvm.VirtualMachineConfiguration{
+		ID: *foundVM.ID,
+	}
+
+	return returnVM, nil
+}
+
 // Find NIC if it already exists
 func (vmc *AzureVMController) GetNIC(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineNetwork, error) {
 	nicClient, err := armnetwork.NewInterfacesClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
@@ -441,7 +476,7 @@ resource "azurerm_linux_virtual_machine" "main-vm" {
     }
 }
 */
-func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
+func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 
 	// Input Parameters
 	region := vmc.Config.Region
@@ -457,6 +492,8 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		tags[k] = to.Ptr(v)
 	}
 
+	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
+
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
 	// TODO: SDK does not include all possible sizes, need to make dynamic
 	/* vmSize := findVmSize(vm.Size.Name)
@@ -464,26 +501,15 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 		return fmt.Errorf("no matching VM size for %s", vm.Size.Name)
 	}*/
 
-	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
-
-	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
-	adminUser := vm.Credientials.AdminUser
-	//adminPassword := vm.Credientials.AdminPassword
-	sshKey := vm.Credientials.SSHKey
-
 	if vm.Size == nil {
 		return cloudy.Error(ctx, "[%s] Invalid VM Size %v", vm.ID, vm.Size)
 	}
+	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
 
-	// Configure Disk SIze
-	sizeinGB := int32(30)
-	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
-		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
-		if err != nil {
-			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
-		} else {
-			sizeinGB = int32(size)
-		}
+	diskSizeInGB, err := vmc.ConfigureDiskSize(ctx, vm)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] Error configuring disk size", vm.ID)
+		return err
 	}
 
 	// Configure Disk type
@@ -494,69 +520,73 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 
 	imageReference := parseImageReference(vm, imageId)
 
-	client := vmc.Client
-	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]", vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, adminUser, vm.PrimaryNetwork.ID)
+	existingVM, err := vmc.GetVM(ctx, vm)
+	if err != nil {
+		_ = cloudy.Error(ctx, "[%s] Error searching for existing VM", vm.ID)
+	}
 
-	poller, err := client.BeginCreateOrUpdate(
+	vmParameters := armcompute.VirtualMachine{
+		Name:     to.Ptr(vmName),
+		Location: to.Ptr(region),
+
+		Identity: &armcompute.VirtualMachineIdentity{
+			Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
+		},
+
+		Tags: tags,
+	}
+
+	vmParameters.Properties = &armcompute.VirtualMachineProperties{
+		HardwareProfile: &armcompute.HardwareProfile{
+			VMSize: &vmSize,
+		},
+		StorageProfile: &armcompute.StorageProfile{
+			ImageReference: imageReference,
+		},
+	}
+
+	if existingVM != nil {
+		cloudy.Info(ctx, "[%s] Existing VM found: %+v", vm.ID, existingVM)
+	} else {
+
+		vmOsDiskOsType := vmc.ConfigureVmOsDiskOsTypeType(ctx, vm)
+		if vmOsDiskOsType == nil {
+			return cloudy.Error(ctx, "[%s] Invalid OS Specified: %s", vm.ID, vm.OSType)
+		}
+
+		vmParameters.Properties.StorageProfile.OSDisk = &armcompute.OSDisk{
+			OSType:       vmOsDiskOsType,
+			DiskSizeGB:   to.Ptr(diskSizeInGB),
+			Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
+			CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
+			ManagedDisk: &armcompute.ManagedDiskParameters{
+				StorageAccountType: to.Ptr(diskType),
+			},
+		}
+
+		vmOsProfile := vmc.ConfigureVmOsProfile(ctx, vm)
+		if vmOsProfile == nil {
+			return cloudy.Error(ctx, "[%s] Invalid OS Specified: %s", vm.ID, vm.OSType)
+		}
+		vmParameters.Properties.OSProfile = vmOsProfile
+
+		vmParameters.Properties.NetworkProfile = &armcompute.NetworkProfile{
+			NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+				{
+					ID: to.Ptr(vm.PrimaryNetwork.ID),
+				},
+			},
+		}
+	}
+
+	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]",
+		vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, vm.Credientials.AdminUser, vm.PrimaryNetwork.ID)
+
+	poller, err := vmc.Client.BeginCreateOrUpdate(
 		ctx,
 		resourceGroup,
 		vmName,
-		armcompute.VirtualMachine{
-			Name:     to.Ptr(vmName),
-			Location: to.Ptr(region),
-
-			Identity: &armcompute.VirtualMachineIdentity{
-				Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
-			},
-
-			Properties: &armcompute.VirtualMachineProperties{
-
-				HardwareProfile: &armcompute.HardwareProfile{
-					VMSize: &vmSize,
-				},
-
-				StorageProfile: &armcompute.StorageProfile{
-					ImageReference: imageReference,
-					OSDisk: &armcompute.OSDisk{
-						OSType:       to.Ptr(armcompute.OperatingSystemTypesLinux),
-						DiskSizeGB:   to.Ptr(sizeinGB),
-						Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
-						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-						ManagedDisk: &armcompute.ManagedDiskParameters{
-							StorageAccountType: to.Ptr(diskType),
-						},
-					},
-				},
-
-				OSProfile: &armcompute.OSProfile{
-					ComputerName:  to.Ptr(vmName),
-					AdminUsername: to.Ptr(adminUser),
-					//AdminPassword: to.Ptr(adminPassword),
-					LinuxConfiguration: &armcompute.LinuxConfiguration{
-						DisablePasswordAuthentication: to.Ptr(true),
-						SSH: &armcompute.SSHConfiguration{
-							PublicKeys: []*armcompute.SSHPublicKey{
-								{
-									Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", adminUser)),
-									KeyData: to.Ptr(sshKey),
-								},
-							},
-						},
-						ProvisionVMAgent: to.Ptr(true),
-					},
-					AllowExtensionOperations: to.Ptr(true),
-				},
-
-				NetworkProfile: &armcompute.NetworkProfile{
-					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-						{
-							ID: to.Ptr(vm.PrimaryNetwork.ID),
-						},
-					},
-				},
-			},
-			Tags: tags,
-		},
+		vmParameters,
 		nil,
 	)
 	if err != nil {
@@ -570,6 +600,13 @@ func (vmc *AzureVMController) CreateLinuxVirtualMachine(ctx context.Context, vm 
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
 		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+	}
+
+	if strings.EqualFold(vm.OSType, "windows") {
+		err = vmc.AddInstallSaltMinionExt(ctx, vm)
+		if err != nil {
+			return cloudy.Error(ctx, "[%s] failed to install salt minion: %v", vm.ID, err)
+		}
 	}
 
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
@@ -680,6 +717,74 @@ func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.V
 	return err
 }
 
+func (vmc *AzureVMController) ConfigureDiskSize(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (int32, error) {
+
+	// Configure Disk SIze
+	sizeInGB := int32(30)
+	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
+		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
+		if err != nil {
+			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
+		} else {
+			sizeInGB = int32(size)
+		}
+	}
+
+	// the size of the corresponding disk in the VM image: 127 GB
+	// temporarilty setting minimum to 200 for wiggle room
+	if strings.EqualFold(vm.OSType, "windows") {
+		minWindowsVMSize := int32(200)
+		if sizeInGB < minWindowsVMSize {
+			sizeInGB = minWindowsVMSize
+		}
+	}
+
+	return sizeInGB, nil
+}
+
+func (vmc *AzureVMController) ConfigureVmOsDiskOsTypeType(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) *armcompute.OperatingSystemTypes {
+	if strings.EqualFold(vm.OSType, "windows") {
+		return to.Ptr(armcompute.OperatingSystemTypesWindows)
+	} else if strings.Contains(strings.ToLower(vm.OSType), "linux") {
+		return to.Ptr(armcompute.OperatingSystemTypesLinux)
+	}
+
+	return nil
+}
+
+func (vmc *AzureVMController) ConfigureVmOsProfile(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) *armcompute.OSProfile {
+	if strings.EqualFold(vm.OSType, "windows") {
+		return &armcompute.OSProfile{
+			ComputerName:         to.Ptr(vm.ID),
+			AdminUsername:        to.Ptr(vm.Credientials.AdminUser),
+			AdminPassword:        to.Ptr(vm.Credientials.AdminPassword),
+			WindowsConfiguration: &armcompute.WindowsConfiguration{},
+		}
+
+	} else if strings.Contains(strings.ToLower(vm.OSType), "linux") {
+		return &armcompute.OSProfile{
+			ComputerName:  to.Ptr(vm.ID),
+			AdminUsername: to.Ptr(vm.Credientials.AdminUser),
+			LinuxConfiguration: &armcompute.LinuxConfiguration{
+				DisablePasswordAuthentication: to.Ptr(true),
+				SSH: &armcompute.SSHConfiguration{
+					PublicKeys: []*armcompute.SSHPublicKey{
+						{
+							Path: to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys",
+								vm.Credientials.AdminUser)),
+							KeyData: to.Ptr(vm.Credientials.SSHKey),
+						},
+					},
+				},
+				ProvisionVMAgent: to.Ptr(true),
+			},
+			AllowExtensionOperations: to.Ptr(true),
+		}
+	}
+
+	return nil
+}
+
 /*
 resource "azurerm_windows_virtual_machine" "main-vm" {
     name                    = var.vdi-name
@@ -707,136 +812,129 @@ resource "azurerm_windows_virtual_machine" "main-vm" {
     }
 
 }*/
-func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
+// func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 
-	// Input Parameters
-	region := vmc.Config.Region
-	subscriptionId := vmc.Config.SubscriptionID
-	resourceGroup := vmc.Config.ResourceGroup
-	imageGalleryName := vmc.Config.SourceImageGalleryName
-	imageName := vm.Image
-	imageVersion := vm.ImageVersion
-	vmName := vm.ID
+// 	// Input Parameters
+// 	region := vmc.Config.Region
+// 	subscriptionId := vmc.Config.SubscriptionID
+// 	resourceGroup := vmc.Config.ResourceGroup
+// 	imageGalleryName := vmc.Config.SourceImageGalleryName
+// 	imageName := vm.Image
+// 	imageVersion := vm.ImageVersion
+// 	vmName := vm.ID
 
-	tags := map[string]*string{}
-	for k, v := range vm.Tags {
-		tags[k] = to.Ptr(v)
-	}
+// 	tags := map[string]*string{}
+// 	for k, v := range vm.Tags {
+// 		tags[k] = to.Ptr(v)
+// 	}
 
-	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-	// TODO: SDK does not include all possible sizes, need to make dynamic
-	// vmSize := findVmSize(vm.Size.Name)
-	// if vmSize == nil {
-	// 	return cloudy.Error(ctx, "[%s] no matching VM size for %s", vm.ID, vm.Size.Name)
-	// }
+// 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
+// 	// TODO: SDK does not include all possible sizes, need to make dynamic
+// 	// vmSize := findVmSize(vm.Size.Name)
+// 	// if vmSize == nil {
+// 	// 	return cloudy.Error(ctx, "[%s] no matching VM size for %s", vm.ID, vm.Size.Name)
+// 	// }
 
-	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
+// 	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
 
-	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
-	adminUser := vm.Credientials.AdminUser
-	adminPassword := vm.Credientials.AdminPassword
+// 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
+// 	adminUser := vm.Credientials.AdminUser
+// 	adminPassword := vm.Credientials.AdminPassword
 
-	// Configure Disk SIze
-	sizeinGB := int32(30)
-	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
-		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
-		if err != nil {
-			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
-		} else {
-			sizeinGB = int32(size)
-		}
-	}
+// 	// Configure Disk SIze
+// 	sizeinGB := int32(30)
+// 	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
+// 		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
+// 		if err != nil {
+// 			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
+// 		} else {
+// 			sizeinGB = int32(size)
+// 		}
+// 	}
 
-	// the size of the corresponding disk in the VM image: 127 GB
-	// temporarilty setting minimum to 200 for wiggle room
-	minWindowsVMSize := int32(200)
-	if sizeinGB < minWindowsVMSize {
-		sizeinGB = minWindowsVMSize
-	}
+// 	// Configure Disk type
+// 	diskType := armcompute.StorageAccountTypesStandardLRS
+// 	if vm.Size.PremiumIO {
+// 		diskType = armcompute.StorageAccountTypesPremiumLRS
+// 	}
 
-	// Configure Disk type
-	diskType := armcompute.StorageAccountTypesStandardLRS
-	if vm.Size.PremiumIO {
-		diskType = armcompute.StorageAccountTypesPremiumLRS
-	}
+// 	imageReference := parseImageReference(vm, imageId)
 
-	imageReference := parseImageReference(vm, imageId)
+// 	client := vmc.Client
+// 	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]", vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, adminUser, vm.PrimaryNetwork.ID)
 
-	client := vmc.Client
-	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]", vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, adminUser, vm.PrimaryNetwork.ID)
+// 	poller, err := client.BeginCreateOrUpdate(
+// 		ctx,
+// 		resourceGroup,
+// 		vmName,
+// 		armcompute.VirtualMachine{
+// 			Name:     to.Ptr(vmName),
+// 			Location: to.Ptr(region),
 
-	poller, err := client.BeginCreateOrUpdate(
-		ctx,
-		resourceGroup,
-		vmName,
-		armcompute.VirtualMachine{
-			Name:     to.Ptr(vmName),
-			Location: to.Ptr(region),
+// 			Properties: &armcompute.VirtualMachineProperties{
 
-			Properties: &armcompute.VirtualMachineProperties{
+// 				HardwareProfile: &armcompute.HardwareProfile{
+// 					VMSize: &vmSize,
+// 				},
 
-				HardwareProfile: &armcompute.HardwareProfile{
-					VMSize: &vmSize,
-				},
+// 				StorageProfile: &armcompute.StorageProfile{
+// 					ImageReference: imageReference,
+// 					OSDisk: &armcompute.OSDisk{
+// 						OSType:       to.Ptr(armcompute.OperatingSystemTypesWindows),
+// 						DiskSizeGB:   to.Ptr(sizeinGB),
+// 						Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
+// 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
+// 						ManagedDisk: &armcompute.ManagedDiskParameters{
+// 							StorageAccountType: to.Ptr(diskType),
+// 						},
+// 					},
+// 				},
 
-				StorageProfile: &armcompute.StorageProfile{
-					ImageReference: imageReference,
-					OSDisk: &armcompute.OSDisk{
-						OSType:       to.Ptr(armcompute.OperatingSystemTypesWindows),
-						DiskSizeGB:   to.Ptr(sizeinGB),
-						Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
-						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-						ManagedDisk: &armcompute.ManagedDiskParameters{
-							StorageAccountType: to.Ptr(diskType),
-						},
-					},
-				},
+// 				OSProfile: &armcompute.OSProfile{
+// 					ComputerName:         to.Ptr(vmName),
+// 					AdminUsername:        to.Ptr(adminUser),
+// 					AdminPassword:        to.Ptr(adminPassword),
+// 					WindowsConfiguration: &armcompute.WindowsConfiguration{},
+// 				},
 
-				OSProfile: &armcompute.OSProfile{
-					ComputerName:         to.Ptr(vmName),
-					AdminUsername:        to.Ptr(adminUser),
-					AdminPassword:        to.Ptr(adminPassword),
-					WindowsConfiguration: &armcompute.WindowsConfiguration{},
-				},
+// 				NetworkProfile: &armcompute.NetworkProfile{
+// 					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+// 						{
+// 							ID: to.Ptr(vm.PrimaryNetwork.ID),
+// 						},
+// 					},
+// 				},
+// 			},
+// 			Tags: tags,
+// 		},
+// 		nil,
+// 	)
+// 	if err != nil {
+// 		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+// 	}
 
-				NetworkProfile: &armcompute.NetworkProfile{
-					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-						{
-							ID: to.Ptr(vm.PrimaryNetwork.ID),
-						},
-					},
-				},
-			},
-			Tags: tags,
-		},
-		nil,
-	)
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
-	}
+// 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
+// 	if err != nil {
+// 		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+// 	}
 
-	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
-	}
+// 	// err = vmc.AddADJoinExtensionWindows(ctx, vm)
+// 	// if err != nil {
+// 	// 	return cloudy.Error(ctx, "[%s] failed to join AD domain: %v", vm.ID, err)
+// 	// }
 
-	// err = vmc.AddADJoinExtensionWindows(ctx, vm)
-	// if err != nil {
-	// 	return cloudy.Error(ctx, "[%s] failed to join AD domain: %v", vm.ID, err)
-	// }
+// 	err = vmc.AddInstallSaltMinionExt(ctx, vm)
+// 	if err != nil {
+// 		return cloudy.Error(ctx, "[%s] failed to install salt minion: %v", vm.ID, err)
+// 	}
 
-	err = vmc.AddInstallSaltMinionExt(ctx, vm)
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] failed to install salt minion: %v", vm.ID, err)
-	}
+// 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
+// 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
+// 	}
 
-	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
-		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
-	}
-
-	cloudy.Info(ctx, "[%s] Created VM ID: %v - %v - %v", vm.ID, *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
-	return nil
-}
+// 	cloudy.Info(ctx, "[%s] Created VM ID: %v - %v - %v", vm.ID, *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
+// 	return nil
+// }
 
 func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
@@ -1007,14 +1105,15 @@ func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*clou
 	return nil, fmt.Errorf("size not found: %v", size)
 }
 
-func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
-	for _, s := range armcompute.PossibleVirtualMachineSizeTypesValues() {
-		if strings.EqualFold(string(s), size) {
-			return to.Ptr(s)
-		}
-	}
-	return nil
-}
+// Temporarily (or Permanently) unused
+// func findVmSize(size string) *armcompute.VirtualMachineSizeTypes {
+// 	for _, s := range armcompute.PossibleVirtualMachineSizeTypesValues() {
+// 		if strings.EqualFold(string(s), size) {
+// 			return to.Ptr(s)
+// 		}
+// 	}
+// 	return nil
+// }
 
 func parseImageReference(vm *cloudyvm.VirtualMachineConfiguration, imageId string) *armcompute.ImageReference {
 	imageReference := &armcompute.ImageReference{
@@ -1027,6 +1126,7 @@ func parseImageReference(vm *cloudyvm.VirtualMachineConfiguration, imageId strin
 			imageReference.Publisher = to.Ptr(parts[0])
 			imageReference.Offer = to.Ptr(parts[1])
 			imageReference.SKU = to.Ptr(parts[2])
+			imageReference.Version = &vm.ImageVersion
 		}
 	} else {
 		imageReference.ID = to.Ptr(imageId)

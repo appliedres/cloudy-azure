@@ -15,7 +15,7 @@ import (
 
 func TestLinuxVMCreate(t *testing.T) {
 	ctx := cloudy.StartContext()
-	testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("test.env")
 
 	tenantID := cloudy.ForceEnv("TenantID", "")
 	ClientID := cloudy.ForceEnv("ClientID", "")
@@ -46,7 +46,7 @@ func TestLinuxVMCreate(t *testing.T) {
 	// vmc.GetVMSize(ctx, "asdfaf")
 
 	cache := &AzureVMSizeCache{}
-	cache.Load(ctx, vmc)
+	_ = cache.Load(ctx, vmc)
 
 	sshPublicKeySecretName := "VMSSHPublicKey"
 	keyVault, err := NewKeyVault(ctx, vmc.Config.VaultURL, vmc.Config.AzureCredentials)
@@ -66,21 +66,21 @@ func TestLinuxVMCreate(t *testing.T) {
 	   	"publisher": "canonical",
 	   	"offer": "ubuntuserver",
 	   	"sku": "19.04",
-	   	"version": "latest"
+	   	"version": "19.04.202001220"
 	   },
 	*/
 	vmConfig := &cloudyvm.VirtualMachineConfiguration{
 		ID:   "uvm-gotest",
 		Name: "uvm-gotest",
 		Size: &cloudyvm.VmSize{
-			Size: "Standard_DS1_v2",
+			Name: "Standard_DS1_v2",
 		},
 		SizeRequest: &cloudyvm.VmSizeRequest{
 			SpecificSize: "Standard_DS1_v2",
 		},
 		OSType:       "linux",
 		Image:        "canonical::ubuntuserver::19.04",
-		ImageVersion: "latest",
+		ImageVersion: "19.04.202001220",
 		Credientials: cloudyvm.Credientials{
 			AdminUser:     "testadmin",
 			AdminPassword: "TestPassword12#$",
@@ -106,7 +106,7 @@ func TestLinuxVMCreate(t *testing.T) {
 	defer vmc.DeleteNIC(ctx, vmConfig.ID, vmConfig.PrimaryNetwork.Name)
 
 	// Test Create
-	err = vmc.CreateLinuxVirtualMachine(ctx, vmConfig)
+	err = vmc.CreateVirtualMachine(ctx, vmConfig)
 	assert.Nil(t, err)
 
 	if err == nil {
@@ -143,7 +143,7 @@ func TestLinuxVMCreate(t *testing.T) {
 
 func TestWindowsVMCreate(t *testing.T) {
 	ctx := cloudy.StartContext()
-	testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("test.env")
 
 	tenantID := cloudy.ForceEnv("TenantID", "")
 	ClientID := cloudy.ForceEnv("ClientID", "")
@@ -174,7 +174,7 @@ func TestWindowsVMCreate(t *testing.T) {
 	// vmc.GetVMSize(ctx, "asdfaf")
 
 	cache := &AzureVMSizeCache{}
-	cache.Load(ctx, vmc)
+	_ = cache.Load(ctx, vmc)
 
 	/*
 	   "imageReference": {
@@ -188,7 +188,10 @@ func TestWindowsVMCreate(t *testing.T) {
 		ID:   "uvm-gotest",
 		Name: "uvm-gotest",
 		Size: &cloudyvm.VmSize{
-			Size: "Standard_DS1_v2",
+			Name: "Standard_DS1_v2",
+		},
+		SizeRequest: &cloudyvm.VmSizeRequest{
+			SpecificSize: "Standard_DS1_v2",
 		},
 		OSType:       "windows",
 		Image:        "MicrosoftWindowsDesktop::Windows-10::21h1-ent",
@@ -215,7 +218,7 @@ func TestWindowsVMCreate(t *testing.T) {
 	defer vmc.DeleteNIC(ctx, vmConfig.ID, vmConfig.PrimaryNetwork.Name)
 
 	// Test Create
-	err = vmc.CreateWindowsVirtualMachine(ctx, vmConfig)
+	err = vmc.CreateVirtualMachine(ctx, vmConfig)
 	assert.Nil(t, err)
 
 	if err == nil {

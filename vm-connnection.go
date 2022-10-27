@@ -72,7 +72,7 @@ func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error)
 	// 	&azidentity.ClientSecretCredentialOptions{AuthorityHost: azidentity.AzureGovernment})
 
 	if err != nil {
-		cloudy.Error(ctx, "Authentication failure: %+v", err)
+		_ = cloudy.Error(ctx, "Authentication failure: %+v", err)
 	}
 
 	client, err := armcompute.NewVirtualMachinesClient(subscriptionID, cred,
@@ -98,7 +98,7 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			cloudy.Error(ctx, "VM Client List Error %s", err)
+			_ = cloudy.Error(ctx, "VM Client List Error %s", err)
 			break
 		}
 		for _, vm := range resp.Value {
@@ -248,7 +248,7 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 	poller, err := vmClient.BeginStart(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
 
 	if err != nil {
-		cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
+		_ = cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
@@ -257,11 +257,11 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 			Frequency: 30 * time.Second,
 		})
 		if err != nil {
-			cloudy.Error(ctx, "[%s] Failed to start the vm: %v", vmName, err)
+			_ = cloudy.Error(ctx, "[%s] Failed to start the vm: %v", vmName, err)
 			return err
 		}
 
-		cloudy.Error(ctx, "[%s] Started", vmName)
+		_ = cloudy.Error(ctx, "[%s] Started", vmName)
 	}
 
 	return nil
