@@ -109,7 +109,10 @@ func (bfs *BlobContainerShare) Get(ctx context.Context, key string) (*storage.Fi
 }
 
 func (bfs *BlobContainerShare) Exists(ctx context.Context, key string) (bool, error) {
+	cloudy.Info(ctx, "BlobContainerShare.Exists: %s", key)
 	key = sanitizeName(key)
+	cloudy.Info(ctx, "BlobContainerShare.Exists (sanitized): %s", key)
+
 	client, err := bfs.Client.NewContainerClient(key)
 	if err != nil {
 		return false, err

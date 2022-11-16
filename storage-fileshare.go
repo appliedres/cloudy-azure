@@ -111,7 +111,10 @@ func (bfs *BlobFileShare) Exists(ctx context.Context, key string) (bool, error) 
 	// 	-g $AZ_APP_RESOURCE_GROUP
 	// 	--storage-account $AZ_HOME_DIRS_STORAGE_ACCOUNT
 	// 	--name $UPN_short_lower
+	cloudy.Info(ctx, "BlobFileShare.Exists: %s", key)
 	key = sanitizeName(key)
+	cloudy.Info(ctx, "BlobFileShare.Exists (sanitized): %s", key)
+
 	_, err := bfs.Client.Get(ctx, bfs.ResourceGroupName,
 		bfs.StorageAccountName, key, &armstorage.FileSharesClientGetOptions{})
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	// "github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/storage"
 )
 
@@ -78,6 +79,7 @@ func (sa *BlobStorageAccount) ListNative(ctx context.Context) ([]*azblob.Contain
 }
 
 func (sa *BlobStorageAccount) Exists(ctx context.Context, key string) (bool, error) {
+	cloudy.Info(ctx, "BlobStorageAccount.Exists: %s", key)
 	c, err := sa.GetBlobContainer(ctx, key)
 	if err != nil {
 		return false, err
@@ -204,6 +206,7 @@ func (b *BlobStorage) Upload(ctx context.Context, key string, data io.Reader, ta
 }
 
 func (b *BlobStorage) Exists(ctx context.Context, key string) (bool, error) {
+	cloudy.Info(ctx, "BlobStorage.Exists: %s", key)
 	var storageErr *azblob.StorageError
 
 	c, err := b.Client.NewBlobClient(key)

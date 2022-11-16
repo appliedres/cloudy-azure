@@ -63,27 +63,6 @@ func (vmc *AzureVMController) Create(ctx context.Context, vm *cloudyvm.VirtualMa
 		_ = cloudy.Error(ctx, "[%s] CreateVirtualMachine err: %s", vm.ID, err.Error())
 	}
 	return vm, err
-
-	// if strings.Contains(strings.ToLower(vm.OSType), "linux") {
-	// 	cloudy.Info(ctx, "[%s] Starting CreateLinuxVirtualMachine", vm.ID)
-	// 	err = vmc.CreateLinuxVirtualMachine(ctx, vm)
-	// 	if err != nil {
-	// 		_ = cloudy.Error(ctx, "[%s] CreateLinuxVirtualMachine err: %s", vm.ID, err.Error())
-	// 	}
-	// 	return vm, err
-	// } else if strings.EqualFold(vm.OSType, "windows") {
-	// 	cloudy.Info(ctx, "[%s] Starting CreateWindowsVirtualMachine", vm.ID)
-	// 	// Temp Overwrite of Admin Password to random string
-	// 	vm.Credientials.AdminPassword = cloudy.GeneratePassword(16, 1, 1, 1)
-	// 	err = vmc.CreateWindowsVirtualMachine(ctx, vm)
-	// 	if err != nil {
-	// 		_ = cloudy.Error(ctx, "[%s] CreateWindowsVirtualMachine err: %s", vm.ID, err.Error())
-	// 	}
-	// 	return vm, err
-	// }
-
-	// Why is this here?
-	// return VmCreate(ctx, vmc.Client, vm)
 }
 
 func (vmc *AzureVMController) ValidateConfiguration(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
