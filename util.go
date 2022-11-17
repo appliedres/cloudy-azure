@@ -25,5 +25,5 @@ func sanitizeName(name string) string {
 	name = strings.ReplaceAll(name, ".", "-")
 	name = strings.ReplaceAll(name, "'", "-")
 
-	return name
+	return strings.ToLower(name)
 }

@@ -27,7 +27,6 @@ func TestBlobFileshare(t *testing.T) {
 	bfa, err := NewBlobFileShare(ctx, &BlobFileShare{
 		Credentials:        creds,
 		StorageAccountName: account,
-		// ContainerName:      "test-share",
 		ResourceGroupName: resourceGroup,
 		SubscriptionID:    subscriptionId,
 	})
@@ -36,5 +35,7 @@ func TestBlobFileshare(t *testing.T) {
 		// t.FailNow()
 	}
 
-	testutil.TestFileShareStorageManager(t, bfa)
+	testutil.TestFileShareStorageManager(t, bfa, "file-storage-test")
+
+	testutil.TestFileShareStorageManager(t, bfa, "Test-Share")
 }

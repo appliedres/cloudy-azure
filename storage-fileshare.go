@@ -115,12 +115,15 @@ func (bfs *BlobFileShare) Exists(ctx context.Context, key string) (bool, error) 
 	key = sanitizeName(key)
 	cloudy.Info(ctx, "BlobFileShare.Exists (sanitized): %s", key)
 
+	cloudy.Info(ctx, "BlobFileShare.Exists.Client.Get: %s, %s, %s", bfs.ResourceGroupName, bfs.StorageAccountName, key)
 	_, err := bfs.Client.Get(ctx, bfs.ResourceGroupName,
 		bfs.StorageAccountName, key, &armstorage.FileSharesClientGetOptions{})
 	if err != nil {
 		if is404(err) {
+			cloudy.Info(ctx, "BlobFileShare 404 Does not Exist: %s", key)
 			return false, nil
 		}
+		_ = cloudy.Error(ctx, "BlobFileShare.Exists: %s, %v", key, err)
 		return false, err
 	}
 
@@ -137,8 +140,11 @@ func (bfs *BlobFileShare) Create(ctx context.Context, key string, tags map[strin
 	// 	--root-squash NoRootSquash
 	// 	--quota 100
 
+	cloudy.Info(ctx, "BlobFileShare.Create: %s", key)
+
 	key = sanitizeName(key)
 
+	cloudy.Info(ctx, "BlobFileShare.Create.Client.Create: %s, %s, %s", bfs.ResourceGroupName, bfs.StorageAccountName, key)
 	resp, err := bfs.Client.Create(ctx,
 		bfs.ResourceGroupName,
 		bfs.StorageAccountName,
@@ -154,6 +160,8 @@ func (bfs *BlobFileShare) Create(ctx context.Context, key string, tags map[strin
 		},
 	)
 	if err != nil {
+
+		_ = cloudy.Error(ctx, "BlobFileShare.Create: %s, %v", key, err)
 		return nil, err
 	}
 

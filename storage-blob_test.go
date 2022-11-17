@@ -35,6 +35,6 @@ func TestBlobFileAccount(t *testing.T) {
 		log.Fatal(err)
 		// t.FailNow()
 	}
-	testutil.TestFileShareStorageManager(t, bfa)
+	testutil.TestFileShareStorageManager(t, bfa, "file-storage-test")
 
 }
