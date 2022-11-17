@@ -1,7 +1,6 @@
 package cloudyazure
 
 import (
-	"context"
 	"testing"
 
 	"github.com/appliedres/cloudy"
@@ -12,7 +11,10 @@ import (
 
 func TestKeyVault(t *testing.T) {
 
-	testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("test.env")
+
+	ctx := cloudy.StartContext()
+
 	tenantID := cloudy.ForceEnv("TenantID", "")
 	ClientID := cloudy.ForceEnv("ClientID", "")
 	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
@@ -24,10 +26,10 @@ func TestKeyVault(t *testing.T) {
 	}
 	vaultURL := "https://gokeyvault.vault.usgovcloudapi.net/"
 
-	kv, err := NewKeyVault(context.Background(), vaultURL, creds)
+	kv, err := NewKeyVault(ctx, vaultURL, creds)
 	assert.Nil(t, err)
 
-	secrets.SecretsTest(t, context.Background(), kv)
+	secrets.SecretsTest(t, ctx, kv)
 }
 
 func TestKeyVaultDynamic(t *testing.T) {
