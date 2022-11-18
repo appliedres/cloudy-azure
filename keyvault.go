@@ -62,7 +62,10 @@ func (k *KeyVault) Configure(ctx context.Context) error {
 		return err
 	}
 
-	client := azsecrets.NewClient(k.VaultURL, cred, nil)
+	client, err := azsecrets.NewClient(k.VaultURL, cred, nil)
+	if err != nil {
+		return err
+	}
 
 	k.Client = client
 	return nil

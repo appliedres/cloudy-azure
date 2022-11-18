@@ -10,7 +10,7 @@ import (
 
 func TestBlobAccount(t *testing.T) {
 	ctx := cloudy.StartContext()
-	testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("test.env")
 	account := cloudy.ForceEnv("account", "")
 	accountKey := cloudy.ForceEnv("accountKey", "")
 
@@ -26,7 +26,7 @@ func TestBlobAccount(t *testing.T) {
 
 func TestBlobFileAccount(t *testing.T) {
 	ctx := cloudy.StartContext()
-	testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("test.env")
 	account := cloudy.ForceEnv("accountBlob", "")
 	accountKey := cloudy.ForceEnv("accountKeyBlob", "")
 

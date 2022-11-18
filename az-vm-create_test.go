@@ -166,7 +166,7 @@ func TestWindowsVMCreate(t *testing.T) {
 		AvailableSubnets:         []string{"go-on-azure-vmSubnet"},
 		NetworkSecurityGroupName: "go-on-azure-vmNSG",
 		NetworkSecurityGroupID:   "NOT SET",
-		SaltCmd:                  "TESTSALT",
+		SaltCmd:                  "",
 		VaultURL:                 "https://gokeyvault.vault.usgovcloudapi.net/",
 	})
 	assert.Nil(t, err)

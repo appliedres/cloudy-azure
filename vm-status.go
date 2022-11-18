@@ -191,7 +191,7 @@ func (vmc *AzureVMController) GetLatestImageVersion(ctx context.Context, imageNa
 		for _, imageVersion := range resp.Value {
 			v, err := version.NewVersion(*imageVersion.Name)
 			if err != nil {
-				cloudy.Error(ctx, "Skipping Invalid Version : %v, %v", *imageVersion.Name, err)
+				_ = cloudy.Error(ctx, "Skipping Invalid Version : %v, %v", *imageVersion.Name, err)
 				continue
 			}
 			allVersions = append(allVersions, v)

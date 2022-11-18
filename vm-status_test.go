@@ -11,7 +11,7 @@ import (
 
 func TestVMStatus(t *testing.T) {
 	ctx := cloudy.StartContext()
-	testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("test.env")
 
 	tenantID := cloudy.ForceEnv("TenantID", "")
 	ClientID := cloudy.ForceEnv("ClientID", "")

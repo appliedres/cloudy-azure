@@ -569,22 +569,19 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 		nil,
 	)
 	if err != nil {
-		// var azErr *azcore.ResponseError
-		// if errors.As(err, azErr) {
-		// 	azErr.RawResponse.Body
-		// }
+		cloudy.Info(ctx, "[%s] VM create error, dumping parameters: %v", vm.ID, vmParameters)
 
-		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] BeginCreateOrUpdate failed to obtain a response: %v", vm.ID, err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] PollUntilDone failed to obtain a response: %v", vm.ID, err)
 	}
 
 	if strings.EqualFold(vm.OSType, "windows") {
 		err = vmc.AddInstallSaltMinionExt(ctx, vm)
 		if err != nil {
-			return cloudy.Error(ctx, "[%s] failed to install salt minion: %v", vm.ID, err)
+			return cloudy.Error(ctx, "[%s] CreateVirtualMachine AddInstallSaltMinionExt failed to install salt minion: %v", vm.ID, err)
 		}
 	}
 
@@ -602,19 +599,19 @@ func (vmc *AzureVMController) Delete(ctx context.Context, vm *cloudyvm.VirtualMa
 	cloudy.Info(ctx, "[%s] Starting BeginDeallocate", vm.ID)
 	deallocatePoller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vm.ID, nil)
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] BeginDeallocate failed to obtain a response: %v", vm.ID, err)
 		return nil, err
 	}
 	_, err = deallocatePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to deallocate: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] Delete PollUntilDone failed to deallocate: %v", vm.ID, err)
 		return nil, err
 	}
 
 	cloudy.Info(ctx, "[%s] Starting vmc.Client.BeginDelete", vm.ID)
 	deletePoller, err := vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vm.ID, nil)
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] BeginDelete failed to obtain a response: %v", vm.ID, err)
 	}
 
 	cloudy.Info(ctx, "[%s] Starting deletePoller.PollUntilDone", vm.ID)
@@ -690,7 +687,7 @@ func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.V
 
 	_, err = pollerResponse.PollUntilDone(ctx, nil)
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] diskClient.BeginDelete PollUntilDone failed to obtain a response: %v", vm.ID, err)
 	}
 
 	return err
@@ -764,157 +761,6 @@ func (vmc *AzureVMController) ConfigureVmOsProfile(ctx context.Context, vm *clou
 	return nil
 }
 
-/*
-resource "azurerm_windows_virtual_machine" "main-vm" {
-    name                    = var.vdi-name
-    computer_name           = var.vdi-name
-    resource_group_name     = var.app-rg-name
-    location                = var.def-location
-    size                    = var.vdi-size
-    source_image_id         = "/subscriptions/${var.subscription-id}/resourceGroups/${var.app-rg-name}/providers/Microsoft.Compute/galleries/${var.source-image-gallery-name}/images/${var.source-image}/versions/${var.source-image-version}"
-    network_interface_ids   = [
-        azurerm_network_interface.main-nic.id,
-    ]
-
-    admin_username          = var.vm-admin-username
-    admin_password          = random_password.admin_password.result
-
-    os_disk {
-        caching              = "ReadWrite"
-        storage_account_type = "StandardSSD_LRS"
-    }
-
-    tags = {
-        Application            = "SKYBORG"
-        "Functional Area "     = "VDI"
-        "User Principle Name"  = var.user-principle-name
-    }
-
-}*/
-// func (vmc *AzureVMController) CreateWindowsVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
-
-// 	// Input Parameters
-// 	region := vmc.Config.Region
-// 	subscriptionId := vmc.Config.SubscriptionID
-// 	resourceGroup := vmc.Config.ResourceGroup
-// 	imageGalleryName := vmc.Config.SourceImageGalleryName
-// 	imageName := vm.Image
-// 	imageVersion := vm.ImageVersion
-// 	vmName := vm.ID
-
-// 	tags := map[string]*string{}
-// 	for k, v := range vm.Tags {
-// 		tags[k] = to.Ptr(v)
-// 	}
-
-// 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
-// 	// TODO: SDK does not include all possible sizes, need to make dynamic
-// 	// vmSize := findVmSize(vm.Size.Name)
-// 	// if vmSize == nil {
-// 	// 	return cloudy.Error(ctx, "[%s] no matching VM size for %s", vm.ID, vm.Size.Name)
-// 	// }
-
-// 	vmSize := (armcompute.VirtualMachineSizeTypes)(vm.Size.Name)
-
-// 	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
-// 	adminUser := vm.Credientials.AdminUser
-// 	adminPassword := vm.Credientials.AdminPassword
-
-// 	// Configure Disk SIze
-// 	sizeinGB := int32(30)
-// 	if vm.OSDisk != nil && vm.OSDisk.Size != "" {
-// 		size, err := strconv.ParseInt(vm.OSDisk.Size, 10, 32)
-// 		if err != nil {
-// 			cloudy.Warn(ctx, "[%s] Invalid Size for OS Disk [%v] using defaul 30GB", vm.ID, vm.OSDisk.Size)
-// 		} else {
-// 			sizeinGB = int32(size)
-// 		}
-// 	}
-
-// 	// Configure Disk type
-// 	diskType := armcompute.StorageAccountTypesStandardLRS
-// 	if vm.Size.PremiumIO {
-// 		diskType = armcompute.StorageAccountTypesPremiumLRS
-// 	}
-
-// 	imageReference := parseImageReference(vm, imageId)
-
-// 	client := vmc.Client
-// 	cloudy.Info(ctx, "[%s] BeginCreateOrUpdate: resourceGroup[%s] vmName[%s] location[%s] vmSize[%s] imageReference[%s] admuser[%s] networkId[%s]", vm.ID, resourceGroup, vmName, region, vm.Size.Name, imageId, adminUser, vm.PrimaryNetwork.ID)
-
-// 	poller, err := client.BeginCreateOrUpdate(
-// 		ctx,
-// 		resourceGroup,
-// 		vmName,
-// 		armcompute.VirtualMachine{
-// 			Name:     to.Ptr(vmName),
-// 			Location: to.Ptr(region),
-
-// 			Properties: &armcompute.VirtualMachineProperties{
-
-// 				HardwareProfile: &armcompute.HardwareProfile{
-// 					VMSize: &vmSize,
-// 				},
-
-// 				StorageProfile: &armcompute.StorageProfile{
-// 					ImageReference: imageReference,
-// 					OSDisk: &armcompute.OSDisk{
-// 						OSType:       to.Ptr(armcompute.OperatingSystemTypesWindows),
-// 						DiskSizeGB:   to.Ptr(sizeinGB),
-// 						Caching:      to.Ptr(armcompute.CachingTypesReadWrite),
-// 						CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-// 						ManagedDisk: &armcompute.ManagedDiskParameters{
-// 							StorageAccountType: to.Ptr(diskType),
-// 						},
-// 					},
-// 				},
-
-// 				OSProfile: &armcompute.OSProfile{
-// 					ComputerName:         to.Ptr(vmName),
-// 					AdminUsername:        to.Ptr(adminUser),
-// 					AdminPassword:        to.Ptr(adminPassword),
-// 					WindowsConfiguration: &armcompute.WindowsConfiguration{},
-// 				},
-
-// 				NetworkProfile: &armcompute.NetworkProfile{
-// 					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-// 						{
-// 							ID: to.Ptr(vm.PrimaryNetwork.ID),
-// 						},
-// 					},
-// 				},
-// 			},
-// 			Tags: tags,
-// 		},
-// 		nil,
-// 	)
-// 	if err != nil {
-// 		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
-// 	}
-
-// 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
-// 	if err != nil {
-// 		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
-// 	}
-
-// 	// err = vmc.AddADJoinExtensionWindows(ctx, vm)
-// 	// if err != nil {
-// 	// 	return cloudy.Error(ctx, "[%s] failed to join AD domain: %v", vm.ID, err)
-// 	// }
-
-// 	err = vmc.AddInstallSaltMinionExt(ctx, vm)
-// 	if err != nil {
-// 		return cloudy.Error(ctx, "[%s] failed to install salt minion: %v", vm.ID, err)
-// 	}
-
-// 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
-// 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
-// 	}
-
-// 	cloudy.Info(ctx, "[%s] Created VM ID: %v - %v - %v", vm.ID, *resp.VirtualMachine.ID, resp.VirtualMachine.Properties.ProvisioningState, VMGetPowerState(&resp.VirtualMachine))
-// 	return nil
-// }
-
 func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
 	if err != nil {
@@ -979,7 +825,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		_ = cloudy.Error(ctx, "[%s] AddADJoinExtension PollUntilDone failed to obtain a response: %v", vm.ID, err)
 	}
 
 	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
@@ -987,12 +833,17 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 }
 
 func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
-	// windowsSaltCommandb64 := "${base64encode(data.template_file.tfSalt.rendered)}"
-	windowsSaltCommandb64 := base64.StdEncoding.EncodeToString([]byte(WindowsSaltInstallCmd))
-	saltCmd := vmc.Config.SaltCmd
-	fullCmd := fmt.Sprintf("powershell -command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%v')) | Out-File -filepath c:\\windows\\temp\\install.ps1\" && powershell -ExecutionPolicy Unrestricted -File c:\\windows\\temp\\install.ps1 %s", windowsSaltCommandb64, saltCmd)
 
-	cloudy.Info(ctx, "[%s] saltCmd: %s", vm.ID, saltCmd)
+	if vmc.Config.SaltCmd == "" {
+		cloudy.Info(ctx, "[%s] saltCmd not defined", vm.ID)
+		return nil
+	}
+
+	windowsSaltCommandb64 := base64.StdEncoding.EncodeToString([]byte(WindowsSaltInstallCmd))
+
+	fullCmd := fmt.Sprintf("powershell -command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%v')) | Out-File -filepath c:\\windows\\temp\\install.ps1\" && powershell -ExecutionPolicy Unrestricted -File c:\\windows\\temp\\install.ps1 %s", windowsSaltCommandb64, vmc.Config.SaltCmd)
+
+	cloudy.Info(ctx, "[%s] saltCmd: %s", vm.ID, vmc.Config.SaltCmd)
 
 	// Look up from keyvault
 	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
@@ -1045,11 +896,11 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 		},
 	}, nil)
 	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not create adjoin extension: %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] could not create salt minion extension: %v", vm.ID, err)
 	}
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
-		return cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vm.ID, err)
+		return cloudy.Error(ctx, "[%s] AddInstallSaltMinionExt failed to obtain a response: %v", vm.ID, err)
 	}
 	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
 	return nil

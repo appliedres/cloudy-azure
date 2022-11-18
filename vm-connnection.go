@@ -131,26 +131,15 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 		}
 	}
 
-	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
-
-	// resp, err := vmClient.Get(context.Background(), resourceGroup, vmName, &armcompute.VirtualMachinesGetOptions{Expand: armcompute.InstanceViewTypesUserData.ToPtr()})
-	// if err != nil {
-	// 	log.Fatalf("failed to obtain a response: %v", err)
-	// }
-
 	instanceType := armcompute.InstanceViewTypesInstanceView
 	resp, err := vmClient.Get(context.Background(), resourceGroup, vmName,
 		&armcompute.VirtualMachinesClientGetOptions{
 			Expand: &instanceType,
 		})
 
-	// if resp.RawResponse != nil && resp.RawResponse.StatusCode == 404 {
-	// 	// This item was not found
-	// 	return nil, nil
-	// }
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to obtain a response: %v", vmName, err)
-		// Not returning error since "Not Found" is an error
+		_ = cloudy.Error(ctx, "[%s] VmStatus failed to obtain a response: %v", vmName, err)
+		// Not returning error since "Not Found" is not an error
 		return nil, nil
 	}
 
@@ -248,7 +237,7 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 	poller, err := vmClient.BeginStart(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
 
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
+		_ = cloudy.Error(ctx, "[%s] BeginStart Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
@@ -275,7 +264,7 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 	poller, err := vmClient.BeginPowerOff(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginPowerOffOptions{})
 
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
+		_ = cloudy.Error(ctx, "[%s] BeginPowerOff Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
@@ -308,7 +297,7 @@ func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient
 	poller, err := vmClient.BeginDeallocate(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
 
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] Failed to obtain a response: %v", vmName, err)
+		_ = cloudy.Error(ctx, "[%s] BeginDeallocate Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 
