@@ -87,6 +87,7 @@ func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error)
 
 func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg string) ([]*cloudyvm.VirtualMachineStatus, error) {
 	var err error
+
 	if ctx == nil {
 		ctx = cloudy.StartContext()
 	}
@@ -99,7 +100,7 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
 			_ = cloudy.Error(ctx, "VM Client List Error %s", err)
-			break
+			return returnList, err
 		}
 		for _, vm := range resp.Value {
 			// log.Printf("name: %s", *vm.Name)
