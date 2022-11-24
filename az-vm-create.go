@@ -3,6 +3,7 @@ package cloudyazure
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -569,7 +570,8 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 		nil,
 	)
 	if err != nil {
-		cloudy.Info(ctx, "[%s] VM create error, dumping parameters: %v", vm.ID, vmParameters)
+		ret, _ := json.Marshal(vmParameters)
+		cloudy.Info(ctx, "[%s] VM create error, dumping parameters: %s", vm.ID, string(ret))
 
 		return cloudy.Error(ctx, "[%s] BeginCreateOrUpdate failed to obtain a response: %v", vm.ID, err)
 	}

@@ -2,11 +2,14 @@ package cloudyazure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -139,9 +142,17 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 		})
 
 	if err != nil {
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) {
+			if respErr.StatusCode == http.StatusNotFound {
+				cloudy.Info(ctx, "[%s] VmStatus StatusNotFound", vmName)
+				// Not returning error since "Not Found" is not an error
+				return nil, nil
+			}
+		}
+
 		_ = cloudy.Error(ctx, "[%s] VmStatus failed to obtain a response: %v", vmName, err)
-		// Not returning error since "Not Found" is not an error
-		return nil, nil
+		return nil, err
 	}
 
 	returnStatus := &cloudyvm.VirtualMachineStatus{}
