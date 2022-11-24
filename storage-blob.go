@@ -12,6 +12,29 @@ import (
 	"github.com/appliedres/cloudy/storage"
 )
 
+func init() {
+	storage.ObjectStorageProviders.Register(AzureBlob, &AzureBlobStorageFactory{})
+}
+
+type AzureBlobStorageFactory struct{}
+
+func (f *AzureBlobStorageFactory) Create(cfg interface{}) (storage.ObjectStorageManager, error) {
+	azCfg := cfg.(*BlobContainerShare)
+	if azCfg == nil {
+		return nil, cloudy.ErrInvalidConfiguration
+	}
+
+	return NewBlobStorageAccount(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
+}
+
+func (f *AzureBlobStorageFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
+	cfg := &BlobContainerShare{}
+	cfg.Account = env.Force("AZ_ACCOUNT")
+	cfg.AccountKey = env.Force("AZ_ACCOUNT_KEY")
+
+	return cfg, nil
+}
+
 // ObjectStorageManager  {
 type BlobStorageAccount struct {
 	Account    string
@@ -24,13 +47,14 @@ func NewBlobStorageAccount(ctx context.Context, account string, accountKey strin
 	if urlslug == "" {
 		urlslug = "blob.core.usgovcloudapi.net"
 	}
+	serviceUrl := fmt.Sprintf("https://%s.%s/", account, urlslug)
 
 	cred, err := azblob.NewSharedKeyCredential(account, accountKey)
 	if err != nil {
 		return nil, err
 	}
 
-	service, err := azblob.NewServiceClientWithSharedKey(fmt.Sprintf("https://%s.%s/", account, urlslug), cred, nil)
+	service, err := azblob.NewServiceClientWithSharedKey(serviceUrl, cred, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -60,13 +84,18 @@ func (sa *BlobStorageAccount) List(ctx context.Context) ([]*storage.StorageArea,
 func (sa *BlobStorageAccount) ToStorageArea(container *azblob.ContainerItem) *storage.StorageArea {
 	return &storage.StorageArea{
 		Name: *container.Name,
+		Tags: FromStrPointerMap(container.Metadata),
 	}
 }
 
 func (sa *BlobStorageAccount) ListNative(ctx context.Context) ([]*azblob.ContainerItem, error) {
 	var rtn []*azblob.ContainerItem
 
-	pager := sa.Client.ListContainers(&azblob.ListContainersOptions{})
+	pager := sa.Client.ListContainers(&azblob.ListContainersOptions{
+		Include: azblob.ListContainersDetail{
+			Metadata: true,
+		},
+	})
 	for pager.NextPage(ctx) {
 		if pager.Err() != nil {
 			return nil, pager.Err()
@@ -76,6 +105,18 @@ func (sa *BlobStorageAccount) ListNative(ctx context.Context) ([]*azblob.Contain
 	}
 
 	return rtn, nil
+}
+
+func (sa *BlobStorageAccount) GetNativeItem(ctx context.Context, key string) (*azblob.ContainerItem, error) {
+	cloudy.Info(ctx, "BlobStorageAccount.GetNativeItem: %s", key)
+	c, err := sa.GetBlobContainer(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, nil
+	}
+	return c, nil
 }
 
 func (sa *BlobStorageAccount) Exists(ctx context.Context, key string) (bool, error) {
@@ -99,9 +140,22 @@ func (sa *BlobStorageAccount) Get(ctx context.Context, key string) (storage.Obje
 	return NewBlobContainerFrom(ctx, containerClient), nil
 }
 
+func (sa *BlobStorageAccount) GetItem(ctx context.Context, key string) (*storage.StorageArea, error) {
+	key = sanitizeName(key)
+	item, err := sa.GetNativeItem(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	return sa.ToStorageArea(item), nil
+}
+
 func (sa *BlobStorageAccount) GetBlobContainer(ctx context.Context, name string) (*azblob.ContainerItem, error) {
 	pager := sa.Client.ListContainers(&azblob.ListContainersOptions{
 		Prefix: &name,
+		Include: azblob.ListContainersDetail{
+			Metadata: true,
+		},
 	})
 
 	if pager.NextPage(ctx) {
@@ -251,17 +305,24 @@ func (b *BlobStorage) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-func (b *BlobStorage) List(ctx context.Context, prefix string) ([]*storage.StoredObject, error) {
-	items, _, err := b.ListNative(ctx, prefix)
+func (b *BlobStorage) List(ctx context.Context, prefix string) ([]*storage.StoredObject, []*storage.StoredPrefix, error) {
+	items, prefixes, err := b.ListNative(ctx, prefix)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rtn := make([]*storage.StoredObject, len(items))
 	for i, item := range items {
 		rtn[i] = b.ToStoredObject(item)
 	}
 
-	return rtn, nil
+	rtnPrefixes := make([]*storage.StoredPrefix, len(prefixes))
+	for i, item := range prefixes {
+		rtnPrefixes[i] = &storage.StoredPrefix{
+			Key: *item.Name,
+		}
+	}
+
+	return rtn, rtnPrefixes, err
 }
 
 func (b *BlobStorage) ToStoredObject(item *azblob.BlobItemInternal) *storage.StoredObject {

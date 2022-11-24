@@ -27,3 +27,27 @@ func sanitizeName(name string) string {
 
 	return strings.ToLower(name)
 }
+
+func FromStrPointerMap(in map[string]*string) map[string]string {
+	out := make(map[string]string)
+	for k, v := range in {
+		if v != nil {
+			out[k] = *v
+		} else {
+			out[k] = ""
+		}
+	}
+	return out
+}
+
+func ToStrPointerMap(in map[string]string) map[string]*string {
+	out := make(map[string]*string)
+	for k, v := range in {
+		if v != "" {
+			out[k] = &v
+		} else {
+			out[k] = nil
+		}
+	}
+	return out
+}
