@@ -24,6 +24,7 @@ func is404(err error) bool {
 func sanitizeName(name string) string {
 	name = strings.ReplaceAll(name, ".", "-")
 	name = strings.ReplaceAll(name, "'", "-")
+	name = strings.ReplaceAll(name, "_", "-")
 
 	return strings.ToLower(name)
 }

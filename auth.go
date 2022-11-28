@@ -33,15 +33,15 @@ func GetAzureCredentials(azCfg AzureCredentials) (*azidentity.ClientSecretCreden
 	return cred, err
 }
 
-func GetAzureCredentialsFromEnv(env *cloudy.SegmentedEnvironment) AzureCredentials {
-	region, _ := env.Get("AZ_REGION")
+func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
+	region := env.Get("AZ_REGION")
 	if region == "" {
 		region = "usgovvirginia"
 	}
 	return AzureCredentials{
-		Region: region,
-		TenantID: env.Force("AZ_TENANT_ID"),
-		ClientID: env.Force("AZ_CLIENT_ID"),
+		Region:       region,
+		TenantID:     env.Force("AZ_TENANT_ID"),
+		ClientID:     env.Force("AZ_CLIENT_ID"),
 		ClientSecret: env.Force("AZ_CLIENT_SECRET"),
 	}
 }

@@ -30,7 +30,7 @@ func (f *AzureFileShareFactory) Create(cfg interface{}) (storage.FileStorageMana
 	return NewBlobFileShare(context.Background(), azCfg)
 }
 
-func (f *AzureFileShareFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
+func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &BlobFileShare{}
 	cfg.Credentials = GetAzureCredentialsFromEnv(env)
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")

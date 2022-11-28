@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -59,10 +58,10 @@ func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error)
 		ctx = cloudy.StartContext()
 	}
 
-	tenantID := os.Getenv("AZURE_COMPUTE_TENANT_ID")
-	clientID := os.Getenv("AZURE_COMPUTE_CLIENT_ID")
-	clientSecret := os.Getenv("AZURE_COMPUTE_CLIENT_SECRET")
-	subscriptionID := os.Getenv("AZURE_COMPUTE_SUBSCRIPTION_ID")
+	tenantID := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_TENANT_ID")
+	clientID := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_CLIENT_ID")
+	clientSecret := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_CLIENT_SECRET")
+	subscriptionID := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_SUBSCRIPTION_ID")
 
 	azConfig := AzureCredentials{
 		TenantID:     tenantID,
@@ -96,9 +95,15 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 	}
 
 	var returnList []*cloudyvm.VirtualMachineStatus
+	// subscriptionID, _ := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_SUBSCRIPTION_ID")
+	// filter := fmt.Sprintf("/subscriptions/%v/resourceGroups/%v", subscriptionID, rg)
+	statusOnly := "true"
 
-	// resourceGroup := os.Getenv("AZURE_COMPUTE_RESOURCE_GROUP")
-	pager := vmClient.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{})
+	// resourceGroup, _ := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_RESOURCE_GROUP")
+	pager := vmClient.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
+		// Filter:     &filter,
+		StatusOnly: &statusOnly,
+	})
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
@@ -108,16 +113,34 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 		for _, vm := range resp.Value {
 			// log.Printf("name: %s", *vm.Name)
 
-			var vmStatus *cloudyvm.VirtualMachineStatus
-			vmStatus, err = VmStatus(ctx, vmClient, *vm.Name, rg)
+			// var vmStatus *cloudyvm.VirtualMachineStatus
+			// vmStatus, err = VmStatus(ctx, vmClient, *vm.Name, rg)
 
-			if err == nil {
+			vmStatus := &cloudyvm.VirtualMachineStatus{}
+			vmStatus.Name = *vm.Name
+			vmStatus.ProvisioningState = *vm.Properties.ProvisioningState
+			vmStatus.LongID = *vm.ID
+			vmStatus.ID = *vm.Properties.VMID
+
+			myRg := ExtractResourceGroupFromID(ctx, vmStatus.LongID)
+			if strings.EqualFold(rg, myRg) {
 				returnList = append(returnList, vmStatus)
 			}
+
+			// if err == nil {
+			// }
 		}
 	}
 
 	return returnList, err
+}
+
+func ExtractResourceGroupFromID(ctx context.Context, id string) string {
+	parts := strings.Split(id, "/")
+	if len(parts) >= 4 {
+		return parts[4]
+	}
+	return ""
 }
 
 func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string) (*cloudyvm.VirtualMachineStatus, error) {

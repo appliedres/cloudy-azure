@@ -60,7 +60,7 @@ func (f *AzureVMControllerFactory) Create(cfg interface{}) (cloudyvm.VMControlle
 	return NewAzureVMController(context.Background(), azCfg)
 }
 
-func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
+func (f *AzureVMControllerFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &AzureVMControllerConfig{}
 	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
@@ -84,8 +84,8 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.SegmentedEnvironment) (in
 		cfg.DomainControllers = append(cfg.DomainControllers, &domainControllers[i])
 	}
 
-	logBody, got := env.Get("AZ_LOG_BODY")
-	if got && strings.ToUpper(logBody) == "TRUE" {
+	logBody := env.Get("AZ_LOG_BODY")
+	if strings.ToUpper(logBody) == "TRUE" {
 		cfg.LogBody = true
 	}
 
@@ -233,53 +233,3 @@ func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloud
 
 	return sizes, nil
 }
-
-// func (vmc *AzureVMController) CheckQuota(ctx context.Context, vm *models.VirtualMachine) (bool, error) {
-
-// 	resourceName := ""
-// 	resourceScope := "subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute/locations/eastus"
-
-// 	quotaClient, err := armquota.NewClient(vmc.Config.AzureCredentials, &arm.ClientOptions{
-// 		ClientOptions: policy.ClientOptions{
-// 			Cloud: cloud.AzureGovernment,
-// 		},
-// 	})
-// 	if err != nil {
-// 		return false, err
-// 	}
-
-// 	quotaClientResponse, err := quotaClient.Get(ctx, resourceName, resourceScope, nil)
-// 	if err != nil {
-// 		// log.Fatalf("failed to finish the request: %v", err)
-// 		return false, err
-// 	}
-
-// 	// TODO: Figure out how to get the actual quota value from the JSON object
-// 	// https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/quota/armquota#LimitJSONObjectClassification
-// 	quotaValue := quotaClientResponse.CurrentQuotaLimitBase.Properties.Limit.GetLimitJSONObject()
-// 	quotaValue.GetLimitJSONObject()
-
-// 	usagesClient, err := armquota.NewUsagesClient(cred, &arm.ClientOptions{
-// 		ClientOptions: policy.ClientOptions{
-// 			Cloud: cloud.AzureGovernment,
-// 		},
-// 	})
-// 	if err != nil {
-// 		return false, err
-// 	}
-
-// 	usagesClientResponse, err := usagesClient.Get(ctx, resourceName, resourceScope, nil)
-// 	if err != nil {
-// 		// log.Fatalf("failed to finish the request: %v", err)
-// 		return false, err
-// 	}
-
-// 	usageValue := usagesClientResponse.CurrentUsagesBase.Properties.Usages.Value
-
-// 	// TODO: Remove hard coded value
-// 	if *usageValue < 100 {
-// 		return true, nil
-// 	}
-
-// 	return false, nil
-// }

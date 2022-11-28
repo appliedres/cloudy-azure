@@ -27,7 +27,7 @@ func (f *AzureBlobStorageFactory) Create(cfg interface{}) (storage.ObjectStorage
 	return NewBlobStorageAccount(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
 }
 
-func (f *AzureBlobStorageFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
+func (f *AzureBlobStorageFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &BlobContainerShare{}
 	cfg.Account = env.Force("AZ_ACCOUNT")
 	cfg.AccountKey = env.Force("AZ_ACCOUNT_KEY")

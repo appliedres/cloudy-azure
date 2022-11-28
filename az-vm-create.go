@@ -136,10 +136,10 @@ func (vmc *AzureVMController) GetAvailableIPS(ctx context.Context, subnet string
 }
 
 /*
-data "azurerm_network_security_group" "vdi-security-group" {
-    name = var.vdi-nsg
-    resource_group_name = data.azurerm_resource_group.main-rg.name
-}
+	data "azurerm_network_security_group" "vdi-security-group" {
+	    name = var.vdi-nsg
+	    resource_group_name = data.azurerm_resource_group.main-rg.name
+	}
 */
 func (vmc *AzureVMController) CreateNSG(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (string, error) {
 	// Create the appropriate client
@@ -427,34 +427,34 @@ func (vmc *AzureVMController) DeleteNIC(ctx context.Context, vmId string, nicNam
 /*
 CreateVirtualMachine
 
-resource "azurerm_linux_virtual_machine" "main-vm" {
-    name                    = var.vdi-name
-    computer_name           = var.vdi-name
-    admin_username          = "salt"
-    resource_group_name     = var.app-rg-name
-    location                = var.def-location
-    size                    = var.vdi-size
-    source_image_id         = "/subscriptions/${var.subscription-id}/resourceGroups/${var.app-rg-name}/providers/Microsoft.Compute/galleries/${var.source-image-gallery-name}/images/${var.source-image}/versions/${var.source-image-version}"
-    network_interface_ids   = [
-        azurerm_network_interface.main-nic.id,
-    ]
+	resource "azurerm_linux_virtual_machine" "main-vm" {
+	    name                    = var.vdi-name
+	    computer_name           = var.vdi-name
+	    admin_username          = "salt"
+	    resource_group_name     = var.app-rg-name
+	    location                = var.def-location
+	    size                    = var.vdi-size
+	    source_image_id         = "/subscriptions/${var.subscription-id}/resourceGroups/${var.app-rg-name}/providers/Microsoft.Compute/galleries/${var.source-image-gallery-name}/images/${var.source-image}/versions/${var.source-image-version}"
+	    network_interface_ids   = [
+	        azurerm_network_interface.main-nic.id,
+	    ]
 
-    admin_ssh_key {
-        username = "salt"
-        public_key = file("${path.module}/vdi-terraform_id_rsa.pub")
-    }
+	    admin_ssh_key {
+	        username = "salt"
+	        public_key = file("${path.module}/vdi-terraform_id_rsa.pub")
+	    }
 
-    os_disk {
-        caching              = "ReadWrite"
-        storage_account_type = "Standard_LRS"
-    }
+	    os_disk {
+	        caching              = "ReadWrite"
+	        storage_account_type = "Standard_LRS"
+	    }
 
-    tags = {
-        Application            = "SKYBORG"
-        "Functional Area "     = "VDI"
-        "User Principle Name"  = var.user-principle-name
-    }
-}
+	    tags = {
+	        Application            = "SKYBORG"
+	        "Functional Area "     = "VDI"
+	        "User Principle Name"  = var.user-principle-name
+	    }
+	}
 */
 func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
 
@@ -770,7 +770,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	}
 
 	if AdDomainName == "" {
-		AdDomainName = cloudy.GetEnv("AD_DOMAIN_NAME", "")
+		AdDomainName = cloudy.DefaultEnvironment.Get("AD_DOMAIN_NAME")
 	}
 
 	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
@@ -779,7 +779,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	}
 
 	if AdJoinUser == "" {
-		AdJoinUser = cloudy.GetEnv("AD_JOIN_USER", "")
+		AdJoinUser = cloudy.DefaultEnvironment.Get("AD_JOIN_USER")
 	}
 
 	AdJoinPassword, err := vmc.Vault.GetSecret(ctx, "AdJoinPassword")
@@ -788,7 +788,7 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	}
 
 	if AdJoinPassword == "" {
-		AdJoinPassword = cloudy.GetEnv("AD_JOIN_PASSWORD", "")
+		AdJoinPassword = cloudy.DefaultEnvironment.Get("AD_JOIN_PASSWORD")
 	}
 
 	if AdDomainName == "" || AdJoinUser == "" || AdJoinPassword == "" {
@@ -854,7 +854,7 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	}
 
 	if AdDomainName == "" {
-		AdDomainName = cloudy.GetEnv("AD_DOMAIN_NAME", "")
+		AdDomainName = cloudy.DefaultEnvironment.Get("AD_DOMAIN_NAME")
 	}
 
 	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
@@ -863,7 +863,7 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	}
 
 	if AdJoinUser == "" {
-		AdJoinUser = cloudy.GetEnv("AD_JOIN_USER", "")
+		AdJoinUser = cloudy.DefaultEnvironment.Get("AD_JOIN_USER")
 	}
 
 	if AdDomainName == "" || AdJoinUser == "" {

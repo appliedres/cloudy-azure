@@ -14,6 +14,7 @@ import (
 )
 
 const KeyVaultId = "azure-keyvault"
+const KeyVaultCachedId = "azure-keyvault-cached"
 
 func init() {
 	secrets.SecretProviders.Register(KeyVaultId, &KeyVaultFactory{})
@@ -34,7 +35,7 @@ func (c *KeyVaultFactory) Create(cfg interface{}) (secrets.SecretProvider, error
 	return NewKeyVault(context.Background(), sec.VaultURL, sec.AzureCredentials)
 }
 
-func (c *KeyVaultFactory) FromEnv(env *cloudy.SegmentedEnvironment) (interface{}, error) {
+func (c *KeyVaultFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &KeyVaultConfig{}
 	cfg.VaultURL = env.Force("AZ_VAULT_URL")
 	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
