@@ -15,12 +15,28 @@ import (
 
 func TestLinuxVMCreate(t *testing.T) {
 	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
 
-	tenantID := cloudy.ForceEnv("TenantID", "")
-	ClientID := cloudy.ForceEnv("ClientID", "")
-	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
-	SubscriptionID := cloudy.ForceEnv("SUBSCRIPTION_ID", "")
+	_ = testutil.LoadEnv("test.env")
+	vaultUrl := cloudy.ForceEnv("AZ_VAULT_URL", "")
+	creds := GetAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
+
+	kve, _ := NewKeyVaultEnvironmentService(ctx, vaultUrl, creds, "")
+
+	env := cloudy.NewTieredEnvironment(
+		cloudy.NewTestFileEnvironmentService(),
+		kve,
+	)
+
+	tenantID, _ := env.Get("AZ_TENANT_ID")
+	ClientID, _ := env.Get("AZ_CLIENT_ID")
+	ClientSecret, _ := env.Get("AZ_CLIENT_SECRET")
+	SubscriptionID, _ := env.Get("AZ_SUBSCRIPTION_ID")
+	resourceGroup, _ := env.Get("AZ_RESOURCE_GROUP")
+	vNet, _ := env.Get("AZ_VNET")
+	subnet, _ := env.Get("AZ_SUBNET")
+	nsgName, _ := env.Get("AZ_NSG_NAME")
+	imageGallery, _ := env.Get("VMC_AZ_SOURCE_IMAGE_GALLERY_NAME")
+	// nsgId, _ := env.Get("AZ_NSG_ID")
 
 	vmc, err := NewAzureVMController(ctx, &AzureVMControllerConfig{
 		AzureCredentials: AzureCredentials{
@@ -31,15 +47,15 @@ func TestLinuxVMCreate(t *testing.T) {
 		},
 		SubscriptionID: SubscriptionID,
 
-		ResourceGroup:            "go-on-azure",
-		NetworkResourceGroup:     "go-on-azure",
-		SourceImageGalleryName:   "testimagegallery",
-		Vnet:                     "go-on-azure-vmVNET",
-		AvailableSubnets:         []string{"go-on-azure-vmSubnet"},
-		NetworkSecurityGroupName: "go-on-azure-vmNSG",
+		ResourceGroup:            resourceGroup,
+		NetworkResourceGroup:     resourceGroup,
+		SourceImageGalleryName:   imageGallery,
+		Vnet:                     vNet,
+		AvailableSubnets:         []string{subnet},
+		NetworkSecurityGroupName: nsgName,
 		NetworkSecurityGroupID:   "NOT SET",
 		SaltCmd:                  "TESTSALT",
-		VaultURL:                 "https://gokeyvault.vault.usgovcloudapi.net/",
+		VaultURL:                 vaultUrl,
 	})
 	assert.Nil(t, err)
 
@@ -48,16 +64,11 @@ func TestLinuxVMCreate(t *testing.T) {
 	cache := &AzureVMSizeCache{}
 	_ = cache.Load(ctx, vmc)
 
-	sshPublicKeySecretName := "VMSSHPublicKey"
-	keyVault, err := NewKeyVault(ctx, vmc.Config.VaultURL, vmc.Config.AzureCredentials)
-	assert.Nil(t, err)
-
-	sshPublicKey, err := keyVault.GetSecret(ctx, sshPublicKeySecretName)
+	sshPublicKey, err := env.Get("SALT_PUBLIC_KEY")
 	assert.Nil(t, err)
 	assert.NotNil(t, sshPublicKey)
 
-	sshPrivateKeySecretName := "VMSSHPrivateKey"
-	sshPrivateKey, err := keyVault.GetSecret(ctx, sshPrivateKeySecretName)
+	sshPrivateKey, err := env.Get("SALT_PRIVATE_KEY")
 	assert.Nil(t, err)
 	assert.NotNil(t, sshPrivateKey)
 
@@ -82,16 +93,16 @@ func TestLinuxVMCreate(t *testing.T) {
 		Image:        "canonical::ubuntuserver::19.04",
 		ImageVersion: "19.04.202001220",
 		Credientials: cloudyvm.Credientials{
-			AdminUser:     "testadmin",
+			AdminUser:     "salt",
 			AdminPassword: "TestPassword12#$",
 			SSHKey:        sshPublicKey,
 		},
 	}
 
 	// Test subnet
-	subnet, err := vmc.FindBestSubnet(ctx, []string{"go-on-azure-vmSubnet"})
+	// subnet, err := vmc.FindBestSubnet(ctx, []string{"go-on-azure-vmSubnet"})
 	assert.Nil(t, err)
-	assert.Equal(t, "go-on-azure-vmSubnet", subnet)
+	assert.NotEqual(t, "", subnet)
 
 	assert.NotNil(t, vmConfig.Size)
 
