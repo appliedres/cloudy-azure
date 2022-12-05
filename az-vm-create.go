@@ -580,12 +580,12 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 		_ = cloudy.Error(ctx, "[%s] PollUntilDone failed to obtain a response: %v", vm.ID, err)
 	}
 
-	if strings.EqualFold(vm.OSType, "windows") {
-		err = vmc.AddInstallSaltMinionExt(ctx, vm)
-		if err != nil {
-			return cloudy.Error(ctx, "[%s] CreateVirtualMachine AddInstallSaltMinionExt failed to install salt minion: %v", vm.ID, err)
-		}
-	}
+	// if strings.EqualFold(vm.OSType, "windows") {
+	// 	err = vmc.AddInstallSaltMinionExt(ctx, vm)
+	// 	if err != nil {
+	// 		return cloudy.Error(ctx, "[%s] CreateVirtualMachine AddInstallSaltMinionExt failed to install salt minion: %v", vm.ID, err)
+	// 	}
+	// }
 
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
 		Name: *resp.VirtualMachine.Properties.StorageProfile.OSDisk.Name,
