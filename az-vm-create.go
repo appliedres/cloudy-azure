@@ -907,7 +907,7 @@ func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *c
 	if err != nil {
 		return cloudy.Error(ctx, "[%s] AddInstallSaltMinionExt failed to obtain a response: %v", vm.ID, err)
 	}
-	cloudy.Info(ctx, "[%s] Created ADJoin Extension: %v", vm.ID, *resp.ID)
+	cloudy.Info(ctx, "[%s] Created SaltMinion Extension: %v", vm.ID, *resp.ID)
 	return nil
 }
 

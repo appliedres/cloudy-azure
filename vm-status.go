@@ -147,7 +147,7 @@ func (vmc *AzureVMController) Stop(ctx context.Context, vmName string, wait bool
 }
 
 func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait bool) error {
-	return VmTerminate(ctx, vmc.Client, vmc.Config.ResourceGroup, vmName, wait)
+	return VmTerminate(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
 }
 
 func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.VirtualMachineLimit, error) {

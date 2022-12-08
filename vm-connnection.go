@@ -322,7 +322,7 @@ func VmCreate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 	return nil, nil
 }
 
-func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, resourceGroup string, vmName string, wait bool) error {
+func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
 	cloudy.Info(ctx, "[%s] Starting VmTerminate (cloudy-azure>vm-connection)", vmName)
 
 	if ctx == nil {
