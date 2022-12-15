@@ -26,7 +26,7 @@ func GetAzureCredentials(azCfg AzureCredentials) (*azidentity.ClientSecretCreden
 		})
 
 	if err != nil {
-		fmt.Printf("Error authentication provider: %v\n", err)
+		fmt.Printf("GetAzureCredentials Error authentication provider: %v\n", err)
 		return nil, err
 	}
 

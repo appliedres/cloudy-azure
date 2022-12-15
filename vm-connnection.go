@@ -95,8 +95,6 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 	}
 
 	var returnList []*cloudyvm.VirtualMachineStatus
-	// subscriptionID, _ := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_SUBSCRIPTION_ID")
-	// filter := fmt.Sprintf("/subscriptions/%v/resourceGroups/%v", subscriptionID, rg)
 	statusOnly := "true"
 
 	// resourceGroup, _ := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_RESOURCE_GROUP")
@@ -122,13 +120,19 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 			vmStatus.LongID = *vm.ID
 			vmStatus.ID = *vm.Properties.VMID
 
+			for _, status := range vm.Properties.InstanceView.Statuses {
+				if strings.Contains(*status.Code, "PowerState") {
+					parts := strings.Split(*status.Code, "/")
+
+					vmStatus.PowerState = parts[1]
+				}
+			}
+
 			myRg := ExtractResourceGroupFromID(ctx, vmStatus.LongID)
 			if strings.EqualFold(rg, myRg) {
 				returnList = append(returnList, vmStatus)
 			}
 
-			// if err == nil {
-			// }
 		}
 	}
 

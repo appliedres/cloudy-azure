@@ -13,11 +13,11 @@ func TestVMStatus(t *testing.T) {
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
 
-	tenantID := cloudy.ForceEnv("TenantID", "")
-	ClientID := cloudy.ForceEnv("ClientID", "")
-	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
-	resourceGroup := cloudy.ForceEnv("resourceGroup", "")
-	SubscriptionID := cloudy.ForceEnv("SUBSCRIPTION_ID", "")
+	tenantID := cloudy.ForceEnv("AZ_TENANT_ID", "")
+	ClientID := cloudy.ForceEnv("AZ_CLIENT_ID", "")
+	ClientSecret := cloudy.ForceEnv("AZ_CLIENT_SECRET", "")
+	resourceGroup := cloudy.ForceEnv("AZ_RESOURCE_GROUP", "")
+	SubscriptionID := cloudy.ForceEnv("AZ_SUBSCRIPTION_ID", "")
 
 	vmc, err := NewAzureVMController(ctx, &AzureVMControllerConfig{
 		AzureCredentials: AzureCredentials{
@@ -36,7 +36,8 @@ func TestVMStatus(t *testing.T) {
 
 	assert.NotNil(t, all)
 	for _, vm := range all {
-		fmt.Printf("%v\n", vm.Name)
+		fmt.Printf("%v -- %s\n", vm.Name, vm.PowerState)
 	}
+
 
 }
