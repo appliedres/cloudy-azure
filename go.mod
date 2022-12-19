@@ -1,6 +1,6 @@
 module github.com/appliedres/cloudy-azure
 
-go 1.18
+go 1.19
 
 replace github.com/appliedres/cloudy => ../cloudy
 
