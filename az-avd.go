@@ -23,7 +23,7 @@ type AzureVirtualDesktop struct {
 }
 
 func NewAzureVirtualDesktop(ctx context.Context, config AzureVirtualDesktopConfig) (*AzureVirtualDesktop, error) {
-	cred, err := GetAzureCredentials(config.AzureCredentials)
+	cred, err := GetAzureClientSecretCredential(config.AzureCredentials)
 	if err != nil {
 		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
 	}
