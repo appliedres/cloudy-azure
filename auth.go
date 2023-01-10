@@ -9,6 +9,8 @@ import (
 	"github.com/appliedres/cloudy"
 )
 
+const DefaultRegion = "usgovvirginia"
+
 type AzureCredentials struct {
 	TenantID     string
 	ClientID     string
@@ -16,7 +18,7 @@ type AzureCredentials struct {
 	Region       string
 }
 
-func GetAzureCredentials(azCfg AzureCredentials) (*azidentity.ClientSecretCredential, error) {
+func GetAzureClientSecretCredential(azCfg AzureCredentials) (*azidentity.ClientSecretCredential, error) {
 
 	cred, err := azidentity.NewClientSecretCredential(azCfg.TenantID, azCfg.ClientID, azCfg.ClientSecret,
 		&azidentity.ClientSecretCredentialOptions{
@@ -36,12 +38,26 @@ func GetAzureCredentials(azCfg AzureCredentials) (*azidentity.ClientSecretCreden
 func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
 	region := env.Get("AZ_REGION")
 	if region == "" {
-		region = "usgovvirginia"
+		region = DefaultRegion
 	}
 	return AzureCredentials{
 		Region:       region,
 		TenantID:     env.Force("AZ_TENANT_ID"),
 		ClientID:     env.Force("AZ_CLIENT_ID"),
 		ClientSecret: env.Force("AZ_CLIENT_SECRET"),
+	}
+}
+
+func GetKeyVaultAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
+	region := env.Get("KEYVAULT_AZ_REGION")
+	if region == "" {
+		region = DefaultRegion
+	}
+
+	return AzureCredentials{
+		Region:       region,
+		TenantID:     env.Force("KEYVAULT_AZ_TENANT_ID"),
+		ClientID:     env.Force("KEYVAULT_AZ_CLIENT_ID"),
+		ClientSecret: env.Force("KEYVAULT_AZ_CLIENT_SECRET"),
 	}
 }

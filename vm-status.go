@@ -93,7 +93,7 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.Environment) (interface{}
 }
 
 func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) (*AzureVMController, error) {
-	cred, err := GetAzureCredentials(config.AzureCredentials)
+	cred, err := GetAzureClientSecretCredential(config.AzureCredentials)
 	if err != nil {
 		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
 	}

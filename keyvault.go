@@ -38,7 +38,7 @@ func (c *KeyVaultFactory) Create(cfg interface{}) (secrets.SecretProvider, error
 func (c *KeyVaultFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &KeyVaultConfig{}
 	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	cfg.AzureCredentials = GetKeyVaultAzureCredentialsFromEnv(env)
 	return cfg, nil
 }
 
@@ -58,12 +58,12 @@ func NewKeyVault(ctx context.Context, vaultURL string, credentials AzureCredenti
 }
 
 func (k *KeyVault) Configure(ctx context.Context) error {
-	cred, err := GetAzureCredentials(k.AzureCredentials)
+	cred, err := GetAzureClientSecretCredential(k.AzureCredentials)
 	if err != nil {
 		return err
 	}
 
-	client, err := azsecrets.NewClient(k.VaultURL, cred, nil)
+	client, err := azsecrets.NewClient(k.VaultURL, cred, &azsecrets.ClientOptions{})
 	if err != nil {
 		return err
 	}

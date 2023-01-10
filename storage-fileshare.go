@@ -51,7 +51,7 @@ type BlobFileShare struct {
 }
 
 func NewBlobFileShare(ctx context.Context, cfg *BlobFileShare) (*BlobFileShare, error) {
-	cred, err := GetAzureCredentials(cfg.Credentials)
+	cred, err := GetAzureClientSecretCredential(cfg.Credentials)
 	if err != nil {
 		return nil, err
 	}

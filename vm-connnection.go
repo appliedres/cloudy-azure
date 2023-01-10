@@ -19,7 +19,7 @@ import (
 )
 
 func NewVMClient(ctx context.Context, config *AzureVMControllerConfig) (*armcompute.VirtualMachinesClient, error) {
-	cred, err := GetAzureCredentials(config.AzureCredentials)
+	cred, err := GetAzureClientSecretCredential(config.AzureCredentials)
 	if err != nil {
 		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
 	}
@@ -38,7 +38,7 @@ func NewVMClient(ctx context.Context, config *AzureVMControllerConfig) (*armcomp
 }
 
 func NewUsageClient(ctx context.Context, config *AzureVMControllerConfig) (*armcompute.UsageClient, error) {
-	cred, err := GetAzureCredentials(config.AzureCredentials)
+	cred, err := GetAzureClientSecretCredential(config.AzureCredentials)
 	if err != nil {
 		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
 	}
@@ -69,7 +69,7 @@ func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error)
 		ClientSecret: clientSecret,
 	}
 
-	cred, err := GetAzureCredentials(azConfig)
+	cred, err := GetAzureClientSecretCredential(azConfig)
 	// cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret,
 	// 	&azidentity.ClientSecretCredentialOptions{AuthorityHost: azidentity.AzureGovernment})
 
