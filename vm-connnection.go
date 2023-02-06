@@ -152,6 +152,8 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 		ctx = cloudy.StartContext()
 	}
 
+	cloudy.Info(ctx, "VmStatus: %s (%s)", vmName, resourceGroup)
+
 	var err error
 
 	if vmClient == nil {

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestVMStatus(t *testing.T) {
+func TestAllVMStatus(t *testing.T) {
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
 
@@ -36,8 +36,7 @@ func TestVMStatus(t *testing.T) {
 
 	assert.NotNil(t, all)
 	for _, vm := range all {
-		fmt.Printf("%v -- %s\n", vm.Name, vm.PowerState)
+		fmt.Printf("%v -- %s -- %s\n", resourceGroup, vm.Name, vm.PowerState)
 	}
-
 
 }

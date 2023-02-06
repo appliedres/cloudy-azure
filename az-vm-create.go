@@ -461,19 +461,15 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 
 	// Input Parameters
 	region := vmc.Config.Region
-	subscriptionId := vmc.Config.SubscriptionID
-	resourceGroup := vmc.Config.SourceImageGalleryResourceGroup
-	imageGalleryName := vmc.Config.SourceImageGalleryName
-	imageName := vm.Image
-	imageVersion := vm.ImageVersion
+	resourceGroup := vmc.Config.ResourceGroup
 	vmName := vm.ID
 
-	tags := map[string]*string{}
-	for k, v := range vm.Tags {
-		tags[k] = to.Ptr(v)
-	}
-
-	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
+	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s",
+		vmc.Config.SubscriptionID,
+		vmc.Config.SourceImageGalleryResourceGroup,
+		vmc.Config.SourceImageGalleryName,
+		vm.Image,
+		vm.ImageVersion)
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
 	// TODO: SDK does not include all possible sizes, need to make dynamic
@@ -504,6 +500,11 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 	existingVM, err := vmc.GetVM(ctx, vm)
 	if err != nil {
 		_ = cloudy.Error(ctx, "[%s] Error searching for existing VM", vm.ID)
+	}
+
+	tags := map[string]*string{}
+	for k, v := range vm.Tags {
+		tags[k] = to.Ptr(v)
 	}
 
 	vmParameters := armcompute.VirtualMachine{
