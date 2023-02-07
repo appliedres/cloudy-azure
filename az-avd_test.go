@@ -11,24 +11,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFetchHPRegKey(t *testing.T) {
+var (
+	ctx               context.Context = cloudy.StartContext()
+	err               error
+	tenantId          string
+	clientId          string
+	clientSecret      string
+	subscriptionId    string
+	resourceGroupName string
+	avd               *AzureVirtualDesktop
+	upn               string
+)
 
-	var (
-		ctx       context.Context = cloudy.StartContext()
-		hostpools []*armdesktopvirtualization.HostPool
-		err       error
-	)
-
+func initAVD() error {
 	_ = testutil.LoadEnv("test.env")
+	tenantId = cloudy.ForceEnv("AZ_TENANT_ID", "")
+	clientId = cloudy.ForceEnv("AZ_CLIENT_ID", "")
+	clientSecret = cloudy.ForceEnv("AZ_CLIENT_SECRET", "")
+	subscriptionId = cloudy.ForceEnv("AZ_SUBSCRIPTION_ID", "")
+	resourceGroupName = cloudy.ForceEnv("AZ_RESOURCE_GROUP", "")
+	upn = cloudy.ForceEnv("AZ_USER_PRINCIPAL_NAME", "")
 
-	tenantId := cloudy.ForceEnv("AZ_TENANT_ID", "")
-	clientId := cloudy.ForceEnv("AZ_CLIENT_ID", "")
-	clientSecret := cloudy.ForceEnv("AZ_CLIENT_SECRET", "")
-	subscriptionId := cloudy.ForceEnv("AZ_SUBSCRIPTION_ID", "")
-	resourceGroupName := cloudy.ForceEnv("AZ_RESOURCE_GROUP", "")
-	upn := cloudy.ForceEnv("AZ_USER_PRINCIPAL_NAME", "")
-
-	avd, err := NewAzureVirtualDesktop(ctx, AzureVirtualDesktopConfig{
+	avd, err = NewAzureVirtualDesktop(ctx, AzureVirtualDesktopConfig{
 		AzureCredentials: AzureCredentials{
 			TenantID:     tenantId,
 			ClientID:     clientId,
@@ -36,6 +40,16 @@ func TestFetchHPRegKey(t *testing.T) {
 			Region:       "usgovvirginia",
 		},
 		subscription: subscriptionId})
+
+	return err
+}
+
+func TestRetrieveRegistrationToken(t *testing.T) {
+	var (
+		hostpools   []*armdesktopvirtualization.HostPool
+		sessionHost *string
+	)
+	err = initAVD()
 	assert.Nil(t, err)
 
 	hostpools, err = avd.ListHostPools(ctx, resourceGroupName)
@@ -58,4 +72,57 @@ func TestFetchHPRegKey(t *testing.T) {
 		assert.NotEmpty(t, regToken)
 	}
 
+	if err == nil {
+		sessionHost, err = avd.GetAvailableSessionHost(ctx, resourceGroupName, *firstHostpool.Name)
+		assert.Nil(t, err)
+		assert.NotEmpty(t, sessionHost)
+	}
+
+	if err == nil {
+		err = avd.AssignSessionHost(ctx, resourceGroupName, *firstHostpool.Name, *sessionHost, upn)
+		assert.Nil(t, err)
+	}
+
+	//if err == nil {
+	//	err = avd.UnassignSessionHost(ctx, resourceGroupName, *firstHostpool.Name, sessionHost, upn)
+	//	assert.Nil(t, err)
+	//}
+}
+
+func TestAssignSessionHost(t *testing.T) {
+
+	err = initAVD()
+	assert.Nil(t, err)
+
+	sessionHost := "col-avd-0-0"
+	hostpoolname := "collider-avd-hp-01"
+
+	err = avd.AssignSessionHost(ctx, resourceGroupName, hostpoolname, sessionHost, upn)
+	assert.Nil(t, err)
+}
+
+func TestUnassignSessionHost(t *testing.T) {
+
+	err = initAVD()
+	assert.Nil(t, err)
+
+	sessionHost := "col-avd-0-0"
+	hostpoolname := "collider-avd-hp-01"
+
+	err = avd.DeleteSessionHost(ctx, resourceGroupName, hostpoolname, sessionHost, upn)
+	assert.Nil(t, err)
+}
+
+func TestAssignUsertoRoles(t *testing.T) {
+	// Desktop Virtualization User 1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63
+	// Virtual Machine User Login fb879df8-f326-4884-b1cf-06f3ad86be52
+	// c37460e9-aef0-4add-91e2-3e80dfbc73ed
+	err = initAVD()
+	assert.Nil(t, err)
+
+	roleid := "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63"
+	userobjectid := "c37460e9-aef0-4add-91e2-3e80dfbc73ed"
+
+	err = avd.AssignRolesToUser(ctx, resourceGroupName, roleid, userobjectid)
+	assert.Nil(t, err)
 }
