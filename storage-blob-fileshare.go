@@ -3,6 +3,7 @@ package cloudyazure
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/storage"
@@ -23,6 +24,8 @@ func (f *AzureBlobFileShareFactory) Create(cfg interface{}) (storage.FileStorage
 	if azCfg == nil {
 		return nil, cloudy.ErrInvalidConfiguration
 	}
+
+	cloudy.Info(context.Background(), "NewBlobContainerShare account: %s", azCfg.Account)
 
 	return NewBlobContainerShare(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
 }
@@ -109,24 +112,32 @@ func (bfs *BlobContainerShare) Get(ctx context.Context, key string) (*storage.Fi
 }
 
 func (bfs *BlobContainerShare) Exists(ctx context.Context, key string) (bool, error) {
-	cloudy.Info(ctx, "BlobContainerShare.Exists: %s", key)
+	cloudy.Info(ctx, "BlobContainerShare.Exists in %s: %s", bfs.Account, key)
 	key = sanitizeName(key)
 	cloudy.Info(ctx, "BlobContainerShare.Exists (sanitized): %s", key)
 
-	client, err := bfs.Client.NewContainerClient(key)
-	if err != nil {
-		return false, err
-	}
+	pager := bfs.Client.ListContainers(&azblob.ListContainersOptions{
+		Include: azblob.ListContainersDetail{
+			Metadata: true,  // Include Metadata
+			Deleted:  false, // Include deleted containers in the result as well
+		},
+	})
 
-	_, err = client.GetProperties(ctx, &azblob.ContainerGetPropertiesOptions{})
-	if err != nil {
-		if is404(err) {
-			return false, nil
+	for pager.NextPage(ctx) {
+		resp := pager.PageResponse()
+
+		for _, container := range resp.ContainerItems {
+			if strings.EqualFold(*container.Name, key) {
+				return true, nil
+			}
 		}
-		return false, err
 	}
 
-	return true, nil
+	if pager.Err() != nil {
+		return false, pager.Err()
+	}
+
+	return false, nil
 }
 
 func (bfs *BlobContainerShare) Create(ctx context.Context, key string, tags map[string]string) (*storage.FileShare, error) {

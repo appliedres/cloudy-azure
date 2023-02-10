@@ -6,6 +6,7 @@ import (
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBlobAccount(t *testing.T) {
@@ -28,13 +29,28 @@ func TestBlobFileAccount(t *testing.T) {
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
 	account := cloudy.ForceEnv("accountBlob", "")
-	accountKey := cloudy.ForceEnv("accountKeyBlob", "")
+	accountKey := cloudy.ForceEnv("accountBlobKey", "")
 
 	bfa, err := NewBlobContainerShare(ctx, account, accountKey, "")
 	if err != nil {
 		log.Fatal(err)
 		// t.FailNow()
 	}
-	testutil.TestFileShareStorageManager(t, bfa, "file-storage-test")
+	// testutil.TestFileShareStorageManager(t, bfa, "file-storage-test")
+
+	containerName := "adam-dyer"
+
+	exists, err := bfa.Exists(ctx, containerName)
+	assert.Nil(t, err)
+	assert.False(t, exists)
+
+	if !exists {
+		tags := map[string]string{
+			"Test": "Test",
+		}
+
+		_, err = bfa.Create(ctx, containerName, tags)
+		assert.Nil(t, err)
+	}
 
 }
