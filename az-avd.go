@@ -8,10 +8,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization"
 	"github.com/appliedres/cloudy"
 	"github.com/google/uuid"
-	"github.com/wflentje/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 )
 
 type AzureVirtualDesktopConfig struct {
@@ -160,26 +160,32 @@ func (avd *AzureVirtualDesktop) GetAvailableSessionHost(ctx context.Context, rg 
 		assigned := session.Properties.AssignedUser
 		status := session.Properties.Status
 		if assigned == nil && *status == "Available" {
-			return session.Name, nil
+			temp := *session.Name
+			lastInd := strings.LastIndex(temp, "/")
+			if lastInd == -1 {
+				return session.Name, nil
+			}
+			sessionName := temp[lastInd+1:]
+			return &sessionName, nil
 		}
 	}
 	return nil, cloudy.Error(ctx, "GetAvailableSessionHost failure (no available session host): %+v", err)
 }
 
-func (avd *AzureVirtualDesktop) AssignSessionHost(ctx context.Context, rg string, hpname string, sessionhost string, upn string) error {
+func (avd *AzureVirtualDesktop) AssignSessionHost(ctx context.Context, rg string, hpname string, sessionhost string, userobjectid string) error {
 	res, err := avd.sessionhosts.Update(ctx, rg, hpname, sessionhost,
 		&armdesktopvirtualization.SessionHostsClientUpdateOptions{
 			SessionHost: &armdesktopvirtualization.SessionHostPatch{
 				Properties: &armdesktopvirtualization.SessionHostPatchProperties{
 					AllowNewSession: to.Ptr(true),
-					AssignedUser:    to.Ptr(upn),
+					AssignedUser:    to.Ptr(userobjectid),
 				},
 			},
 		})
+
 	if err != nil {
 		return cloudy.Error(ctx, "AssignSessionHost failure: %+v", err)
 	}
-
 	_ = res
 
 	return nil
@@ -215,7 +221,7 @@ func (avd *AzureVirtualDesktop) DisconnecteUserSession(ctx context.Context, rg s
 	return nil
 }
 
-func (avd *AzureVirtualDesktop) AssignRolesToUser(ctx context.Context, rg string, roleid string, upn string) error {
+func (avd *AzureVirtualDesktop) AssignRoleToUser(ctx context.Context, rg string, roleid string, upn string) error {
 	scope := "/subscriptions/" + avd.config.subscription + "/resourceGroups/" + rg
 	roledefid := "/subscriptions/" + avd.config.subscription + "/providers/Microsoft.Authorization/roleDefinitions/" + roleid
 	uuidWithHyphen := uuid.New().String()
@@ -226,7 +232,7 @@ func (avd *AzureVirtualDesktop) AssignRolesToUser(ctx context.Context, rg string
 				RoleDefinitionID: to.Ptr(roledefid),
 				PrincipalID:      to.Ptr(upn),
 			},
-		}, &armauthorization.RoleAssignmentsClientCreateOptions{Location: to.Ptr("USGov Virginia")})
+		}, nil)
 	if err != nil && strings.Split(err.Error(), "ERROR CODE: RoleAssignmentExists") == nil {
 		return cloudy.Error(ctx, "AssignRolesToUser failure: %+v", err)
 	}

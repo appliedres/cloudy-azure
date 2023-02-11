@@ -19,6 +19,8 @@ require (
 	github.com/stretchr/testify v1.8.1
 )
 
+require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.0.0 // indirect
+
 //require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.0.0 // indirect
 
 require (
@@ -43,13 +45,13 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/wflentje/azure-sdk-for-go v0.0.0-20230202174923-8ce26f795fb6 // indirect
-	github.com/wflentje/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.0.0-20230207192748-abb13ed88e3e
+	github.com/wflentje/azure-sdk-for-go v0.0.0-20230209192047-a2d7ea9be4b6 // indirect
+	github.com/wflentje/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.0.0-20230209192732-4d4c553bb70f
 	go.mongodb.org/mongo-driver v1.11.1 // indirect
 	golang.org/x/crypto v0.4.0 // indirect
-	golang.org/x/net v0.5.0 // indirect
-	golang.org/x/sys v0.4.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
+	golang.org/x/net v0.6.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
