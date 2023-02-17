@@ -9,6 +9,7 @@ import (
 	"github.com/appliedres/cloudy/storage"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 )
 
 var AzureBlob = "azure-blob"
@@ -43,7 +44,7 @@ type BlobContainerShare struct {
 	Account    string
 	AccountKey string
 	UrlSlug    string
-	Client     *azblob.ServiceClient
+	Client     *azblob.Client
 }
 
 func NewBlobContainerShare(ctx context.Context, account string, accountKey string, urlslug string) (*BlobContainerShare, error) {
@@ -56,7 +57,10 @@ func NewBlobContainerShare(ctx context.Context, account string, accountKey strin
 		return nil, err
 	}
 
-	service, err := azblob.NewServiceClientWithSharedKey(fmt.Sprintf("https://%s.%s/", account, urlslug), cred, nil)
+	serviceUrl := fmt.Sprintf("https://%s.%s/", account, urlslug)
+	cloudy.Info(ctx, "NewBlobContainerShare %s", serviceUrl)
+
+	service, err := azblob.NewClientWithSharedKeyCredential(serviceUrl, cred, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -71,15 +75,16 @@ func NewBlobContainerShare(ctx context.Context, account string, accountKey strin
 }
 
 func (bfs *BlobContainerShare) List(ctx context.Context) ([]*storage.FileShare, error) {
-	pager := bfs.Client.ListContainers(&azblob.ListContainersOptions{})
+	pager := bfs.Client.NewListContainersPager(&azblob.ListContainersOptions{})
 
 	var rtn []*storage.FileShare
 
-	for pager.NextPage(ctx) {
-		if pager.Err() != nil {
-			return nil, pager.Err()
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
 		}
-		for _, item := range pager.PageResponse().ContainerItems {
+		for _, item := range resp.ContainerItems {
 			rtn = append(rtn, &storage.FileShare{
 				ID:   *item.Name,
 				Name: *item.Name,
@@ -90,12 +95,9 @@ func (bfs *BlobContainerShare) List(ctx context.Context) ([]*storage.FileShare, 
 }
 
 func (bfs *BlobContainerShare) Get(ctx context.Context, key string) (*storage.FileShare, error) {
-	client, err := bfs.Client.NewContainerClient(key)
-	if err != nil {
-		return nil, err
-	}
+	client := bfs.Client.ServiceClient().NewContainerClient(key)
 
-	_, err = client.GetProperties(ctx, &azblob.ContainerGetPropertiesOptions{})
+	_, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
 	if err != nil {
 		if is404(err) {
 			return nil, nil
@@ -116,25 +118,24 @@ func (bfs *BlobContainerShare) Exists(ctx context.Context, key string) (bool, er
 	key = sanitizeName(key)
 	cloudy.Info(ctx, "BlobContainerShare.Exists (sanitized): %s", key)
 
-	pager := bfs.Client.ListContainers(&azblob.ListContainersOptions{
-		Include: azblob.ListContainersDetail{
+	pager := bfs.Client.NewListContainersPager(&azblob.ListContainersOptions{
+		Include: azblob.ListContainersInclude{
 			Metadata: true,  // Include Metadata
 			Deleted:  false, // Include deleted containers in the result as well
 		},
 	})
 
-	for pager.NextPage(ctx) {
-		resp := pager.PageResponse()
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return false, err
+		}
 
 		for _, container := range resp.ContainerItems {
 			if strings.EqualFold(*container.Name, key) {
 				return true, nil
 			}
 		}
-	}
-
-	if pager.Err() != nil {
-		return false, pager.Err()
 	}
 
 	return false, nil
@@ -150,13 +151,10 @@ func (bfs *BlobContainerShare) Create(ctx context.Context, key string, tags map[
 	// 	--root-squash NoRootSquash
 	// 	--quota 100
 	key = sanitizeName(key)
-	client, err := bfs.Client.NewContainerClient(key)
-	if err != nil {
-		return nil, err
-	}
+	client := bfs.Client.ServiceClient().NewContainerClient(key)
 
-	_, err = client.Create(ctx, &azblob.ContainerCreateOptions{
-		Metadata: tags,
+	_, err := client.Create(ctx, &container.CreateOptions{
+		Metadata: ToStrPointerMap(tags),
 	})
 	if err != nil {
 		return nil, err
@@ -172,10 +170,8 @@ func (bfs *BlobContainerShare) Create(ctx context.Context, key string, tags map[
 
 func (bfs *BlobContainerShare) Delete(ctx context.Context, key string) error {
 	key = sanitizeName(key)
-	client, err := bfs.Client.NewContainerClient(key)
-	if err != nil {
-		return err
-	}
-	_, err = client.Delete(ctx, &azblob.ContainerDeleteOptions{})
+	client := bfs.Client.ServiceClient().NewContainerClient(key)
+
+	_, err := client.Delete(ctx, &container.DeleteOptions{})
 	return err
 }

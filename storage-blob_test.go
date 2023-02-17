@@ -12,8 +12,8 @@ import (
 func TestBlobAccount(t *testing.T) {
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
-	account := cloudy.ForceEnv("account", "")
-	accountKey := cloudy.ForceEnv("accountKey", "")
+	account := cloudy.ForceEnv("account_blob", "")
+	accountKey := cloudy.ForceEnv("account_blob_Key", "")
 
 	bsa, err := NewBlobStorageAccount(ctx, account, accountKey, "")
 	if err != nil {
