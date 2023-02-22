@@ -27,16 +27,18 @@ type AzureVMControllerConfig struct {
 	ResourceGroup  string
 
 	// ??
-	NetworkResourceGroup     string   // From Environment Variable
-	SourceImageGalleryName   string   // From Environment Variable
-	Vnet                     string   // From Environment Variable
-	AvailableSubnets         []string // From Environment Variable
-	NetworkSecurityGroupName string   // From Environment Variable
-	NetworkSecurityGroupID   string   // From Environment Variable
-	SaltCmd                  string   // From Environment Variable
-	VaultURL                 string
+	NetworkResourceGroup            string // From Environment Variable
+	SourceImageGalleryResourceGroup string
+	SourceImageGalleryName          string   // From Environment Variable
+	Vnet                            string   // From Environment Variable
+	AvailableSubnets                []string // From Environment Variable
+	NetworkSecurityGroupName        string   // From Environment Variable
+	NetworkSecurityGroupID          string   // From Environment Variable
+	SaltCmd                         string   // From Environment Variable
+	VaultURL                        string
 
-	DomainControllers []*string // From Environment Variable
+	DomainControllerOverride string
+	DomainControllers        []*string // From Environment Variable
 
 	LogBody bool
 }
@@ -70,6 +72,7 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.Environment) (interface{}
 
 	// Not always necessary but needed for creation
 	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")
+	cfg.SourceImageGalleryResourceGroup = env.Default("AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP", cfg.ResourceGroup)
 	cfg.SourceImageGalleryName = env.Force("AZ_SOURCE_IMAGE_GALLERY_NAME")
 	cfg.Vnet = env.Force("AZ_VNET")
 	cfg.NetworkSecurityGroupName = env.Force("AZ_NETWORK_SECURITY_GROUP_NAME")
@@ -79,6 +82,8 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.Environment) (interface{}
 	subnets := env.Force("SUBNETS") //SUBNET1,SUBNET2
 	cfg.AvailableSubnets = strings.Split(subnets, ",")
 
+	// Defaults to true for backwards compatibility
+	cfg.DomainControllerOverride = env.Default("DOMAIN_CONTROLLER_OVERRIDE", "True")
 	domainControllers := strings.Split(env.Force("DOMAIN_CONTROLLERS"), ",") // DC1, DC2
 	for i := range domainControllers {
 		cfg.DomainControllers = append(cfg.DomainControllers, &domainControllers[i])

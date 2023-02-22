@@ -2,12 +2,15 @@ package cloudyazure
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
 	// "github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/storage"
 )
@@ -40,7 +43,7 @@ type BlobStorageAccount struct {
 	Account    string
 	AccountKey string
 	UrlSlug    string
-	Client     *azblob.ServiceClient
+	Client     *azblob.Client
 }
 
 func NewBlobStorageAccount(ctx context.Context, account string, accountKey string, urlslug string) (*BlobStorageAccount, error) {
@@ -54,7 +57,7 @@ func NewBlobStorageAccount(ctx context.Context, account string, accountKey strin
 		return nil, err
 	}
 
-	service, err := azblob.NewServiceClientWithSharedKey(serviceUrl, cred, nil)
+	service, err := azblob.NewClientWithSharedKeyCredential(serviceUrl, cred, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -69,54 +72,29 @@ func NewBlobStorageAccount(ctx context.Context, account string, accountKey strin
 }
 
 func (sa *BlobStorageAccount) List(ctx context.Context) ([]*storage.StorageArea, error) {
-	containers, err := sa.ListNative(ctx)
-	if err != nil {
-		return nil, err
-	}
 
-	rtn := make([]*storage.StorageArea, len(containers))
-	for i, c := range containers {
-		rtn[i] = sa.ToStorageArea(c)
-	}
-	return rtn, nil
-}
+	rtn := []*storage.StorageArea{}
 
-func (sa *BlobStorageAccount) ToStorageArea(container *azblob.ContainerItem) *storage.StorageArea {
-	return &storage.StorageArea{
-		Name: *container.Name,
-		Tags: FromStrPointerMap(container.Metadata),
-	}
-}
-
-func (sa *BlobStorageAccount) ListNative(ctx context.Context) ([]*azblob.ContainerItem, error) {
-	var rtn []*azblob.ContainerItem
-
-	pager := sa.Client.ListContainers(&azblob.ListContainersOptions{
-		Include: azblob.ListContainersDetail{
+	pager := sa.Client.NewListContainersPager(&azblob.ListContainersOptions{
+		Include: azblob.ListContainersInclude{
 			Metadata: true,
 		},
 	})
-	for pager.NextPage(ctx) {
-		if pager.Err() != nil {
-			return nil, pager.Err()
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
 		}
-		items := pager.PageResponse().ContainerItems
-		rtn = append(rtn, items...)
+
+		for _, containerItem := range resp.ContainerItems {
+			rtn = append(rtn, &storage.StorageArea{
+				Name: *containerItem.Name,
+				Tags: FromStrPointerMap(containerItem.Metadata),
+			})
+		}
 	}
 
 	return rtn, nil
-}
-
-func (sa *BlobStorageAccount) GetNativeItem(ctx context.Context, key string) (*azblob.ContainerItem, error) {
-	cloudy.Info(ctx, "BlobStorageAccount.GetNativeItem: %s", key)
-	c, err := sa.GetBlobContainer(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	if c == nil {
-		return nil, nil
-	}
-	return c, nil
 }
 
 func (sa *BlobStorageAccount) Exists(ctx context.Context, key string) (bool, error) {
@@ -133,42 +111,52 @@ func (sa *BlobStorageAccount) Exists(ctx context.Context, key string) (bool, err
 
 func (sa *BlobStorageAccount) Get(ctx context.Context, key string) (storage.ObjectStorage, error) {
 	key = sanitizeName(key)
-	containerClient, err := sa.Client.NewContainerClient(key)
-	if err != nil {
-		return nil, err
-	}
+
+	containerClient := sa.Client.ServiceClient().NewContainerClient(key)
+
 	return NewBlobContainerFrom(ctx, containerClient), nil
 }
 
 func (sa *BlobStorageAccount) GetItem(ctx context.Context, key string) (*storage.StorageArea, error) {
 	key = sanitizeName(key)
-	item, err := sa.GetNativeItem(ctx, key)
+
+	cloudy.Info(ctx, "BlobStorageAccount.GetItem: %s", key)
+
+	storageArea, err := sa.GetBlobContainer(ctx, key)
+
 	if err != nil {
 		return nil, err
 	}
 
-	return sa.ToStorageArea(item), nil
+	return storageArea, nil
 }
 
-func (sa *BlobStorageAccount) GetBlobContainer(ctx context.Context, name string) (*azblob.ContainerItem, error) {
-	pager := sa.Client.ListContainers(&azblob.ListContainersOptions{
+func (sa *BlobStorageAccount) GetBlobContainer(ctx context.Context, name string) (*storage.StorageArea, error) {
+	pager := sa.Client.NewListContainersPager(&azblob.ListContainersOptions{
 		Prefix: &name,
-		Include: azblob.ListContainersDetail{
+		Include: azblob.ListContainersInclude{
 			Metadata: true,
 		},
 	})
 
-	if pager.NextPage(ctx) {
-		if pager.Err() != nil {
-			return nil, pager.Err()
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
 		}
 
-		items := pager.PageResponse().ContainerItems
-		if len(items) == 1 {
-			return items[0], nil
-		}
+		items := resp.ContainerItems
+
 		if len(items) >= 1 {
-			return items[0], nil
+			if len(items) > 1 {
+				cloudy.Warn(ctx, "GetBlobContainer found more than 1 result, returning first result only")
+			}
+
+			return &storage.StorageArea{
+				Name: *items[0].Name,
+				Tags: FromStrPointerMap(items[0].Metadata),
+			}, nil
+
 		}
 	}
 
@@ -177,12 +165,12 @@ func (sa *BlobStorageAccount) GetBlobContainer(ctx context.Context, name string)
 
 func (sa *BlobStorageAccount) Create(ctx context.Context, key string, openToPublic bool, tags map[string]string) (storage.ObjectStorage, error) {
 
-	opts := &azblob.ContainerCreateOptions{
-		Metadata: tags,
+	opts := &azblob.CreateContainerOptions{
+		Metadata: ToStrPointerMap(tags),
 	}
 
 	if openToPublic {
-		opts.Access = azblob.PublicAccessTypeBlob.ToPtr()
+		opts.Access = to.Ptr(azblob.PublicAccessTypeBlob)
 	}
 
 	_, err := sa.Client.CreateContainer(ctx, key, opts)
@@ -192,15 +180,13 @@ func (sa *BlobStorageAccount) Create(ctx context.Context, key string, openToPubl
 
 	// Created
 	key = sanitizeName(key)
-	containerClient, err := sa.Client.NewContainerClient(key)
-	if err != nil {
-		return nil, err
-	}
+	containerClient := sa.Client.ServiceClient().NewContainerClient(key)
+
 	return NewBlobContainerFrom(ctx, containerClient), nil
 }
 
 func (sa *BlobStorageAccount) Delete(ctx context.Context, key string) error {
-	_, err := sa.Client.DeleteContainer(ctx, key, &azblob.ContainerDeleteOptions{})
+	_, err := sa.Client.DeleteContainer(ctx, key, &azblob.DeleteContainerOptions{})
 	return err
 }
 
@@ -210,10 +196,10 @@ type BlobStorage struct {
 	AccountKey string
 	Container  string
 	UrlSlug    string
-	Client     *azblob.ContainerClient
+	Client     *container.Client
 }
 
-func NewBlobContainerFrom(ctx context.Context, client *azblob.ContainerClient) *BlobStorage {
+func NewBlobContainerFrom(ctx context.Context, client *container.Client) *BlobStorage {
 	return &BlobStorage{
 		Client: client,
 	}
@@ -230,10 +216,7 @@ func NewBlobContainer(ctx context.Context, account string, accountKey string, co
 	}
 
 	container = sanitizeName(container)
-	c, err := bsa.Client.NewContainerClient(container)
-	if err != nil {
-		return nil, err
-	}
+	c := bsa.Client.ServiceClient().NewContainerClient(container)
 
 	return &BlobStorage{
 		Account:    account,
@@ -246,14 +229,10 @@ func NewBlobContainer(ctx context.Context, account string, accountKey string, co
 
 func (b *BlobStorage) Upload(ctx context.Context, key string, data io.Reader, tags map[string]string) error {
 
-	c, err := b.Client.NewBlockBlobClient(key)
-	if err != nil {
-		fmt.Printf("Error uploading, %v", err)
-		return err
-	}
+	c := b.Client.NewBlockBlobClient(key)
 
-	_, err = c.UploadStream(ctx, data, azblob.UploadStreamOptions{
-		Metadata: tags,
+	_, err := c.UploadStream(ctx, data, &blockblob.UploadStreamOptions{
+		Metadata: ToStrPointerMap(tags),
 	})
 
 	return err
@@ -261,16 +240,12 @@ func (b *BlobStorage) Upload(ctx context.Context, key string, data io.Reader, ta
 
 func (b *BlobStorage) Exists(ctx context.Context, key string) (bool, error) {
 	cloudy.Info(ctx, "BlobStorage.Exists: %s", key)
-	var storageErr *azblob.StorageError
 
-	c, err := b.Client.NewBlobClient(key)
+	c := b.Client.NewBlobClient(key)
+
+	_, err := c.GetProperties(ctx, nil)
 	if err != nil {
-		return false, err
-	}
-
-	_, err = c.GetProperties(ctx, nil)
-	if err != nil && errors.As(err, &storageErr) {
-		if storageErr.StatusCode() == 404 {
+		if bloberror.HasCode(err, bloberror.ResourceNotFound) {
 			return false, nil
 		}
 		return false, err
@@ -281,27 +256,21 @@ func (b *BlobStorage) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 func (b *BlobStorage) Download(ctx context.Context, key string) (io.ReadCloser, error) {
-	var storageErr *azblob.StorageError
 
-	c, err := b.Client.NewBlockBlobClient(key)
+	c := b.Client.NewBlockBlobClient(key)
+
+	resp, err := c.DownloadStream(ctx, &azblob.DownloadStreamOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.Download(ctx, &azblob.BlobDownloadOptions{})
-	if err != nil && errors.As(err, &storageErr) {
-		return nil, err
-	}
-
-	return resp.Body(&azblob.RetryReaderOptions{}), err
+	return resp.Body, err
 }
 
 func (b *BlobStorage) Delete(ctx context.Context, key string) error {
-	c, err := b.Client.NewBlobClient(key)
-	if err != nil {
-		return err
-	}
-	_, err = c.Delete(ctx, &azblob.BlobDeleteOptions{})
+	c := b.Client.NewBlobClient(key)
+
+	_, err := c.Delete(ctx, &azblob.DeleteBlobOptions{})
 	return err
 }
 
@@ -325,7 +294,7 @@ func (b *BlobStorage) List(ctx context.Context, prefix string) ([]*storage.Store
 	return rtn, rtnPrefixes, err
 }
 
-func (b *BlobStorage) ToStoredObject(item *azblob.BlobItemInternal) *storage.StoredObject {
+func (b *BlobStorage) ToStoredObject(item *container.BlobItem) *storage.StoredObject {
 	return &storage.StoredObject{
 		Key:  *item.Name,
 		Tags: b.TagsToMap(item.BlobTags),
@@ -334,7 +303,7 @@ func (b *BlobStorage) ToStoredObject(item *azblob.BlobItemInternal) *storage.Sto
 	}
 }
 
-func (b *BlobStorage) TagsToMap(tags *azblob.BlobTags) map[string]string {
+func (b *BlobStorage) TagsToMap(tags *container.BlobTags) map[string]string {
 	rtn := make(map[string]string)
 	if tags != nil {
 		for _, t := range tags.BlobTagSet {
@@ -344,21 +313,23 @@ func (b *BlobStorage) TagsToMap(tags *azblob.BlobTags) map[string]string {
 	return rtn
 }
 
-func (b *BlobStorage) ListNative(ctx context.Context, prefix string) ([]*azblob.BlobItemInternal, []*azblob.BlobPrefix, error) {
-	pager := b.Client.ListBlobsHierarchy("/", &azblob.ContainerListBlobsHierarchyOptions{
+func (b *BlobStorage) ListNative(ctx context.Context, prefix string) ([]*container.BlobItem, []*container.BlobPrefix, error) {
+
+	pager := b.Client.NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{
 		Prefix: &prefix,
 	})
 
-	var items []*azblob.BlobItemInternal
-	var prefixes []*azblob.BlobPrefix
+	var items []*container.BlobItem
+	var prefixes []*container.BlobPrefix
 
-	for pager.NextPage(ctx) {
-		if pager.Err() != nil {
-			return items, prefixes, pager.Err()
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return items, prefixes, err
 		}
 
-		items = append(items, pager.PageResponse().Segment.BlobItems...)
-		prefixes = append(prefixes, pager.PageResponse().Segment.BlobPrefixes...)
+		items = append(items, resp.Segment.BlobItems...)
+		prefixes = append(prefixes, resp.Segment.BlobPrefixes...)
 	}
 
 	return items, prefixes, nil

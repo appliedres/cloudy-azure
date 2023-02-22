@@ -2,7 +2,6 @@ package cloudyazure
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -248,8 +247,10 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 
 	dnsServers := []*string{}
 
-	if strings.EqualFold(vm.OSType, "windows") {
-		dnsServers = vmc.Config.DomainControllers
+	if strings.EqualFold(vmc.Config.DomainControllerOverride, "True") {
+		if strings.EqualFold(vm.OSType, "windows") {
+			dnsServers = vmc.Config.DomainControllers
+		}
 	}
 
 	poller, err := nicClient.BeginCreateOrUpdate(ctx, rg, nicName, armnetwork.Interface{
@@ -460,19 +461,15 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 
 	// Input Parameters
 	region := vmc.Config.Region
-	subscriptionId := vmc.Config.SubscriptionID
 	resourceGroup := vmc.Config.ResourceGroup
-	imageGalleryName := vmc.Config.SourceImageGalleryName
-	imageName := vm.Image
-	imageVersion := vm.ImageVersion
 	vmName := vm.ID
 
-	tags := map[string]*string{}
-	for k, v := range vm.Tags {
-		tags[k] = to.Ptr(v)
-	}
-
-	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", subscriptionId, resourceGroup, imageGalleryName, imageName, imageVersion)
+	imageId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s",
+		vmc.Config.SubscriptionID,
+		vmc.Config.SourceImageGalleryResourceGroup,
+		vmc.Config.SourceImageGalleryName,
+		vm.Image,
+		vm.ImageVersion)
 
 	// What we really need to do here is look through quota and find the best size. But for now we can just use the size specified.
 	// TODO: SDK does not include all possible sizes, need to make dynamic
@@ -503,6 +500,11 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 	existingVM, err := vmc.GetVM(ctx, vm)
 	if err != nil {
 		_ = cloudy.Error(ctx, "[%s] Error searching for existing VM", vm.ID)
+	}
+
+	tags := map[string]*string{}
+	for k, v := range vm.Tags {
+		tags[k] = to.Ptr(v)
 	}
 
 	vmParameters := armcompute.VirtualMachine{
@@ -578,16 +580,6 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
 	if err != nil {
 		_ = cloudy.Error(ctx, "[%s] PollUntilDone failed to obtain a response: %v", vm.ID, err)
-	}
-
-	prefix := cloudy.DefaultEnvironment.Get("USERAPI_PREFIX")
-	cloudy.Info(ctx, "Found environment prefix: %s", prefix)
-	// TODO: FIX THIS FOR COLLIDER
-	if strings.EqualFold(vm.OSType, "windows") {
-		err = vmc.AddInstallSaltMinionExt(ctx, vm)
-		if err != nil {
-			return cloudy.Error(ctx, "[%s] CreateVirtualMachine AddInstallSaltMinionExt failed to install salt minion: %v", vm.ID, err)
-		}
 	}
 
 	vm.OSDisk = &cloudyvm.VirtualMachineDisk{
@@ -837,80 +829,6 @@ func (vmc *AzureVMController) AddADJoinExtensionWindows(ctx context.Context, vm 
 	return nil
 }
 
-func (vmc *AzureVMController) AddInstallSaltMinionExt(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) error {
-
-	if vmc.Config.SaltCmd == "" {
-		cloudy.Info(ctx, "[%s] saltCmd not defined", vm.ID)
-		return nil
-	}
-
-	windowsSaltCommandb64 := base64.StdEncoding.EncodeToString([]byte(WindowsSaltInstallCmd))
-
-	fullCmd := fmt.Sprintf("powershell -command \"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%v')) | Out-File -filepath c:\\windows\\temp\\install.ps1\" && powershell -ExecutionPolicy Unrestricted -File c:\\windows\\temp\\install.ps1 %s", windowsSaltCommandb64, vmc.Config.SaltCmd)
-
-	cloudy.Info(ctx, "[%s] saltCmd: %s", vm.ID, vmc.Config.SaltCmd)
-
-	// Look up from keyvault
-	AdDomainName, err := vmc.Vault.GetSecret(ctx, "AdDomainName")
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
-	}
-
-	if AdDomainName == "" {
-		AdDomainName = cloudy.DefaultEnvironment.Get("AD_DOMAIN_NAME")
-	}
-
-	AdJoinUser, err := vmc.Vault.GetSecret(ctx, "AdJoinUser")
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not read AdDomainName from vault, %v", vm.ID, err)
-	}
-
-	if AdJoinUser == "" {
-		AdJoinUser = cloudy.DefaultEnvironment.Get("AD_JOIN_USER")
-	}
-
-	if AdDomainName == "" || AdJoinUser == "" {
-		return cloudy.Error(ctx, "[%s] error loading ad details %s - %s", vm.ID, AdDomainName, AdJoinUser)
-	}
-
-	client, err := armcompute.NewVirtualMachineExtensionsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Cloud: cloud.AzureGovernment,
-		},
-	})
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not create extensions client", vm.ID)
-	}
-
-	poller, err := client.BeginCreateOrUpdate(ctx, vmc.Config.ResourceGroup, vm.ID, "SaltMinion", armcompute.VirtualMachineExtension{
-		Location: &vmc.Config.Region,
-		Properties: &armcompute.VirtualMachineExtensionProperties{
-			Publisher:               to.Ptr("Microsoft.Compute"),
-			AutoUpgradeMinorVersion: to.Ptr(true),
-			Type:                    to.Ptr("CustomScriptExtension"),
-			TypeHandlerVersion:      to.Ptr("1.9"),
-			Settings: &map[string]interface{}{
-				"Name":    AdDomainName,
-				"User":    AdJoinUser,
-				"Restart": "true",
-				"Options": "3",
-			},
-			ProtectedSettings: &map[string]interface{}{
-				"commandToExecute": fullCmd,
-			},
-		},
-	}, nil)
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] could not create salt minion extension: %v", vm.ID, err)
-	}
-	resp, err := poller.PollUntilDone(context.Background(), &runtime.PollUntilDoneOptions{})
-	if err != nil {
-		return cloudy.Error(ctx, "[%s] AddInstallSaltMinionExt failed to obtain a response: %v", vm.ID, err)
-	}
-	cloudy.Info(ctx, "[%s] Created SaltMinion Extension: %v", vm.ID, *resp.ID)
-	return nil
-}
-
 func (vmc *AzureVMController) GetVMSize(ctx context.Context, size string) (*cloudyvm.VmSize, error) {
 	client, err := armcompute.NewResourceSKUsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
@@ -1000,65 +918,3 @@ func SizeFromResource(ctx context.Context, res *armcompute.ResourceSKU) *cloudyv
 
 	return rtn
 }
-
-var WindowsSaltInstallCmd = `
-[CmdletBinding()]
-Param(
-    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$minionname = "not-specified",
-    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$master = "not-specified",
-    [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
-    [string]$winminiondownloadurl = "not-specified",
-    [Parameter(Mandatory = $false, ValueFromPipeline = $true)]
-    [string]$defaultminionconfigurl = "not-specified"
-)
-
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]'Tls12'
-$webclient = New-Object System.Net.WebClient
-
-# Download default minion config if specified
-If ($defaultminionconfigurl -ne "not-specified") {
-    $webclient.DownloadFile($defaultminionconfigurl, 'c:\windows\temp\minion')
-}
-
-# Download minion setup
-$saltExe = "Salt-Minion-Setup.exe"
-$file = "C:\windows\temp\$saltExe"
-If ($winminiondownloadurl -ne "not-specified") {$webclient.DownloadFile($winminiondownloadurl, $file)}
-
-# build installer params
-$parameters = "/S "
-If ($defaultminionconfigurl -ne "not-specified") { $parameters += "/custom-config=c:\windows\temp\minion " }
-If ($master -ne "not-specified") { $parameters += "$parameters /master=$master " }
-If ($minionname -ne "not-specified") { $parameters += "$parameters /minion-name=$minionname " }
-
-# Install minion
-Write-Output "Salt Installing"
-Write-Output "$file $parameters"
-Start-Process $file -ArgumentList "$parameters" -Wait -NoNewWindow -PassThru 
-Write-Output "Salt Installed"
-
-# Install service
-$service = Get-Service salt-minion -ErrorAction SilentlyContinue
-While (!$service) {
-    Start-Sleep -s 2
-    $service = Get-Service salt-minion -ErrorAction SilentlyContinue
-}
-
-# Start service and wait
-Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
-$try = 0
-While (($service.Status -ne "Running") -and ($try -ne 10)) {
-    Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
-    $service = Get-Service salt-minion -ErrorAction SilentlyContinue
-    Start-Sleep -s 2
-    $try += 1
-}
-If ($service.Status -eq "Stopped") {
-    Write-Output -NoNewline "Failed to start salt minion"
-    exit 1
-}
-Write-Output "Salt Complete"
-`
