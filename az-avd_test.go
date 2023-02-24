@@ -158,6 +158,14 @@ func TestAssignSessionHost(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestDeleteSessionHost(t *testing.T) {
+	err = initAVD()
+	assert.Nil(t, err)
+
+	err = avd.DeleteSessionHost(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost)
+	assert.Nil(t, err)
+}
+
 func TestDeleteUserSession(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)

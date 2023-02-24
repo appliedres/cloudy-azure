@@ -191,6 +191,18 @@ func (avd *AzureVirtualDesktop) AssignSessionHost(ctx context.Context, rg string
 	return nil
 }
 
+func (avd *AzureVirtualDesktop) DeleteSessionHost(ctx context.Context, rg string, hpname string, sessionhost string) error {
+	// removes session host from host pool, does not delete VM
+
+	res, err := avd.sessionhosts.Delete(ctx, rg, hpname, sessionhost, nil)
+	if err != nil {
+		return cloudy.Error(ctx, "AssignSessionHost failure: %+v", err)
+	}
+	_ = res
+
+	return nil
+}
+
 func (avd *AzureVirtualDesktop) DeleteUserSession(ctx context.Context, rg string, hpname string, sessionHost string, upn string) error {
 	sessionId, err := avd.getUserSessionId(ctx, rg, hpname, sessionHost, upn)
 	if err != nil {
