@@ -11,20 +11,20 @@ import (
 
 func TestKeyVault(t *testing.T) {
 
-	_ = testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
 
 	ctx := cloudy.StartContext()
 
-	tenantID := cloudy.ForceEnv("TenantID", "")
-	ClientID := cloudy.ForceEnv("ClientID", "")
-	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
+	tenantID := cloudy.ForceEnv("KEYVAULT_AZ_TENANT_ID", "")
+	ClientID := cloudy.ForceEnv("KEYVAULT_AZ_CLIENT_ID", "")
+	ClientSecret := cloudy.ForceEnv("KEYVAULT_AZ_CLIENT_SECRET", "")
 
 	creds := AzureCredentials{
 		TenantID:     tenantID,
 		ClientID:     ClientID,
 		ClientSecret: ClientSecret,
 	}
-	vaultURL := "https://gokeyvault.vault.usgovcloudapi.net/"
+	vaultURL := cloudy.ForceEnv("AZ_VAULT_URL", "")
 
 	kv, err := NewKeyVault(ctx, vaultURL, creds)
 	assert.Nil(t, err)
