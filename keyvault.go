@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
@@ -108,12 +109,43 @@ func (k *KeyVault) GetSecret(ctx context.Context, key string) (string, error) {
 	return *resp.Value, nil
 }
 
+// SaveSecret saves the secret in key vault. There are a few funny things that
+// can happen here.
 func (k *KeyVault) SaveSecret(ctx context.Context, key string, data string) error {
 	key = sanitizeName(key)
 
 	_, err := k.Client.SetSecret(ctx, key,
 		azsecrets.SetSecretParameters{Value: &data}, nil)
+
+	if k.IsConflictErr(err) {
+		// A conflict means that we are trying to save a secret that has already been created
+		// and then deleted, but it has not been purged.
+
+		_, err = k.Client.RecoverDeletedSecret(ctx, key, &azsecrets.RecoverDeletedSecretOptions{})
+		if err != nil {
+			return err
+		}
+
+		// Need to sleep since Azure has an "eventually consistent" model... maybe try 3 time
+		for i := -0; i < 3; i++ {
+			time.Sleep(1 * time.Second)
+			_, err = k.Client.SetSecret(ctx, key, azsecrets.SetSecretParameters{Value: &data}, nil)
+
+			if err == nil {
+				break
+			}
+		}
+	}
+
 	return err
+}
+
+func (k *KeyVault) IsConflictErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return strings.Contains(strings.ToLower(err.Error()), "conflict")
 }
 
 func (k *KeyVault) DeleteSecret(ctx context.Context, key string) error {
