@@ -28,6 +28,8 @@ github.com/Jeffail/gabs/v2 v2.7.0 h1:Y2edYaTcE8ZpRsR2AtmPu5xQdFDIthFG0jYhu5PY8kg
 github.com/Jeffail/gabs/v2 v2.7.0/go.mod h1:dp5ocw1FvBBQYssgHsG7I1WYsiLRtkUaB1FEtSwvNUw=
 github.com/a8m/documentdb v1.3.0 h1:xzZQ6Ts02QesHeQdRr6doF7xfXYSsq9SUIlCqfJjbv4=
 github.com/a8m/documentdb v1.3.0/go.mod h1:4Z0mpi7fkyqjxUdGiNMO3vagyiUoiwLncaIX6AsW5z0=
+github.com/appliedres/cloudy v0.0.5-dev.1 h1:UhklfNiBoYoq6VYbaN4LHLLskLM/JtMdACNectDMFAY=
+github.com/appliedres/cloudy v0.0.5-dev.1/go.mod h1:H5Uzvcndukxo5SWiVh1JKIPfGsjolOyd2undl59WjC0=
 github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=
 github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d h1:Byv0BzEl3/e6D5CLfI0j/7hiIEtvGVFPCZ7Ei2oq8iQ=
 github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=
