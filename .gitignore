@@ -16,3 +16,6 @@
 *.env
 
 .vscode/
+
+go.work
+go.work.sum
