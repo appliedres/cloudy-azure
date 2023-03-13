@@ -34,8 +34,8 @@ type AzureVMControllerConfig struct {
 	AvailableSubnets                []string // From Environment Variable
 	NetworkSecurityGroupName        string   // From Environment Variable
 	NetworkSecurityGroupID          string   // From Environment Variable
-	SaltCmd                         string   // From Environment Variable
-	VaultURL                        string
+	// SaltCmd                         string   // From Environment Variable
+	VaultURL string
 
 	DomainControllerOverride string
 	DomainControllers        []*string // From Environment Variable
@@ -68,7 +68,6 @@ func (f *AzureVMControllerFactory) FromEnv(env *cloudy.Environment) (interface{}
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 	cfg.ResourceGroup = env.Force("AZ_RESOURCE_GROUP")
 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
-	cfg.SaltCmd = env.Force(("SALT_CMD"))
 
 	// Not always necessary but needed for creation
 	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")

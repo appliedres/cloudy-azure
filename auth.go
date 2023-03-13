@@ -36,6 +36,12 @@ func GetAzureClientSecretCredential(azCfg AzureCredentials) (*azidentity.ClientS
 }
 
 func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
+	// Check to see if there is already a set of credentials
+	creds := env.GetCredential(AzureCredentialsKey)
+	if creds != nil {
+		return creds.(AzureCredentials)
+	}
+
 	region := env.Get("AZ_REGION")
 	if region == "" {
 		region = DefaultRegion

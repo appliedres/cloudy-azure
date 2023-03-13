@@ -65,7 +65,8 @@ func (c *KeyVaultEnvironmentCachedFactory) Create(cfg interface{}) (cloudy.Envir
 func (c *KeyVaultEnvironmentCachedFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &KeyVaultEnvironmentConfig{}
 	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetKeyVaultAzureCredentialsFromEnv(env)
+	// cfg.AzureCredentials = GetKeyVaultAzureCredentialsFromEnv(env)
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
 	cfg.Prefix = env.Get("prefix")
 
 	return cfg, nil

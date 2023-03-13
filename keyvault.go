@@ -39,7 +39,8 @@ func (c *KeyVaultFactory) Create(cfg interface{}) (secrets.SecretProvider, error
 func (c *KeyVaultFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	cfg := &KeyVaultConfig{}
 	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetKeyVaultAzureCredentialsFromEnv(env)
+	// cfg.AzureCredentials = GetKeyVaultAzureCredentialsFromEnv(env)
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
 	return cfg, nil
 }
 

@@ -54,7 +54,6 @@ func TestLinuxVMCreate(t *testing.T) {
 		AvailableSubnets:         []string{subnet},
 		NetworkSecurityGroupName: nsgName,
 		NetworkSecurityGroupID:   "NOT SET",
-		SaltCmd:                  "TESTSALT",
 		VaultURL:                 vaultUrl,
 	})
 	assert.Nil(t, err)
@@ -177,7 +176,6 @@ func TestWindowsVMCreate(t *testing.T) {
 		AvailableSubnets:         []string{"go-on-azure-vmSubnet"},
 		NetworkSecurityGroupName: "go-on-azure-vmNSG",
 		NetworkSecurityGroupID:   "NOT SET",
-		SaltCmd:                  "",
 		VaultURL:                 "https://gokeyvault.vault.usgovcloudapi.net/",
 	})
 	assert.Nil(t, err)
