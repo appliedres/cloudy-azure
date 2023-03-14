@@ -42,28 +42,10 @@ func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
 		return creds.(AzureCredentials)
 	}
 
-	region := env.Get("AZ_REGION")
-	if region == "" {
-		region = DefaultRegion
-	}
 	return AzureCredentials{
-		Region:       region,
+		Region:       env.Default("AZ_REGION", DefaultRegion),
 		TenantID:     env.Force("AZ_TENANT_ID"),
 		ClientID:     env.Force("AZ_CLIENT_ID"),
 		ClientSecret: env.Force("AZ_CLIENT_SECRET"),
-	}
-}
-
-func GetKeyVaultAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
-	region := env.Get("KEYVAULT_AZ_REGION")
-	if region == "" {
-		region = DefaultRegion
-	}
-
-	return AzureCredentials{
-		Region:       region,
-		TenantID:     env.Force("KEYVAULT_AZ_TENANT_ID"),
-		ClientID:     env.Force("KEYVAULT_AZ_CLIENT_ID"),
-		ClientSecret: env.Force("KEYVAULT_AZ_CLIENT_SECRET"),
 	}
 }

@@ -14,7 +14,7 @@ func setUpKVE() (context.Context, *KeyVaultEnvironment, error) {
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
 	vaultUrl := cloudy.ForceEnv("AZ_VAULT_URL", "")
-	creds := GetKeyVaultAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
+	creds := GetAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
 
 	kve, err := NewKeyVaultEnvironmentService(ctx, vaultUrl, creds, "")
 
