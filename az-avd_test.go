@@ -8,6 +8,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization"
 	"github.com/appliedres/cloudy"
+
+	//_ "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -23,7 +25,7 @@ type Config struct {
 }
 
 var (
-	ctx            context.Context = cloudy.StartContext()
+	ctx            context.Context
 	err            error
 	tenantId       string
 	clientId       string
@@ -35,12 +37,16 @@ var (
 )
 
 func initAVD() error {
-	_ = testutil.LoadEnv("test.env")
-	tenantId = cloudy.ForceEnv("AZ_TENANT_ID", "")
-	clientId = cloudy.ForceEnv("AZ_CLIENT_ID", "")
-	clientSecret = cloudy.ForceEnv("AZ_CLIENT_SECRET", "")
-	subscriptionId = cloudy.ForceEnv("AZ_SUBSCRIPTION_ID", "")
-	vaultUrl = cloudy.ForceEnv("AZ_VAULT_URL", "")
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
+	ctx = cloudy.StartContext()
+	tenantId = env.Force("AZ_TENANT_ID")
+	clientId = env.Force("AZ_CLIENT_ID")
+	clientSecret = env.Force("AZ_CLIENT_SECRET")
+	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID")
+	vaultUrl = env.Force("AZ_VAULT_URL")
 
 	avd, err = NewAzureVirtualDesktop(ctx, AzureVirtualDesktopConfig{
 		AzureCredentials: AzureCredentials{
@@ -130,21 +136,24 @@ func TestRetrieveRegistrationToken(t *testing.T) {
 
 	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
 	assert.Nil(t, err)
+	assert.NotNil(t, firstHostpool)
 	assert.NotEmpty(t, firstHostpool)
 
-	if err == nil {
+	if err == nil && firstHostpool != nil {
 		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
 		assert.Nil(t, err)
+		assert.NotNil(t, regToken)
 		assert.NotEmpty(t, regToken)
 	}
 
-	if err == nil {
+	if err == nil && firstHostpool != nil {
 		sessionHost, err = avd.GetAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
 		assert.Nil(t, err)
+		assert.NotNil(t, sessionHost)
 		assert.NotEmpty(t, sessionHost)
 	}
 
-	if err == nil {
+	if err == nil && firstHostpool != nil && sessionHost != nil {
 		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name, *sessionHost, testConfig.Upn)
 		assert.Nil(t, err)
 	}

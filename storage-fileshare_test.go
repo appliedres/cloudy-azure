@@ -9,14 +9,20 @@ import (
 )
 
 func TestBlobFileshare(t *testing.T) {
-	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
-	tenantID := cloudy.ForceEnv("TenantID", "")
-	ClientID := cloudy.ForceEnv("ClientID", "")
-	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
-	account := cloudy.ForceEnv("fsAccount", "")
-	resourceGroup := cloudy.ForceEnv("rgFileshare", "")
-	subscriptionId := cloudy.ForceEnv("SUBSCRIPTION_ID", "")
+
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
+	ctx = cloudy.StartContext()
+	tenantID := env.Force("AZ_TENANT_ID")
+	ClientID := env.Force("AZ_CLIENT_ID")
+	ClientSecret := env.Force("AZ_CLIENT_SECRET")
+	subscriptionId := env.Force("AZ_SUBSCRIPTION_ID")
+	vaultUrl = env.Force("AZ_VAULT_URL")
+
+	account := env.Force("FS_ACCOUNT")
+	resourceGroup := env.Force("RG_FILESHARE")
 
 	creds := AzureCredentials{
 		TenantID:     tenantID,
@@ -27,8 +33,8 @@ func TestBlobFileshare(t *testing.T) {
 	bfa, err := NewBlobFileShare(ctx, &BlobFileShare{
 		Credentials:        creds,
 		StorageAccountName: account,
-		ResourceGroupName: resourceGroup,
-		SubscriptionID:    subscriptionId,
+		ResourceGroupName:  resourceGroup,
+		SubscriptionID:     subscriptionId,
 	})
 	if err != nil {
 		log.Fatal(err)

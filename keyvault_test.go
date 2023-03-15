@@ -12,12 +12,16 @@ import (
 func TestKeyVault(t *testing.T) {
 
 	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
+	tenantID := env.Force("AZ_TENANT_ID")
+	ClientID := env.Force("AZ_CLIENT_ID")
+	ClientSecret := env.Force("AZ_CLIENT_SECRET")
+	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID")
+	vaultUrl = env.Force("AZ_VAULT_URL")
 
 	ctx := cloudy.StartContext()
-
-	tenantID := cloudy.ForceEnv("KEYVAULT_AZ_TENANT_ID", "")
-	ClientID := cloudy.ForceEnv("KEYVAULT_AZ_CLIENT_ID", "")
-	ClientSecret := cloudy.ForceEnv("KEYVAULT_AZ_CLIENT_SECRET", "")
 
 	creds := AzureCredentials{
 		TenantID:     tenantID,
