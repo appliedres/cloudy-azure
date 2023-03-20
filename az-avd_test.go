@@ -9,7 +9,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization"
 	"github.com/appliedres/cloudy"
 
-	//_ "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
 )
