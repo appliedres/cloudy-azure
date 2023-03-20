@@ -14,6 +14,29 @@ import (
 	"github.com/google/uuid"
 )
 
+type AVDManagerFactory struct {
+	AzureVirtualDesktop
+}
+
+func init() {
+	cloudy.AVDProviders.Register("AVD", &AVDManagerFactory{})
+}
+
+func (ms *AVDManagerFactory) Create(cfg interface{}) (cloudy.AVDManager, error) {
+	avd := cfg.(*AzureVirtualDesktopConfig)
+	if avd == nil {
+		return nil, cloudy.ErrInvalidConfiguration
+	}
+	return NewAzureVirtualDesktop(context.Background(), *avd)
+}
+
+func (ms *AVDManagerFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+	cfg := &AzureVirtualDesktopConfig{}
+	cfg.subscription = env.Force("AZ_SUBSCRIPTION_ID", "")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	return cfg, nil
+}
+
 type AzureVirtualDesktopConfig struct {
 	AzureCredentials
 	subscription string
@@ -74,48 +97,16 @@ func NewAzureVirtualDesktop(ctx context.Context, config AzureVirtualDesktopConfi
 	}, nil
 }
 
-func (avd *AzureVirtualDesktop) ListHostPools(ctx context.Context, rg string) ([]*armdesktopvirtualization.HostPool, error) {
-	pager := avd.hostpools.NewListByResourceGroupPager(rg, &armdesktopvirtualization.HostPoolsClientListByResourceGroupOptions{})
-	var all []*armdesktopvirtualization.HostPool
-	for {
-		if !pager.More() {
-			break
-		}
-		resp, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, resp.HostPoolList.Value...)
-	}
-	return all, nil
-}
-
-func (avd *AzureVirtualDesktop) ListSessionHosts(ctx context.Context, rg string, hostPool string) ([]*armdesktopvirtualization.SessionHost, error) {
-	pager := avd.sessionhosts.NewListPager(rg, hostPool, nil)
-	var all []*armdesktopvirtualization.SessionHost
-	for {
-		if !pager.More() {
-			break
-		}
-		resp, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, resp.Value...)
-	}
-	return all, nil
-}
-
-func (avd *AzureVirtualDesktop) FindFirstAvailableHostPool(ctx context.Context, rg string, upn string) (*armdesktopvirtualization.HostPool, error) {
+func (avd *AzureVirtualDesktop) FindFirstAvailableHostPool(ctx context.Context, rg string, upn string) (*string, error) {
 	// Get all the host pools
-	all, err := avd.ListHostPools(ctx, rg)
+	all, err := avd.listHostPools(ctx, rg)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, hostpool := range all {
 		// List all the sessions for a given host pool
-		sessions, err := avd.ListSessionHosts(ctx, rg, *hostpool.Name)
+		sessions, err := avd.listSessionHosts(ctx, rg, *hostpool.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +121,7 @@ func (avd *AzureVirtualDesktop) FindFirstAvailableHostPool(ctx context.Context, 
 		}
 
 		if !foundUser {
-			return hostpool, nil
+			return hostpool.Name, nil
 		}
 	}
 
@@ -148,28 +139,6 @@ func (avd *AzureVirtualDesktop) RetrieveRegistrationToken(ctx context.Context, r
 	}
 
 	return tokenresponse.Token, err
-}
-
-func (avd *AzureVirtualDesktop) GetAvailableSessionHost(ctx context.Context, rg string, hpname string) (*string, error) {
-	sessions, err := avd.ListSessionHosts(ctx, rg, hpname)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, session := range sessions {
-		assigned := session.Properties.AssignedUser
-		status := session.Properties.Status
-		if assigned == nil && *status == "Available" {
-			temp := *session.Name
-			lastInd := strings.LastIndex(temp, "/")
-			if lastInd == -1 {
-				return session.Name, nil
-			}
-			sessionName := temp[lastInd+1:]
-			return &sessionName, nil
-		}
-	}
-	return nil, cloudy.Error(ctx, "GetAvailableSessionHost failure (no available session host): %+v", err)
 }
 
 func (avd *AzureVirtualDesktop) AssignSessionHost(ctx context.Context, rg string, hpname string, sessionhost string, userobjectid string) error {
@@ -276,4 +245,59 @@ func (avd *AzureVirtualDesktop) getUserSessionId(ctx context.Context, rg string,
 	}
 
 	return nil, nil
+}
+
+func (avd *AzureVirtualDesktop) listHostPools(ctx context.Context, rg string) ([]*armdesktopvirtualization.HostPool, error) {
+	pager := avd.hostpools.NewListByResourceGroupPager(rg, &armdesktopvirtualization.HostPoolsClientListByResourceGroupOptions{})
+	var all []*armdesktopvirtualization.HostPool
+	for {
+		if !pager.More() {
+			break
+		}
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.HostPoolList.Value...)
+	}
+	return all, nil
+}
+
+func (avd *AzureVirtualDesktop) listSessionHosts(ctx context.Context, rg string, hostPool string) ([]*armdesktopvirtualization.SessionHost, error) {
+	pager := avd.sessionhosts.NewListPager(rg, hostPool, nil)
+	var all []*armdesktopvirtualization.SessionHost
+	for {
+		if !pager.More() {
+			break
+		}
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Value...)
+	}
+	return all, nil
+}
+
+// only used if there is a pool of available VMs to assign to users
+func (avd *AzureVirtualDesktop) getAvailableSessionHost(ctx context.Context, rg string, hpname string) (*string, error) {
+	sessions, err := avd.listSessionHosts(ctx, rg, hpname)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, session := range sessions {
+		assigned := session.Properties.AssignedUser
+		status := session.Properties.Status
+		if assigned == nil && *status == "Available" {
+			temp := *session.Name
+			lastInd := strings.LastIndex(temp, "/")
+			if lastInd == -1 {
+				return session.Name, nil
+			}
+			sessionName := temp[lastInd+1:]
+			return &sessionName, nil
+		}
+	}
+	return nil, cloudy.Error(ctx, "GetAvailableSessionHost failure (no available session host): %+v", err)
 }
