@@ -2,6 +2,7 @@ package cloudyazure
 
 import (
 	"context"
+	"errors"
 
 	"github.com/appliedres/cloudy/datastore"
 )
@@ -34,15 +35,24 @@ func (az *AzureCosmosDbDatastore) Close(ctx context.Context) error {
 // The key is used as the ID for the document and is required to be unique
 // for this index
 func (az *AzureCosmosDbDatastore) Save(ctx context.Context, item interface{}, key string) error {
+	if az.DB == nil {
+		return errors.New("DB Connection not established")
+	}
 	return az.DB.Upsert(key, item)
 }
 
 func (az *AzureCosmosDbDatastore) Get(ctx context.Context, key string) (interface{}, error) {
+	if az.DB == nil {
+		return nil, errors.New("DB Connection not established")
+	}
 	rtn, err := az.DB.Get(key)
 	return rtn, err
 }
 
 func (az *AzureCosmosDbDatastore) GetAll(ctx context.Context) ([]interface{}, error) {
+	if az.DB == nil {
+		return nil, errors.New("DB Connection not established")
+	}
 	rtn, err := az.DB.GetAll()
 	return rtn, err
 }
@@ -53,6 +63,9 @@ func (az *AzureCosmosDbDatastore) Exists(ctx context.Context, key string) (bool,
 }
 
 func (az *AzureCosmosDbDatastore) Delete(ctx context.Context, key string) error {
+	if az.DB == nil {
+		return errors.New("DB Connection not established")
+	}
 	err := az.DB.Remove(key)
 	return err
 }
@@ -62,5 +75,8 @@ func (az *AzureCosmosDbDatastore) Ping(ctx context.Context) bool {
 }
 
 func (az *AzureCosmosDbDatastore) Query(ctx context.Context, query *datastore.SimpleQuery) ([]interface{}, error) {
+	if az.DB == nil {
+		return nil, errors.New("DB Connection not established")
+	}
 	return nil, nil
 }
