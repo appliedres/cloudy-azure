@@ -10,10 +10,14 @@ import (
 )
 
 func TestBlobAccount(t *testing.T) {
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
-	account := cloudy.ForceEnv("account_blob", "")
-	accountKey := cloudy.ForceEnv("account_blob_Key", "")
+	account := env.Force("ACCOUNT_BLOB")
+	accountKey := env.Force("ACCOUNT_BLOB_KEY")
 
 	bsa, err := NewBlobStorageAccount(ctx, account, accountKey, "")
 	if err != nil {
@@ -26,10 +30,14 @@ func TestBlobAccount(t *testing.T) {
 }
 
 func TestBlobFileAccount(t *testing.T) {
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
 	ctx := cloudy.StartContext()
 	_ = testutil.LoadEnv("test.env")
-	account := cloudy.ForceEnv("accountBlob", "")
-	accountKey := cloudy.ForceEnv("accountBlobKey", "")
+	account := env.Force("ACCOUNT_BLOB")
+	accountKey := env.Force("ACCOUNT_BLOB_KEY")
 
 	bfa, err := NewBlobContainerShare(ctx, account, accountKey, "")
 	if err != nil {

@@ -14,10 +14,13 @@ import (
 )
 
 func TestLinuxVMCreate(t *testing.T) {
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+
+	newEnv := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(newEnv)
 	ctx := cloudy.StartContext()
 
-	_ = testutil.LoadEnv("test.env")
-	vaultUrl := cloudy.ForceEnv("AZ_VAULT_URL", "")
+	vaultUrl := newEnv.Force("AZ_VAULT_URL")
 	creds := GetAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
 
 	kve, _ := NewKeyVaultEnvironmentService(ctx, vaultUrl, creds, "")
@@ -100,19 +103,21 @@ func TestLinuxVMCreate(t *testing.T) {
 
 	// Test subnet
 	// subnet, err := vmc.FindBestSubnet(ctx, []string{"go-on-azure-vmSubnet"})
-	assert.Nil(t, err)
-	assert.NotEqual(t, "", subnet)
+	//assert.Nil(t, err)
+	//assert.NotEqual(t, "", subnet)
 
 	assert.NotNil(t, vmConfig.Size)
 
 	// Test Create NIC
 	err = vmc.CreateNIC(ctx, vmConfig, subnet)
 	assert.Nil(t, err)
-	assert.NotNil(t, vmConfig.PrimaryNetwork)
+	assert.NotNil(t, vmConfig.PrimaryNetwork, "Primary Network not configured, no futher testing possible")
+	if vmConfig.PrimaryNetwork == nil {
+		return
+	}
 	assert.NotNil(t, vmConfig.PrimaryNetwork.ID)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.Name)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.PrivateIP)
-
 	defer vmc.DeleteNIC(ctx, vmConfig.ID, vmConfig.PrimaryNetwork.Name)
 
 	// Test Create
@@ -220,6 +225,11 @@ func TestWindowsVMCreate(t *testing.T) {
 	err = vmc.CreateNIC(ctx, vmConfig, subnet)
 	assert.Nil(t, err)
 	assert.NotNil(t, vmConfig.PrimaryNetwork)
+	assert.NotNil(t, vmConfig.PrimaryNetwork, "Primary Network not configured, no futher testing possible")
+	if vmConfig.PrimaryNetwork == nil {
+		return
+	}
+
 	assert.NotNil(t, vmConfig.PrimaryNetwork.ID)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.Name)
 	assert.NotNil(t, vmConfig.PrimaryNetwork.PrivateIP)

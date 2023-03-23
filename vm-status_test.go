@@ -10,14 +10,19 @@ import (
 )
 
 func TestAllVMStatus(t *testing.T) {
-	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
 
-	tenantID := cloudy.ForceEnv("AZ_TENANT_ID", "")
-	ClientID := cloudy.ForceEnv("AZ_CLIENT_ID", "")
-	ClientSecret := cloudy.ForceEnv("AZ_CLIENT_SECRET", "")
-	resourceGroup := cloudy.ForceEnv("AZ_RESOURCE_GROUP", "")
-	SubscriptionID := cloudy.ForceEnv("AZ_SUBSCRIPTION_ID", "")
+	ctx = cloudy.StartContext()
+	tenantID := env.Force("AZ_TENANT_ID")
+	ClientID := env.Force("AZ_CLIENT_ID")
+	ClientSecret := env.Force("AZ_CLIENT_SECRET")
+	SubscriptionID := env.Force("AZ_SUBSCRIPTION_ID")
+
+	vaultUrl = env.Force("AZ_VAULT_URL")
+
+	resourceGroup := env.Force("AZ_RESOURCE_GROUP")
 
 	vmc, err := NewAzureVMController(ctx, &AzureVMControllerConfig{
 		AzureCredentials: AzureCredentials{

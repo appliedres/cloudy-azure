@@ -10,10 +10,14 @@ import (
 )
 
 func setUpKVE() (context.Context, *KeyVaultEnvironment, error) {
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
+	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID")
+	vaultUrl = env.Force("AZ_VAULT_URL")
 
 	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
-	vaultUrl := cloudy.ForceEnv("AZ_VAULT_URL", "")
 	creds := GetAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
 
 	kve, err := NewKeyVaultEnvironmentService(ctx, vaultUrl, creds, "")
@@ -22,7 +26,12 @@ func setUpKVE() (context.Context, *KeyVaultEnvironment, error) {
 }
 
 func TestProvider(t *testing.T) {
-	_ = testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "KEYVAULT")
+	cloudy.SetDefaultEnvironment(env)
+
+	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID")
+	vaultUrl = env.Force("AZ_VAULT_URL")
 
 	normal, err := cloudy.EnvironmentProviders.NewFromEnvWith(cloudy.DefaultEnvironment, KeyVaultId)
 	assert.Nilf(t, err, "Error, %v", err)
