@@ -118,34 +118,34 @@ func TestRetrieveRegistrationToken(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	hostpools, err = avd.ListHostPools(ctx, testConfig.ResourceGroupName)
+	hostpools, err = avd.listHostPools(ctx, testConfig.ResourceGroupName)
 	assert.Nil(t, err)
 	assert.NotZero(t, len(hostpools))
 
 	for i := 1; i < len(hostpools); i++ {
-		sessionHosts, err := avd.ListSessionHosts(ctx, testConfig.ResourceGroupName, *hostpools[i].Name)
+		sessionHosts, err := avd.listSessionHosts(ctx, testConfig.ResourceGroupName, *hostpools[i].Name)
 		assert.GreaterOrEqual(t, len(sessionHosts), 0)
 		assert.Nil(t, err)
 	}
 
-	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
+	firstHostpoolName, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
 	assert.Nil(t, err)
-	assert.NotEmpty(t, firstHostpool)
+	assert.NotEmpty(t, firstHostpoolName)
 
 	if err == nil {
-		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
+		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpoolName)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, regToken)
 	}
 
 	if err == nil {
-		sessionHost, err = avd.GetAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
+		sessionHost, err = avd.getAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpoolName)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, sessionHost)
 	}
 
 	if err == nil {
-		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name, *sessionHost, testConfig.Upn)
+		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpoolName, *sessionHost, testConfig.Upn)
 		assert.Nil(t, err)
 	}
 }
