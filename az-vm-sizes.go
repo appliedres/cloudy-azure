@@ -23,6 +23,8 @@ func (azs *AzureVMSizeCache) Merge(ctx context.Context, datatype datastore.Datat
 }
 
 func (azs *AzureVMSizeCache) Load(ctx context.Context, vmc *AzureVMController) error {
+	cloudy.Info(ctx, "AzureVMSizeCache.Load")
+
 	client, err := armcompute.NewResourceSKUsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,

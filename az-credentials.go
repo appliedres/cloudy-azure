@@ -13,7 +13,7 @@ type AzureCredentialLoader struct{}
 func (loader *AzureCredentialLoader) ReadFromEnv(env *cloudy.Environment) interface{} {
 	region := env.Get("AZ_REGION")
 	if region == "" {
-		region = "US-Government"
+		region = "usgovvirginia"
 	}
 	tenantId := env.Get("AZ_TENANT_ID")
 	clientId := env.Get("AZ_CLIENT_ID")

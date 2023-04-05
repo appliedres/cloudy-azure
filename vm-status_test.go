@@ -10,14 +10,18 @@ import (
 )
 
 func TestAllVMStatus(t *testing.T) {
-	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
 
-	tenantID := cloudy.ForceEnv("AZ_TENANT_ID", "")
-	ClientID := cloudy.ForceEnv("AZ_CLIENT_ID", "")
-	ClientSecret := cloudy.ForceEnv("AZ_CLIENT_SECRET", "")
-	resourceGroup := cloudy.ForceEnv("AZ_RESOURCE_GROUP", "")
-	SubscriptionID := cloudy.ForceEnv("AZ_SUBSCRIPTION_ID", "")
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "USER_API")
+	cloudy.SetDefaultEnvironment(env)
+
+	ctx := cloudy.StartContext()
+
+	tenantID := cloudy.ForceEnv("VM_API_AZ_TENANT_ID", "")
+	ClientID := cloudy.ForceEnv("VM_API_AZ_CLIENT_ID", "")
+	ClientSecret := cloudy.ForceEnv("VM_API_AZ_CLIENT_SECRET", "")
+	resourceGroup := cloudy.ForceEnv("VM_API_AZ_RESOURCE_GROUP", "")
+	SubscriptionID := cloudy.ForceEnv("VM_API_AZ_SUBSCRIPTION_ID", "")
 
 	vmc, err := NewAzureVMController(ctx, &AzureVMControllerConfig{
 		AzureCredentials: AzureCredentials{
@@ -37,6 +41,15 @@ func TestAllVMStatus(t *testing.T) {
 	assert.NotNil(t, all)
 	for _, vm := range all {
 		fmt.Printf("%v -- %s -- %s\n", resourceGroup, vm.Name, vm.PowerState)
+	}
+
+
+	sizes, err := vmc.GetVMSizes(ctx)
+	assert.Nil(t, err)
+
+	assert.NotNil(t, sizes)
+	for _, size := range sizes {
+		fmt.Printf("%v -- %v\n", resourceGroup, size)
 	}
 
 }

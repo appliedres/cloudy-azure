@@ -210,13 +210,15 @@ func (vmc *AzureVMController) GetLatestImageVersion(ctx context.Context, imageNa
 }
 
 func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloudyvm.VmSize, error) {
+	cloudy.Info(ctx, "AzureVMController.GetVMSizes")
+
 	client, err := armcompute.NewResourceSKUsClient(vmc.Config.SubscriptionID, vmc.cred, &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
 		},
 	})
 	if err != nil {
-		return nil, cloudy.Error(ctx, "could not create NewResourceSKUsClient, %v", err)
+		return nil, cloudy.Error(ctx, "AzureVMController.GetVMSizes could not create NewResourceSKUsClient, %v", err)
 	}
 
 	sizes := make(map[string]*cloudyvm.VmSize)
@@ -224,7 +226,7 @@ func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloud
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return sizes, cloudy.Error(ctx, "could not get NextPage, %v", err)
+			return sizes, cloudy.Error(ctx, "AzureVMController.GetVMSizes could not get NextPage, %v", err)
 		}
 
 		for _, r := range resp.Value {
@@ -234,6 +236,8 @@ func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloud
 			}
 		}
 	}
+
+	cloudy.Info(ctx, "AzureVMController.GetVMSizes %d sizes found", len(sizes))
 
 	return sizes, nil
 }
