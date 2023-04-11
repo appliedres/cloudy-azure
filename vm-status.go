@@ -8,6 +8,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/appliedres/cloudy"
@@ -155,7 +156,7 @@ func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait
 }
 
 func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.VirtualMachineLimit, error) {
-	// pager := vmc.Usage.NewListPager()
+
 	pager := vmc.Usage.NewListPager(vmc.Config.Region, &armcompute.UsageClientListOptions{})
 
 	var rtn []*cloudyvm.VirtualMachineLimit
@@ -163,7 +164,7 @@ func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.Virtua
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return nil, cloudy.Error(ctx, "Error retrieving next page: %v", err)
 		}
 
 		for _, u := range resp.Value {
@@ -222,7 +223,10 @@ func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloud
 	}
 
 	sizes := make(map[string]*cloudyvm.VmSize)
-	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{})
+	pager := client.NewListPager(&armcompute.ResourceSKUsClientListOptions{
+		Filter:                   to.Ptr("location eq " + vmc.Config.Region),
+		IncludeExtendedLocations: nil,
+	})
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
@@ -230,7 +234,11 @@ func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloud
 		}
 
 		for _, r := range resp.Value {
-			if *r.ResourceType == "virtualMachines" {
+			if strings.EqualFold("virtualMachines", *r.ResourceType) &&
+				!strings.Contains(*r.Size, "Promo") &&
+				IsInLocation(vmc.Config.Region, r.Locations) &&
+				IsAvailable(r.Restrictions) {
+
 				size := SizeFromResource(ctx, r)
 				sizes[size.Name] = size
 			}
@@ -240,4 +248,29 @@ func (vmc *AzureVMController) GetVMSizes(ctx context.Context) (map[string]*cloud
 	cloudy.Info(ctx, "AzureVMController.GetVMSizes %d sizes found", len(sizes))
 
 	return sizes, nil
+}
+
+func IsInLocation(region string, locations []*string) bool {
+	for _, location := range locations {
+		if strings.EqualFold(region, *location) {
+			return true
+		}
+	}
+
+	return false
+
+}
+
+func IsAvailable(restrictions []*armcompute.ResourceSKURestrictions) bool {
+
+	notAvailable := string(armcompute.ResourceSKURestrictionsReasonCodeNotAvailableForSubscription)
+
+	for _, restriction := range restrictions {
+
+		if strings.EqualFold(notAvailable, string(*restriction.ReasonCode)) {
+			return false
+		}
+	}
+
+	return true
 }

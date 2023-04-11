@@ -28,6 +28,7 @@ func TestAllVMStatus(t *testing.T) {
 			TenantID:     tenantID,
 			ClientID:     ClientID,
 			ClientSecret: ClientSecret,
+			Region:       DefaultRegion,
 		},
 		SubscriptionID: SubscriptionID,
 		ResourceGroup:  resourceGroup,
@@ -43,13 +44,20 @@ func TestAllVMStatus(t *testing.T) {
 		fmt.Printf("%v -- %s -- %s\n", resourceGroup, vm.Name, vm.PowerState)
 	}
 
-
 	sizes, err := vmc.GetVMSizes(ctx)
 	assert.Nil(t, err)
 
 	assert.NotNil(t, sizes)
 	for _, size := range sizes {
 		fmt.Printf("%v -- %v\n", resourceGroup, size)
+	}
+
+	limits, err := vmc.GetLimits(ctx)
+	assert.Nil(t, err)
+
+	assert.NotNil(t, limits)
+	for _, limit := range limits {
+		fmt.Printf("%v -- %v\n", resourceGroup, limit)
 	}
 
 }
