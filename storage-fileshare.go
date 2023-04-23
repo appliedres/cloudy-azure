@@ -22,23 +22,33 @@ func init() {
 type AzureFileShareFactory struct{}
 
 func (f *AzureFileShareFactory) Create(cfg interface{}) (storage.FileStorageManager, error) {
-	azCfg := cfg.(*BlobFileShare)
-	if azCfg == nil {
+	bfs := cfg.(*BlobFileShare)
+	if bfs == nil {
 		return nil, cloudy.ErrInvalidConfiguration
 	}
 
-	return NewBlobFileShare(context.Background(), azCfg)
+	err := bfs.Connect(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	return bfs, nil
 }
 
 func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
-	cfg := &BlobFileShare{}
-	cfg.Credentials = GetAzureCredentialsFromEnv(env)
-	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
-	cfg.ResourceGroupName = env.Force("AZ_RESOURCE_GROUP")
-	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
-	cfg.StorageAccountName = env.Force("AZ_ACCOUNT")
+	bfs := &BlobFileShare{}
+	bfs.Credentials = GetAzureCredentialsFromEnv(env)
+	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+	bfs.ResourceGroupName = env.Force("AZ_RESOURCE_GROUP")
+	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+	bfs.StorageAccountName = env.Force("AZ_ACCOUNT")
 
-	return cfg, nil
+	err := bfs.Connect(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	return bfs, nil
 }
 
 // THe BlobFileShare provides file shares based on the Azure Blob Storage
@@ -50,25 +60,26 @@ type BlobFileShare struct {
 	StorageAccountName string
 }
 
-func NewBlobFileShare(ctx context.Context, cfg *BlobFileShare) (*BlobFileShare, error) {
-	cred, err := GetAzureClientSecretCredential(cfg.Credentials)
+func (bfs *BlobFileShare) Connect(ctx context.Context) error {
+	cred, err := GetAzureClientSecretCredential(bfs.Credentials)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	fileShareClient, err := armstorage.NewFileSharesClient(cfg.SubscriptionID,
+	fileShareClient, err := armstorage.NewFileSharesClient(bfs.SubscriptionID,
 		cred,
 		&arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
 				Cloud: cloud.AzureGovernment,
 			},
 		})
+
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	cfg.Client = fileShareClient
-	return cfg, nil
+	bfs.Client = fileShareClient
+	return nil
 }
 
 func (bfs *BlobFileShare) List(ctx context.Context) ([]*storage.FileShare, error) {

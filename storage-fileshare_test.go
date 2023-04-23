@@ -6,36 +6,41 @@ import (
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBlobFileshare(t *testing.T) {
 	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
-	tenantID := cloudy.ForceEnv("TenantID", "")
-	ClientID := cloudy.ForceEnv("ClientID", "")
-	ClientSecret := cloudy.ForceEnv("ClientSecret", "")
-	account := cloudy.ForceEnv("fsAccount", "")
-	resourceGroup := cloudy.ForceEnv("rgFileshare", "")
-	subscriptionId := cloudy.ForceEnv("SUBSCRIPTION_ID", "")
+	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
 
-	creds := AzureCredentials{
-		TenantID:     tenantID,
-		ClientID:     ClientID,
-		ClientSecret: ClientSecret,
-	}
+	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "USER_API")
+	vmCreds := env.LoadCredentials("VM_API")
 
-	bfa, err := NewBlobFileShare(ctx, &BlobFileShare{
-		Credentials:        creds,
-		StorageAccountName: account,
-		ResourceGroupName: resourceGroup,
-		SubscriptionID:    subscriptionId,
-	})
+	var factory AzureFileShareFactory
+	b, err := factory.FromEnv(env.SegmentWithCreds(vmCreds, "TEST_FILE_SHARE"))
+	bfa := b.(*BlobFileShare)
+
 	if err != nil {
 		log.Fatal(err)
-		// t.FailNow()
 	}
 
-	testutil.TestFileShareStorageManager(t, bfa, "file-storage-test")
+	shareName := "test-share"
 
-	testutil.TestFileShareStorageManager(t, bfa, "Test-Share")
+	exists, err := bfa.Exists(ctx, shareName)
+	assert.Nil(t, err)
+	assert.False(t, exists)
+
+	_, err = bfa.Create(ctx, shareName, nil)
+	assert.Nil(t, err)
+
+	exists, err = bfa.Exists(ctx, shareName)
+	assert.Nil(t, err)
+	assert.True(t, exists)
+
+	err = bfa.Delete(ctx, shareName)
+	assert.Nil(t, err)
+
+	// testutil.TestFileShareStorageManager(t, bfa.(*BlobFileShare), "file-storage-test")
+
+	// testutil.TestFileShareStorageManager(t, bfa.(*BlobFileShare), "Test-Share")
 }

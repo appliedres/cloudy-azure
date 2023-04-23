@@ -1,13 +1,24 @@
 package cloudyazure
 
 import (
+	"errors"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 )
 
 func is404(err error) bool {
-	return bloberror.HasCode(err, bloberror.ResourceNotFound)
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) {
+		return false
+	}
+
+	if respErr.StatusCode == 404 || bloberror.HasCode(err, bloberror.ResourceNotFound, "ShareNotFound") {
+		return true
+	}
+
+	return false
 }
 
 func sanitizeName(name string) string {
