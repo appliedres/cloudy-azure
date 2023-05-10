@@ -2,6 +2,7 @@ package cloudyazure
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -14,7 +15,7 @@ func is404(err error) bool {
 		return false
 	}
 
-	if respErr.StatusCode == 404 || bloberror.HasCode(err, bloberror.ResourceNotFound, "ShareNotFound") {
+	if respErr.StatusCode == http.StatusNotFound || bloberror.HasCode(err, bloberror.ResourceNotFound, "ShareNotFound") {
 		return true
 	}
 

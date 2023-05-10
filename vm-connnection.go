@@ -2,13 +2,10 @@ package cloudyazure
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -171,17 +168,13 @@ func VmStatus(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 		})
 
 	if err != nil {
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) {
-			if respErr.StatusCode == http.StatusNotFound {
-				cloudy.Info(ctx, "[%s] VmStatus StatusNotFound", vmName)
-				// Not returning error since "Not Found" is not an error
-				return nil, nil
-			}
+		if is404(err) {
+			cloudy.Info(ctx, "[%s] VmStatus StatusNotFound", vmName)
+			return nil, nil
+		} else {
+			_ = cloudy.Error(ctx, "[%s] VmStatus failed to obtain a response: %v", vmName, err)
+			return nil, err
 		}
-
-		_ = cloudy.Error(ctx, "[%s] VmStatus failed to obtain a response: %v", vmName, err)
-		return nil, err
 	}
 
 	returnStatus := &cloudyvm.VirtualMachineStatus{}
@@ -331,14 +324,14 @@ func VmCreate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, v
 func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string, wait bool) error {
 	cloudy.Info(ctx, "[%s] Starting VmTerminate (cloudy-azure>vm-connection)", vmName)
 
-	if ctx == nil {
-		ctx = cloudy.StartContext()
-	}
-
 	poller, err := vmClient.BeginDeallocate(ctx, resourceGroup, vmName, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
-
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] BeginDeallocate Failed to obtain a response: %v", vmName, err)
+		if is404(err) {
+			cloudy.Info(ctx, "[%s] VmTerminate VM not found", vmName)
+			return nil
+		}
+
+		_ = cloudy.Error(ctx, "[%s] VmTerminate Failed to obtain a response: %v", vmName, err)
 		return err
 	}
 

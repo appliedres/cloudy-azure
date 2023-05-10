@@ -224,11 +224,6 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 	region := vmc.Config.Region
 	rg := vmc.Config.NetworkResourceGroup
 
-	// nsg, err := vmc.GetNSG(ctx, vmc.Config.NetworkSecurityGroupName)
-	// if err != nil {
-	// 	return err
-	// }
-
 	if vm.Size == nil {
 		return cloudy.Error(ctx, "[%s] Invalid VM Size %v", vm.ID, vm.Size)
 	}
@@ -591,31 +586,46 @@ func (vmc *AzureVMController) CreateVirtualMachine(ctx context.Context, vm *clou
 }
 
 func (vmc *AzureVMController) Delete(ctx context.Context, vm *cloudyvm.VirtualMachineConfiguration) (*cloudyvm.VirtualMachineConfiguration, error) {
+	var err error
+
 	cloudy.Info(ctx, "[%s] Starting Delete (az-vm-create)", vm.ID)
 
 	cloudy.Info(ctx, "[%s] Starting BeginDeallocate", vm.ID)
 	deallocatePoller, err := vmc.Client.BeginDeallocate(ctx, vmc.Config.ResourceGroup, vm.ID, nil)
+
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] BeginDeallocate failed to obtain a response: %v", vm.ID, err)
-		return nil, err
-	}
-	_, err = deallocatePoller.PollUntilDone(ctx, nil)
-	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] Delete PollUntilDone failed to deallocate: %v", vm.ID, err)
-		return nil, err
+		if is404(err) {
+			cloudy.Info(ctx, "[%s] BeginDeallocate resource not found", vm.ID)
+		} else {
+			return nil, cloudy.Error(ctx, "[%s] BeginDeallocate unknown error %v", vm.ID, err)
+		}
+
+	} else {
+		cloudy.Info(ctx, "[%s] Starting deallocatePoller.PollUntilDone", vm.ID)
+		_, err = deallocatePoller.PollUntilDone(ctx, nil)
+		if err != nil {
+			_ = cloudy.Error(ctx, "[%s] Deallocate PollUntilDone failed: %v", vm.ID, err)
+			return nil, err
+		}
+
 	}
 
 	cloudy.Info(ctx, "[%s] Starting vmc.Client.BeginDelete", vm.ID)
 	deletePoller, err := vmc.Client.BeginDelete(ctx, vmc.Config.ResourceGroup, vm.ID, nil)
-	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] BeginDelete failed to obtain a response: %v", vm.ID, err)
-	}
 
-	cloudy.Info(ctx, "[%s] Starting deletePoller.PollUntilDone", vm.ID)
-	_, err = deletePoller.PollUntilDone(ctx, nil)
 	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to delete: %v", vm.ID, err)
-		return nil, err
+		if is404(err) {
+			cloudy.Info(ctx, "[%s] BeginDelete resource not found", vm.ID)
+		} else {
+			return nil, cloudy.Error(ctx, "[%s] BeginDelete unknown error %v", vm.ID, err)
+		}
+	} else {
+		cloudy.Info(ctx, "[%s] Starting deletePoller.PollUntilDone", vm.ID)
+		_, err = deletePoller.PollUntilDone(ctx, nil)
+		if err != nil {
+			_ = cloudy.Error(ctx, "[%s] BeginDelete PollUntilDone failed: %v", vm.ID, err)
+			return nil, err
+		}
 	}
 
 	cloudy.Info(ctx, "[%s] Starting GetVmOsDisk", vm.ID)
@@ -625,11 +635,15 @@ func (vmc *AzureVMController) Delete(ctx context.Context, vm *cloudyvm.VirtualMa
 		return nil, err
 	}
 
-	cloudy.Info(ctx, "[%s] Starting DeleteVMOSDisk", vm.ID)
-	err = vmc.DeleteVMOSDisk(ctx, vm)
-	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to delete vm os disk: %v", vm.ID, err)
-		return nil, err
+	if vm.OSDisk != nil {
+		cloudy.Info(ctx, "[%s] Starting DeleteVMOSDisk", vm.ID)
+		err = vmc.DeleteVMOSDisk(ctx, vm)
+		if err != nil {
+			_ = cloudy.Error(ctx, "[%s] failed to delete vm os disk: %v", vm.ID, err)
+			return nil, err
+		}
+	} else {
+		cloudy.Info(ctx, "[%s] No OS Disk found", vm.ID)
 	}
 
 	cloudy.Info(ctx, "[%s] Starting GetNIC", vm.ID)
@@ -639,11 +653,15 @@ func (vmc *AzureVMController) Delete(ctx context.Context, vm *cloudyvm.VirtualMa
 		return nil, err
 	}
 
-	cloudy.Info(ctx, "[%s] Starting DeleteNIC", vm.ID)
-	err = vmc.DeleteNIC(ctx, vm.ID, vmn.Name)
-	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] failed to delete vm nic: %v", vm.ID, err)
-		return nil, err
+	if vmn != nil {
+		cloudy.Info(ctx, "[%s] Starting DeleteNIC", vm.ID)
+		err = vmc.DeleteNIC(ctx, vm.ID, vmn.Name)
+		if err != nil {
+			_ = cloudy.Error(ctx, "[%s] failed to delete vm nic: %v", vm.ID, err)
+			return nil, err
+		}
+	} else {
+		cloudy.Info(ctx, "[%s] No NIC found", vm.ID)
 	}
 
 	return vm, nil
@@ -672,7 +690,7 @@ func (vmc *AzureVMController) DeleteVMOSDisk(ctx context.Context, vm *cloudyvm.V
 	}
 
 	if vm.OSDisk == nil {
-		return cloudy.Error(ctx, "[%s] vmc.config == nil", vm.ID)
+		return cloudy.Error(ctx, "[%s] vmc.osdisk == nil", vm.ID)
 	}
 
 	cloudy.Info(ctx, "[%s] Starting diskClient.BeginDelete '%s' '%s'", vm.ID, vmc.Config.ResourceGroup, vm.OSDisk.Name)

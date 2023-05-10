@@ -4,14 +4,34 @@ import (
 	// "crypto/x509"
 	// "encoding/pem"
 	// "fmt"
+	"context"
 	"testing"
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
+	"github.com/appliedres/cloudy/vm"
 	cloudyvm "github.com/appliedres/cloudy/vm"
 	"github.com/stretchr/testify/assert"
 	// "golang.org/x/crypto/ssh"
 )
+
+var LinuxVmTestConfig = &cloudyvm.VirtualMachineConfiguration{
+	ID:   "uvm-gotest",
+	Name: "uvm-gotest",
+	Size: &cloudyvm.VmSize{
+		Name: "Standard_DS1_v2",
+	},
+	SizeRequest: &cloudyvm.VmSizeRequest{
+		SpecificSize: "Standard_DS1_v2",
+	},
+	OSType:       "linux",
+	Image:        "canonical::ubuntuserver::19.04",
+	ImageVersion: "19.04.202001220",
+	Credientials: cloudyvm.Credientials{
+		AdminUser:     "salt",
+		AdminPassword: "TestPassword12#$",
+	},
+}
 
 func TestLinuxVMCreate(t *testing.T) {
 	ctx := cloudy.StartContext()
@@ -234,5 +254,48 @@ func TestWindowsVMCreate(t *testing.T) {
 		err = vmc.DeleteVM(ctx, vmConfig)
 		assert.Nil(t, err)
 	}
+
+}
+
+func TestVMDelete(t *testing.T) {
+	testutil.MustSetTestEnv()
+	ctx := context.Background()
+
+	env := testutil.CreateTestEnvironment()
+	cloudy.SetDefaultEnvironment(env)
+
+	vmCreds := env.LoadCredentials("TEST")
+	VMController, err := vm.VmControllers.NewFromEnv(env.SegmentWithCreds(vmCreds, "VMC"), "DRIVER")
+	assert.Nil(t, err)
+
+	sshPublicKey := env.Force("SALT_PUBLIC_KEY")
+
+	LinuxVmTestConfig.Credientials.SSHKey = sshPublicKey
+
+	// Terminate VM that does not exist
+	err = VMController.Terminate(ctx, LinuxVmTestConfig.ID, true)
+	assert.Nil(t, err)
+
+	// Delete VM that does not exist
+	_, err = VMController.Delete(ctx, LinuxVmTestConfig)
+	assert.Nil(t, err)
+
+	// Create NIC and Delete "VM" with NIC only
+	azc := VMController.(*AzureVMController)
+	subnetId, err := azc.FindBestSubnet(ctx, azc.Config.AvailableSubnets)
+	assert.Nil(t, err)
+
+	err = azc.CreateNIC(ctx, LinuxVmTestConfig, subnetId)
+	assert.Nil(t, err)
+
+	_, err = VMController.Delete(ctx, LinuxVmTestConfig)
+	assert.Nil(t, err)
+
+	// Create and Delete Full VM
+	_, err = VMController.Create(ctx, LinuxVmTestConfig)
+	assert.Nil(t, err)
+
+	_, err = VMController.Delete(ctx, LinuxVmTestConfig)
+	assert.Nil(t, err)
 
 }
