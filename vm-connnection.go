@@ -240,7 +240,6 @@ func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 		ctx = cloudy.StartContext()
 	}
 
-	var vmStatus *cloudyvm.VirtualMachineStatus
 	var err error
 
 	if vmAction == cloudyvm.VirtualMachineStart {
@@ -251,14 +250,14 @@ func VmState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 		err = VmTerminate(ctx, vmClient, vmName, resourceGroup, wait)
 	} else {
 		err = fmt.Errorf("invalid state requested: %s", vmAction)
-		return vmStatus, err
+		return nil, err
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	vmStatus, err = VmStatus(ctx, vmClient, vmName, resourceGroup)
+	vmStatus, err := VmStatus(ctx, vmClient, vmName, resourceGroup)
 
 	return vmStatus, err
 }
@@ -287,6 +286,8 @@ func VmStart(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vm
 		_ = cloudy.Error(ctx, "[%s] Started", vmName)
 	}
 
+	validatePowerState(ctx, vmClient, vmName, resourceGroup)
+
 	return nil
 }
 
@@ -313,6 +314,8 @@ func VmStop(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmN
 
 		cloudy.Info(ctx, "[%s] Stopped", vmName)
 	}
+
+	validatePowerState(ctx, vmClient, vmName, resourceGroup)
 
 	return nil
 }
@@ -347,5 +350,29 @@ func VmTerminate(ctx context.Context, vmClient *armcompute.VirtualMachinesClient
 		cloudy.Info(ctx, "[%s] terminated ", vmName)
 	}
 
+	validatePowerState(ctx, vmClient, vmName, resourceGroup)
+
 	return nil
+}
+
+func validatePowerState(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, vmName string, resourceGroup string) {
+
+	// max wait 30 seconds, no infinite loops allowed
+	for i := 0; i < 30; i++ {
+		vmStatus, err := VmStatus(ctx, vmClient, vmName, resourceGroup)
+
+		if vmStatus.PowerState != "" {
+			return
+		}
+
+		if err != nil {
+			cloudy.Info(ctx, "Unable to validate power state, continuing (%s)", vmName)
+			return
+		}
+
+		cloudy.Info(ctx, "Waiting for valid power state (%s)", vmName)
+
+		time.Sleep(1 * time.Second)
+	}
+
 }
