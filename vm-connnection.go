@@ -122,6 +122,8 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 					parts := strings.Split(*status.Code, "/")
 
 					vmStatus.PowerState = parts[1]
+				} else if strings.Contains(*status.Code, "ProvisioningState") && status.Time != nil {
+					vmStatus.ProvisioningTime = *status.Time
 				}
 			}
 

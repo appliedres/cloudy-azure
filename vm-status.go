@@ -168,11 +168,16 @@ func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.Virtua
 		}
 
 		for _, u := range resp.Value {
-			rtn = append(rtn, &cloudyvm.VirtualMachineLimit{
-				Name:    *u.Name.Value,
-				Current: int(*u.CurrentValue),
-				Limit:   int(*u.Limit),
-			})
+			lowerName := strings.ToLower(*u.Name.Value)
+
+			// Eliminate non-VM values
+			if strings.Contains(lowerName, "family") && !strings.Contains(lowerName, "promo") {
+				rtn = append(rtn, &cloudyvm.VirtualMachineLimit{
+					Name:    *u.Name.Value,
+					Current: int(*u.CurrentValue),
+					Limit:   int(*u.Limit),
+				})
+			}
 		}
 	}
 
