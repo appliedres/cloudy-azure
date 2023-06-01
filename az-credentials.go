@@ -20,3 +20,12 @@ func (loader *AzureCredentialLoader) ReadFromEnv(env *cloudy.Environment) interf
 	}
 
 }
+
+func AzureGetRequiredEnv() []string {
+	return []string{
+		"AZ_REGION",
+		"AZ_TENANT_ID",
+		"AZ_CLIENT_ID",
+		"AZ_CLIENT_SECRET",
+	}
+}

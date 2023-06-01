@@ -38,9 +38,7 @@ func (f *AzureFileShareFactory) Create(cfg interface{}) (storage.FileStorageMana
 func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
 	bfs := &BlobFileShare{}
 	bfs.Credentials = GetAzureCredentialsFromEnv(env)
-	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 	bfs.ResourceGroupName = env.Force("AZ_RESOURCE_GROUP")
-	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 	bfs.StorageAccountName = env.Force("AZ_ACCOUNT")
 
 	err := bfs.Connect(context.Background())

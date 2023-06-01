@@ -10,18 +10,21 @@ import (
 )
 
 func TestAllVMStatus(t *testing.T) {
-	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
-
+	testutil.MustSetTestEnv()
 	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "USER_API")
 	cloudy.SetDefaultEnvironment(env)
 
 	ctx := cloudy.StartContext()
 
-	tenantID := cloudy.ForceEnv("VM_API_AZ_TENANT_ID", "")
-	ClientID := cloudy.ForceEnv("VM_API_AZ_CLIENT_ID", "")
-	ClientSecret := cloudy.ForceEnv("VM_API_AZ_CLIENT_SECRET", "")
-	resourceGroup := cloudy.ForceEnv("VM_API_AZ_RESOURCE_GROUP", "")
-	SubscriptionID := cloudy.ForceEnv("VM_API_AZ_SUBSCRIPTION_ID", "")
+	// _, err := cloudyvm.VmControllers.NewFromEnv(vmApi, "DRIVER")
+
+	tenantID := env.Force("AZ_TENANT_ID", "")
+	ClientID := env.Force("AZ_CLIENT_ID", "")
+	ClientSecret := env.Force("AZ_CLIENT_SECRET", "")
+
+	vmApi := env.Segment("VMC")
+	resourceGroup := vmApi.Force("AZ_RESOURCE_GROUP", "")
+	SubscriptionID := vmApi.Force("AZ_SUBSCRIPTION_ID", "")
 
 	vmc, err := NewAzureVMController(ctx, &AzureVMControllerConfig{
 		AzureCredentials: AzureCredentials{

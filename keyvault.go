@@ -43,6 +43,11 @@ func (c *KeyVaultFactory) FromEnv(env *cloudy.Environment) (interface{}, error) 
 	return cfg, nil
 }
 
+func (c *KeyVaultFactory) ListRequiredEnv(env *cloudy.Environment) []string {
+	cred := AzureGetRequiredEnv()
+	return append(cred, "AZ_VAULT_URL")
+}
+
 type KeyVault struct {
 	AzureCredentials
 	VaultURL string
@@ -56,6 +61,13 @@ func NewKeyVault(ctx context.Context, vaultURL string, credentials AzureCredenti
 	}
 	err := k.Configure(ctx)
 	return k, err
+}
+
+func NewKeyVaultFromEnv(env *cloudy.Environment) (*KeyVault, error) {
+	cfg := &KeyVaultConfig{}
+	cfg.VaultURL = env.Force("AZ_VAULT_URL")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	return NewKeyVault(context.Background(), cfg.VaultURL, cfg.AzureCredentials)
 }
 
 func (k *KeyVault) Configure(ctx context.Context) error {

@@ -10,11 +10,11 @@ import (
 )
 
 func TestBlobFileshare(t *testing.T) {
+	env := testutil.CreateTestEnvironment()
 	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
+	// _ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
 
-	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "USER_API")
-	vmCreds := env.LoadCredentials("VM_API")
+	vmCreds := env.LoadCredentials("TEST")
 
 	var factory AzureFileShareFactory
 	b, err := factory.FromEnv(env.SegmentWithCreds(vmCreds, "TEST_FILE_SHARE"))

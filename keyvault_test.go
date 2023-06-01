@@ -10,24 +10,13 @@ import (
 )
 
 func TestKeyVault(t *testing.T) {
-
-	_ = testutil.LoadEnv("../arkloud-conf/arkloud.env")
-
+	env := testutil.CreateTestEnvironment()
 	ctx := cloudy.StartContext()
 
-	tenantID := cloudy.ForceEnv("KEYVAULT_AZ_TENANT_ID", "")
-	ClientID := cloudy.ForceEnv("KEYVAULT_AZ_CLIENT_ID", "")
-	ClientSecret := cloudy.ForceEnv("KEYVAULT_AZ_CLIENT_SECRET", "")
-
-	creds := AzureCredentials{
-		TenantID:     tenantID,
-		ClientID:     ClientID,
-		ClientSecret: ClientSecret,
-	}
-	vaultURL := cloudy.ForceEnv("AZ_VAULT_URL", "")
-
-	kv, err := NewKeyVault(ctx, vaultURL, creds)
+	kv, err := NewKeyVaultFromEnv(env)
 	assert.Nil(t, err)
 
-	secrets.SecretsTest(t, ctx, kv)
+	if err == nil {
+		secrets.SecretsTest(t, ctx, kv)
+	}
 }

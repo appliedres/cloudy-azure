@@ -9,10 +9,13 @@ import (
 )
 
 func TestStorageAccount(t *testing.T) {
+	testutil.MustSetTestEnv()
+	env := cloudy.CreateEnvironment()
+
 	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
-	account := cloudy.ForceEnv("accountBlob", "")
-	// accountKey := cloudy.ForceEnv("accountBlobKey", "")
+	// _ = testutil.LoadEnv("test.env")
+	account := env.Force("accountBlob", "")
+	// accountKey := env.Force("accountBlobKey", "")
 
 	accountType, err := GetStorageAccountType(ctx, cloudy.DefaultEnvironment, account)
 	assert.Nil(t, err)

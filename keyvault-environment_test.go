@@ -10,10 +10,10 @@ import (
 )
 
 func setUpKVE() (context.Context, *KeyVaultEnvironment, error) {
-
+	env := testutil.CreateTestEnvironment()
 	ctx := cloudy.StartContext()
-	_ = testutil.LoadEnv("test.env")
-	vaultUrl := cloudy.ForceEnv("AZ_VAULT_URL", "")
+
+	vaultUrl := env.Force("AZ_VAULT_URL")
 	creds := GetAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
 
 	kve, err := NewKeyVaultEnvironmentService(ctx, vaultUrl, creds, "")
@@ -22,7 +22,8 @@ func setUpKVE() (context.Context, *KeyVaultEnvironment, error) {
 }
 
 func TestProvider(t *testing.T) {
-	_ = testutil.LoadEnv("test.env")
+	env := testutil.CreateTestEnvironment()
+	cloudy.SetDefaultEnvironment(env)
 
 	normal, err := cloudy.EnvironmentProviders.NewFromEnvWith(cloudy.DefaultEnvironment, KeyVaultId)
 	assert.Nilf(t, err, "Error, %v", err)
