@@ -131,7 +131,7 @@ else
 fi
 
 if [[ $upgrade == 'yes' ]]; then
-    update go-skycloud
+    update go-arkloud
     update user-api
     update folders-api
     update cac-api
