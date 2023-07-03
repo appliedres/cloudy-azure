@@ -241,9 +241,9 @@ func (b *BlobStorage) Upload(ctx context.Context, key string, data io.Reader, ta
 func (b *BlobStorage) Exists(ctx context.Context, key string) (bool, error) {
 	cloudy.Info(ctx, "BlobStorage.Exists: %s", key)
 
-	c := b.Client.NewBlobClient(key)
+	// c := b.Client.NewBlobClient(key)
 
-	_, err := c.GetProperties(ctx, nil)
+	_, err := b.Client.GetProperties(ctx, nil)
 	if err != nil {
 		if bloberror.HasCode(err, bloberror.ResourceNotFound) {
 			return false, nil
@@ -253,6 +253,31 @@ func (b *BlobStorage) Exists(ctx context.Context, key string) (bool, error) {
 
 	return true, nil
 
+}
+
+func (b *BlobStorage) UpdateMetadata(ctx context.Context, key string, tags map[string]string) error {
+	exists, err := b.Exists(ctx, "")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return cloudy.Error(ctx, "Cannot update metadata, %s doesn't exist", key)
+	}
+
+	metadata := map[string]*string{}
+
+	for k, v := range tags {
+		metadata[k] = &v
+	}
+
+	_, err = b.Client.SetMetadata(ctx, &container.SetMetadataOptions{
+		Metadata: metadata,
+	})
+	if err != nil {
+		return cloudy.Error(ctx, "Error updating metadata: %v", err)
+	}
+
+	return nil
 }
 
 func (b *BlobStorage) Download(ctx context.Context, key string) (io.ReadCloser, error) {

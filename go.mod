@@ -2,6 +2,8 @@ module github.com/appliedres/cloudy-azure
 
 go 1.19
 
+// replace github.com/appliedres/cloudy => ../cloudy
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.3.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.1
@@ -13,7 +15,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.0.0
 	github.com/a8m/documentdb v1.3.0
-	github.com/appliedres/cloudy v0.0.17
+	github.com/appliedres/cloudy v0.0.20
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-version v1.6.0
 	github.com/stretchr/testify v1.8.2
