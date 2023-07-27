@@ -40,6 +40,7 @@ func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, e
 	bfs.Credentials = GetAzureCredentialsFromEnv(env)
 	bfs.ResourceGroupName = env.Force("AZ_RESOURCE_GROUP")
 	bfs.StorageAccountName = env.Force("AZ_ACCOUNT")
+	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
 
 	err := bfs.Connect(context.Background())
 	if err != nil {
