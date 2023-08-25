@@ -135,6 +135,7 @@ if [[ $upgrade == 'yes' ]]; then
     update user-api
     update folders-api
     update cac-api
+    update cloudy-msgraph
 
 else 
     echo "Client update skipped"
