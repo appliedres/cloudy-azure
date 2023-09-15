@@ -30,26 +30,26 @@ func sanitizeName(name string) string {
 	return strings.ToLower(name)
 }
 
-func FromStrPointerMap(in map[string]*string) map[string]string {
-	out := make(map[string]string)
-	for k, v := range in {
-		if v != nil {
-			out[k] = *v
-		} else {
-			out[k] = ""
+func FromStrPointerMap(pointerMap map[string]*string) map[string]string {
+	stringMap := make(map[string]string, len(pointerMap))
+	for k, v := range pointerMap {
+		if v == nil {
+			stringMap[k] = ""
 		}
+		copy := v
+		stringMap[k] = *copy
 	}
-	return out
+	return stringMap
 }
 
-func ToStrPointerMap(in map[string]string) map[string]*string {
-	out := make(map[string]*string)
-	for k, v := range in {
-		if v != "" {
-			out[k] = &v
-		} else {
-			out[k] = nil
+func ToStrPointerMap(stringMap map[string]string) map[string]*string {
+	pointerMap := make(map[string]*string, len(stringMap))
+	for k, v := range stringMap {
+		if v == "" {
+			pointerMap[k] = nil
 		}
+		copy := v
+		pointerMap[k] = &copy
 	}
-	return out
+	return pointerMap
 }
