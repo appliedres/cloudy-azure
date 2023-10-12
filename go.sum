@@ -31,8 +31,8 @@ github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbt
 github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578/go.mod h1:uGdkoq3SwY9Y+13GIhn11/XLaGBb4BfwItxLd5jeuXE=
 github.com/a8m/documentdb v1.3.0 h1:xzZQ6Ts02QesHeQdRr6doF7xfXYSsq9SUIlCqfJjbv4=
 github.com/a8m/documentdb v1.3.0/go.mod h1:4Z0mpi7fkyqjxUdGiNMO3vagyiUoiwLncaIX6AsW5z0=
-github.com/appliedres/cloudy v0.0.23 h1:RBCYFqu6ltPsFEGHzL4gzzj5Usl+SK4VbvRf2b+2ae0=
-github.com/appliedres/cloudy v0.0.23/go.mod h1:5JHFDDq7coznhYGoJBeAtZDewkLB2zg9BwDqDz7cHLU=
+github.com/appliedres/cloudy v0.0.24 h1:nis4IUmW1QZU7kWY2IzipwfBkAFCXdoQvhsRKhYQe9o=
+github.com/appliedres/cloudy v0.0.24/go.mod h1:5JHFDDq7coznhYGoJBeAtZDewkLB2zg9BwDqDz7cHLU=
 github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3dyBCFEj5IhUbnKptjxatkF07cF2ak3yi77so=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=
