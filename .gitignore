@@ -23,3 +23,5 @@ terraform.tfstate.backup
 .terraform/providers/registry.terraform.io/hashicorp/azuread/2.38.0/linux_amd64/terraform-provider-azuread_v2.38.0_x5
 .terraform.lock.hcl
 .terraform
+
+.env.local

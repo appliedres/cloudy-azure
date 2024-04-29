@@ -1,283 +1,268 @@
 package cloudyazure
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
+	"strings"
 
-	"github.com/a8m/documentdb"
-	"github.com/appliedres/cloudy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 )
 
 type CosmosObject struct {
-	documentdb.Document
 	Item interface{}
 }
 
 type Cosmosdb struct {
-	Database   string
-	Collection string
-	db         *documentdb.Database
-	coll       *documentdb.Collection
-	client     *documentdb.DocumentDB
-	Model      interface{}
+	Database        string
+	Container       string
+	client          *azcosmos.Client
+	dbclient        *azcosmos.DatabaseClient
+	containerClient *azcosmos.ContainerClient
+	pk              azcosmos.PartitionKey // Cannot figure out how to
+	pkField         string
+	pkValue         string
+	addPK           bool
 }
 
-func NewCosmosdb(db string, coll string, key string, endpoint string, model interface{}) (*Cosmosdb, error) {
+// func NewCosmosdbFromEnv(env *cloudy.Environment) (*Cosmosdb, error) {
+// 	creds := GetAzureCredentialsFromEnv(env)
+
+// 	client := azcosmos.New
+
+// }
+
+func NewCosmosdb(ctx context.Context, db string, coll string, key string, endpoint string, partitionKeyField string, partitionKey string, addPK bool) (*Cosmosdb, error) {
 	c := &Cosmosdb{
-		Database:   db,
-		Collection: coll,
-		Model:      model,
+		Database:  db,
+		Container: coll,
+		pkValue:   partitionKey,
+		pk:        azcosmos.NewPartitionKeyString(partitionKey),
+		pkField:   partitionKeyField,
+		addPK:     addPK,
 	}
-	config := documentdb.NewConfig(&documentdb.Key{
-		Key: key,
+
+	keyCred, err := azcosmos.NewKeyCredential(key)
+	if err != nil {
+		return nil, err
+	}
+	client, err := azcosmos.NewClientWithKey(endpoint, keyCred, &azcosmos.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloud.AzureGovernment,
+		},
 	})
-	config.IdentificationHydrator = func(config *documentdb.Config, doc interface{}) {
-		fmt.Println("Hydrading")
-	}
-
-	c.client = documentdb.New(endpoint, config)
-
-	err := c.findOrDatabase(db)
 	if err != nil {
 		return nil, err
 	}
-	err = c.findOrCreateCollection(coll)
-	if err != nil {
-		return nil, err
-	}
+	c.client = client
+
 	return c, nil
 }
 
-// Find or create collection by id
-func (c *Cosmosdb) findOrCreateCollection(name string) error {
-
-	query := fmt.Sprintf("SELECT * FROM ROOT r WHERE r.id='%s'", name)
-	q := &documentdb.Query{
-		Query: query,
-	}
-	colls, err := c.client.QueryCollections(c.db.Self, q)
+func (c *Cosmosdb) CreateOpen(ctx context.Context) error {
+	err := c.findOrCreateDatabase(ctx)
 	if err != nil {
 		return err
 	}
-	if len(colls) == 0 {
-		var collKey documentdb.Collection
-		collKey.Id = name
-		coll, err := c.client.CreateCollection(c.db.Self, collKey)
-		if err != nil {
-			return err
-		}
-		c.coll = coll
-	} else {
-		c.coll = &colls[0]
-	}
+	err = c.findOrCreateContainer(ctx)
+	return err
+}
 
-	return nil
+func (c *Cosmosdb) Healthy(ctx context.Context) error {
+	_, err := c.dbclient.Read(ctx, &azcosmos.ReadDatabaseOptions{})
+	return err
 }
 
 // Find or create database by id
-func (c *Cosmosdb) findOrDatabase(name string) error {
-	query := fmt.Sprintf("SELECT * FROM ROOT r WHERE r.id='%s'", name)
-	q := &documentdb.Query{
-		Query: query,
-	}
-	dbs, err := c.client.QueryDatabases(q)
+func (c *Cosmosdb) findOrCreateDatabase(ctx context.Context) error {
+
+	dbClient, err := c.client.NewDatabase(c.Database)
 	if err != nil {
 		return err
 	}
-	if len(dbs) == 0 {
-		var dbKey documentdb.Database
-		dbKey.Id = name
-		db, err := c.client.CreateDatabase(dbKey)
+
+	resp, err := dbClient.Read(ctx, &azcosmos.ReadDatabaseOptions{})
+	if err != nil {
+		return err
+	}
+	if resp.DatabaseProperties != nil {
+		c.dbclient = dbClient
+		return nil
+	}
+
+	createResponse, err := c.client.CreateDatabase(ctx, azcosmos.DatabaseProperties{ID: c.Database}, nil)
+	if err != nil {
+		return err
+	}
+	c.dbclient = dbClient
+	c.Database = createResponse.DatabaseProperties.ID
+	return nil
+}
+
+// Find or create Container by id
+func (c *Cosmosdb) findOrCreateContainer(ctx context.Context) error {
+	containerClient, err := c.dbclient.NewContainer(c.Container)
+	if err != nil {
+		return err
+	}
+
+	pkField := c.pkField
+	if !strings.HasPrefix(pkField, "/") {
+		pkField = "/" + pkField
+	}
+
+	_, err = containerClient.Read(ctx, &azcosmos.ReadContainerOptions{})
+
+	// Create
+	if c.IsStatusCodeNotFound(err) {
+		properties := azcosmos.ContainerProperties{
+			ID: c.Container,
+			PartitionKeyDefinition: azcosmos.PartitionKeyDefinition{
+				Paths: []string{pkField},
+			},
+		}
+
+		createResponse, err := c.dbclient.CreateContainer(ctx, properties, &azcosmos.CreateContainerOptions{})
 		if err != nil {
 			return err
 		}
-		c.db = db
-	} else {
-		c.db = &dbs[0]
+		c.containerClient = containerClient
+		c.Container = createResponse.ContainerProperties.ID
+		return nil
 	}
 
+	if err != nil {
+		return err
+	}
+	c.containerClient = containerClient
 	return nil
 }
 
 // Get user by given id
-func (c *Cosmosdb) Exists(id string) (bool, error) {
-	var items []CosmosObject
-	query := fmt.Sprintf("SELECT * FROM ROOT r WHERE r.id='%s'", id)
-	q := &documentdb.Query{
-		Query: query,
+func (c *Cosmosdb) Exists(ctx context.Context, id string) (bool, error) {
+	_, err := c.containerClient.ReadItem(ctx, c.pk, id, &azcosmos.ItemOptions{})
+	if c.IsStatusCodeNotFound(err) {
+		return false, nil
 	}
-	_, err := c.client.QueryDocuments(c.coll.Self, q, &items)
 	if err != nil {
 		return false, err
-	}
-	if len(items) == 0 {
-		return false, nil
 	}
 	return true, nil
 }
 
 // Get user by given id
-func (c *Cosmosdb) GetRaw(id string) (*CosmosObject, error) {
-	var items []CosmosObject
-	query := fmt.Sprintf("SELECT * FROM ROOT r WHERE r.id='%s'", id)
-	q := &documentdb.Query{
-		Query: query,
-	}
-	_, err := c.client.QueryDocuments(c.coll.Self, q, &items)
+func (c *Cosmosdb) GetRaw(ctx context.Context, id string) ([]byte, error) {
+	resp, err := c.containerClient.ReadItem(ctx, c.pk, id, &azcosmos.ItemOptions{})
+
 	if err != nil {
 		return nil, err
 	}
-	if len(items) == 0 {
-		return nil, nil
-	}
-	item := items[0]
 
-	// This is a wrapped object
-	return &item, nil
+	data := resp.Value
+	return data, nil
 }
 
 // Get user by given id
-func (c *Cosmosdb) Get(id string) (interface{}, error) {
-	var items []CosmosObject
-	query := fmt.Sprintf("SELECT * FROM ROOT r WHERE r.id='%s'", id)
-	q := &documentdb.Query{
-		Query: query,
-	}
-	_, err := c.client.QueryDocuments(c.coll.Self, q, &items)
-	if err != nil {
-		return nil, err
-	}
-	if len(items) == 0 {
-		return nil, nil
-	}
-	item := items[0].Item
-
-	data, err := json.Marshal(item)
-	if err != nil {
-		return nil, err
-	}
-
-	instance := cloudy.NewInstance(c.Model)
-	err = json.Unmarshal(data, instance)
-	if err != nil {
-		return nil, err
-	}
-
-	// This is a wrapped object
-	return instance, nil
-}
-
-// Get user by given id
-func (c *Cosmosdb) GetAll() ([]interface{}, error) {
-	var items []CosmosObject
-	query := "SELECT * FROM ROOT r"
-	q := &documentdb.Query{
-		Query: query,
-	}
-	_, err := c.client.QueryDocuments(c.coll.Self, q, &items)
-	if err != nil {
-		return nil, err
-	}
-	if len(items) == 0 {
-		return nil, nil
-	}
-
-	rtn := make([]interface{}, len(items))
-	for i := range items {
-		item := items[0].Item
-
-		data, err := json.Marshal(item)
+func (c *Cosmosdb) GetAll(ctx context.Context) ([][]byte, error) {
+	var items [][]byte
+	query := "SELECT * FROM " + c.Container
+	pager := c.containerClient.NewQueryItemsPager(query, c.pk, nil)
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return items, err
 		}
-
-		instance := cloudy.NewInstance(c.Model)
-		err = json.Unmarshal(data, instance)
-		if err != nil {
-			return nil, err
-		}
-
-		rtn[i] = instance
+		items = append(items, resp.Items...)
 	}
-
-	// This is a wrapped object
-	return rtn, nil
+	return items, nil
 }
 
 // Create user
-func (c *Cosmosdb) Add(id string, v interface{}) error {
-	obj := &CosmosObject{
-		Item: v,
+func (c *Cosmosdb) Add(ctx context.Context, id string, data []byte) error {
+	var err error
+	// Save to map
+	if c.addPK {
+		data, err = c.AddPK(data)
+		if err != nil {
+			return err
+		}
 	}
-	obj.Id = id
 
-	_, err := c.client.CreateDocument(c.coll.Self, obj)
+	_, err = c.containerClient.CreateItem(ctx, c.pk, data, &azcosmos.ItemOptions{})
 	return err
 }
 
 // Update or insert
-func (c *Cosmosdb) Upsert(id string, item interface{}) error {
-
-	obj := &CosmosObject{
-		Item: item,
+func (c *Cosmosdb) Upsert(ctx context.Context, id string, data []byte) error {
+	var err error
+	// Save to map
+	if c.addPK {
+		data, err = c.AddPK(data)
+		if err != nil {
+			return err
+		}
 	}
-	obj.Id = id
-
-	_, err := c.client.UpsertDocument(c.coll.Self, obj)
+	_, err = c.containerClient.UpsertItem(ctx, c.pk, data, &azcosmos.ItemOptions{})
 	return err
 }
 
-// Update user by id
-func (c *Cosmosdb) Update(id string, item interface{}) error {
-	var items []CosmosObject
-	query := fmt.Sprintf("SELECT * FROM ROOT r WHERE r.id='%s'", id)
-	q := &documentdb.Query{
-		Query: query,
+// Update or insert
+func (c *Cosmosdb) Replace(ctx context.Context, id string, data []byte) error {
+	var err error
+	// Save to map
+	if c.addPK {
+		data, err = c.AddPK(data)
+		if err != nil {
+			return err
+		}
 	}
-	_, err := c.client.QueryDocuments(c.coll.Self, q, &items)
-	if err != nil {
-		return err
-	}
-	if len(items) == 0 {
+	_, err = c.containerClient.ReplaceItem(ctx, c.pk, id, data, &azcosmos.ItemOptions{})
+	return err
+}
+
+func (c *Cosmosdb) Remove(ctx context.Context, id string) error {
+	_, err := c.containerClient.DeleteItem(ctx, c.pk, id, nil)
+	if c.IsStatusCodeNotFound(err) {
 		return nil
 	}
-
-	selfId := items[0].Self
-	obj := &CosmosObject{
-		Item: item,
-	}
-	obj.Id = items[0].Id
-
-	// TODO? How to get Self? User reflection right now?
-	// selfId := c.DocLink(id)
-	_, err = c.client.ReplaceDocument(selfId, &item)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
-func (c *Cosmosdb) Remove(id string) error {
-	found, err := c.GetRaw(id)
-	if err != nil {
-		return err
+func (c *Cosmosdb) QueryAll(ctx context.Context, query string) ([][]byte, error) {
+	var rtn [][]byte
+	pager := c.containerClient.NewQueryItemsPager(query, c.pk, &azcosmos.QueryOptions{})
+	for pager.More() {
+		r, err := pager.NextPage(ctx)
+		if err != nil {
+			return rtn, err
+		}
+		rtn = append(rtn, r.Items...)
 	}
-
-	if found != nil {
-		_, err = c.client.DeleteDocument(found.Self)
-		return err
-	}
-
-	return nil
+	return rtn, nil
 }
 
-// func (c *Cosmosdb) DocLink(id string) string {
-// 	return fmt.Sprintf("dbs/%v/colls/%v/docs/%v", c.Database, c.Collection, id)
-// }
+func (c *Cosmosdb) AddPK(data []byte) ([]byte, error) {
+	obj := make(map[string]interface{})
+	err := json.Unmarshal(data, &obj)
+	if err != nil {
+		return data, err
+	}
+	obj[c.pkField] = c.pkValue
 
-// User document
-type User struct {
-	documentdb.Document
-	Name  string `json:"name,omitempty"`
-	Email string `json:"email,omitempty"`
+	return json.Marshal(obj)
+}
+
+func (c *Cosmosdb) IsStatusCodeNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var azErr *azcore.ResponseError
+	if errors.As(err, &azErr) {
+		return azErr.StatusCode == 404
+	}
+	return false
 }
