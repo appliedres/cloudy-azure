@@ -10,13 +10,13 @@ const AzureCredentialsKey = "azure"
 
 type AzureCredentialLoader struct{}
 
-func (loader *AzureCredentialLoader) ReadFromEnv(env *cloudy.Environment) interface{} {
+func (loader *AzureCredentialLoader) ReadFromEnvMgr(em *cloudy.EnvManager) interface{} {
 
 	return AzureCredentials{
-		Region:       env.Default("AZ_REGION", DefaultRegion),
-		TenantID:     env.Force("AZ_TENANT_ID"),
-		ClientID:     env.Force("AZ_CLIENT_ID"),
-		ClientSecret: env.Force("AZ_CLIENT_SECRET"),
+		Region:       em.GetVar("AZ_REGION"),
+		TenantID:     em.GetVar("AZ_TENANT_ID"),
+		ClientID:     em.GetVar("AZ_CLIENT_ID"),
+		ClientSecret: em.GetVar("AZ_CLIENT_SECRET"),
 	}
 
 }

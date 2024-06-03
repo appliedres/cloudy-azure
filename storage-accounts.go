@@ -10,11 +10,11 @@ import (
 	"github.com/appliedres/cloudy"
 )
 
-func GetStorageAccountType(ctx context.Context, env *cloudy.Environment, name string) (string, error) {
+func GetStorageAccountType(ctx context.Context, em *cloudy.EnvManager, name string) (string, error) {
 
-	azureCred := GetAzureCredentialsFromEnv(env)
-	subscriptionId := env.Force("AZ_SUBSCRIPTION_ID")
-	resourceGroup := env.Force("AZ_RESOURCE_GROUP")
+	azureCred := GetAzureCredentialsFromEnvMgr(em)
+	subscriptionId := em.GetVar("AZ_SUBSCRIPTION_ID")
+	resourceGroup := em.GetVar("AZ_RESOURCE_GROUP")
 
 	cred, err := GetAzureClientSecretCredential(azureCred)
 	if err != nil {

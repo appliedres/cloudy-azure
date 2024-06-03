@@ -17,8 +17,39 @@ import (
 const KeyVaultId = "azure-keyvault"
 const KeyVaultCachedId = "azure-keyvault-cached"
 
+// vars required to create the provider, typically credentials
+// TODO: switch these to envDefinition with default for region
+var requiredEnvDefs = []cloudy.EnvDefinition{
+	{
+		Name:         "AZ_TENANT_ID",
+		Description:  "",
+		DefaultValue: "",
+		Keys:         []string{"AZ_TENANT_ID"},
+	}, {
+		Name:         "AZ_CLIENT_ID",
+		Description:  "",
+		DefaultValue: "",
+		Keys:         []string{"AZ_CLIENT_ID"},
+	}, {
+		Name:         "AZ_CLIENT_SECRET",
+		Description:  "",
+		DefaultValue: "",
+		Keys:         []string{"AZ_CLIENT_SECRET"},
+	}, {
+		Name:         "AZ_REGION",
+		Description:  "",
+		DefaultValue: "",
+		Keys:         []string{"AZ_REGION"},
+	}, {
+		Name:         "AZ_VAULT_URL",
+		Description:  "",
+		DefaultValue: "",
+		Keys:         []string{"AZ_VAULT_URL"},
+	},
+}
+
 func init() {
-	secrets.SecretProviders.Register(KeyVaultId, &KeyVaultFactory{})
+	secrets.SecretProviders.Register(KeyVaultId, &KeyVaultFactory{}, requiredEnvDefs)
 }
 
 type KeyVaultFactory struct{}
@@ -36,14 +67,14 @@ func (c *KeyVaultFactory) Create(cfg interface{}) (secrets.SecretProvider, error
 	return NewKeyVault(context.Background(), sec.VaultURL, sec.AzureCredentials)
 }
 
-func (c *KeyVaultFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (c *KeyVaultFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 	cfg := &KeyVaultConfig{}
-	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	cfg.VaultURL = em.GetVar("AZ_VAULT_URL")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
 	return cfg, nil
 }
 
-func (c *KeyVaultFactory) ListRequiredEnv(env *cloudy.Environment) []string {
+func (c *KeyVaultFactory) ListRequiredEnvMgr(em *cloudy.EnvManager) []string {
 	cred := AzureGetRequiredEnv()
 	return append(cred, "AZ_VAULT_URL")
 }
@@ -63,10 +94,10 @@ func NewKeyVault(ctx context.Context, vaultURL string, credentials AzureCredenti
 	return k, err
 }
 
-func NewKeyVaultFromEnv(env *cloudy.Environment) (*KeyVault, error) {
+func NewKeyVaultFromEnvMgr(em *cloudy.EnvManager) (*KeyVault, error) {
 	cfg := &KeyVaultConfig{}
-	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	cfg.VaultURL = em.GetVar("AZ_VAULT_URL")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
 	return NewKeyVault(context.Background(), cfg.VaultURL, cfg.AzureCredentials)
 }
 

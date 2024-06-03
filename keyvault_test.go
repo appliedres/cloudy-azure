@@ -10,10 +10,10 @@ import (
 )
 
 func TestKeyVault(t *testing.T) {
-	env := testutil.CreateTestEnvironment()
+	em := testutil.CreateTestEnvMgr()
 	ctx := cloudy.StartContext()
 
-	kv, err := NewKeyVaultFromEnv(env)
+	kv, err := NewKeyVaultFromEnvMgr(em)
 	assert.Nil(t, err)
 
 	if err == nil {

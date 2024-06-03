@@ -38,14 +38,14 @@ var (
 
 func initAVD() error {
 	testutil.MustSetTestEnv()
-	// _ = testutil.LoadEnv("test.env")
-	env := cloudy.CreateEnvironment()
+	em := cloudy.GetDefaultEnvManager()
+	em.LoadSources("test")
 
-	tenantId = env.Force("AZ_TENANT_ID", "")
-	clientId = env.Force("AZ_CLIENT_ID", "")
-	clientSecret = env.Force("AZ_CLIENT_SECRET", "")
-	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID", "")
-	vaultUrl = env.Force("AZ_VAULT_URL", "")
+	tenantId = em.GetVar("AZ_TENANT_ID")
+	clientId = em.GetVar("AZ_CLIENT_ID")
+	clientSecret = em.GetVar("AZ_CLIENT_SECRET")
+	subscriptionId = em.GetVar("AZ_SUBSCRIPTION_ID")
+	vaultUrl = em.GetVar("AZ_VAULT_URL")
 
 	avd, err = NewAzureVirtualDesktop(ctx, AzureVirtualDesktopConfig{
 		AzureCredentials: AzureCredentials{

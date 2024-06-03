@@ -15,7 +15,43 @@ import (
 var AzureBlob = "azure-blob"
 
 func init() {
-	storage.FileShareProviders.Register(AzureBlob, &AzureBlobFileShareFactory{})
+	var requiredEnvDefs = []cloudy.EnvDefinition{
+		{
+			Name:         "PERSONAL_FILE_SHARE_AZ_ACCOUNT",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"PERSONAL_FILE_SHARE_AZ_ACCOUNT"},
+		}, {
+			Name:         "PERSONAL_FILE_SHARE_AZ_ACCOUNT_KEY",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"PERSONAL_FILE_SHARE_AZ_ACCOUNT_KEY"},
+		}, {
+			Name:         "GROUP_FILE_SHARE_AZ_ACCOUNT",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"GROUP_FILE_SHARE_AZ_ACCOUNT"},
+		}, {
+			Name:         "GROUP_FILE_SHARE_AZ_ACCOUNT_KEY",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"GROUP_FILE_SHARE_AZ_ACCOUNT_KEY"},
+		}, {
+			Name:         "HOME_FILE_SHARE_AZ_ACCOUNT",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"HOME_FILE_SHARE_AZ_ACCOUNT"},
+		},
+		// {
+		// 	Name:        "HOME_FILE_SHARE_AZ_ACCOUNT_KEY",
+		// 	Description: "",
+		// 	DefaultValue:     "",
+		// 	Keys:        []string{"HOME_FILE_SHARE_AZ_ACCOUNT_KEY"},
+		// },
+
+	}
+
+	storage.FileShareProviders.Register(AzureBlob, &AzureBlobFileShareFactory{}, requiredEnvDefs)
 }
 
 type AzureBlobFileShareFactory struct{}
@@ -31,10 +67,10 @@ func (f *AzureBlobFileShareFactory) Create(cfg interface{}) (storage.FileStorage
 	return NewBlobContainerShare(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
 }
 
-func (f *AzureBlobFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (f *AzureBlobFileShareFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 	cfg := &BlobContainerShare{}
-	cfg.Account = env.Force("AZ_ACCOUNT")
-	cfg.AccountKey = env.Force("AZ_ACCOUNT_KEY")
+	cfg.Account = em.GetVar(prefix+"_AZ_ACCOUNT", "AZ_ACCOUNT")
+	cfg.AccountKey = em.GetVar(prefix+"_AZ_ACCOUNT_KEY", "AZ_ACCOUNT_KEY")
 
 	return cfg, nil
 }

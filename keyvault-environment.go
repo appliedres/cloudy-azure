@@ -7,8 +7,8 @@ import (
 )
 
 func init() {
-	cloudy.EnvironmentProviders.Register(KeyVaultId, &KeyVaultEnvironmentFactory{})
-	cloudy.EnvironmentProviders.Register(KeyVaultCachedId, &KeyVaultEnvironmentCachedFactory{})
+	cloudy.EnvironmentProviders.Register(KeyVaultId, &KeyVaultEnvironmentFactory{}, requiredEnvDefs)
+	cloudy.EnvironmentProviders.Register(KeyVaultCachedId, &KeyVaultEnvironmentCachedFactory{}, requiredEnvDefs)
 }
 
 type KeyVaultEnvironmentConfig struct {
@@ -35,11 +35,11 @@ func (c *KeyVaultEnvironmentFactory) Create(cfg interface{}) (cloudy.Environment
 	return kve, err
 }
 
-func (c *KeyVaultEnvironmentFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (c *KeyVaultEnvironmentFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 	cfg := &KeyVaultEnvironmentConfig{}
-	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
-	cfg.Prefix = env.Get("prefix")
+	cfg.VaultURL = em.GetVar("AZ_VAULT_URL")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
+	// cfg.Prefix = em.GetVar("prefix") // TODO: azure prefix needed?
 
 	return cfg, nil
 }
@@ -62,11 +62,13 @@ func (c *KeyVaultEnvironmentCachedFactory) Create(cfg interface{}) (cloudy.Envir
 	return cloudy.NewCachedEnvironment(kve), nil
 }
 
-func (c *KeyVaultEnvironmentCachedFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (c *KeyVaultEnvironmentCachedFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
+	cloudy.Info(context.Background(), "KeyVaultEnvironmentCachedFactory FromEnvMgr")
+
 	cfg := &KeyVaultEnvironmentConfig{}
-	cfg.VaultURL = env.Force("AZ_VAULT_URL")
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
-	cfg.Prefix = env.Get("prefix")
+	cfg.VaultURL = em.GetVar("AZ_VAULT_URL")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
+	// cfg.Prefix = em.GetVar("prefix") // TODO: azure prefix needed?
 
 	return cfg, nil
 }

@@ -16,7 +16,26 @@ import (
 var AzureFiles = "azure-files"
 
 func init() {
-	storage.FileShareProviders.Register(AzureFiles, &AzureFileShareFactory{})
+	var requiredEnvDefs = []cloudy.EnvDefinition{
+		{
+			Name:         "HOME_FILE_SHARE_AZ_RESOURCE_GROUP",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"HOME_FILE_SHARE_AZ_RESOURCE_GROUP"},
+		}, {
+			Name:         "HOME_FILE_SHARE_AZ_ACCOUNT",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"HOME_FILE_SHARE_AZ_ACCOUNT"},
+		}, {
+			Name:         "HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID"},
+		},
+	}
+
+	storage.FileShareProviders.Register(AzureFiles, &AzureFileShareFactory{}, requiredEnvDefs)
 }
 
 type AzureFileShareFactory struct{}
@@ -35,12 +54,12 @@ func (f *AzureFileShareFactory) Create(cfg interface{}) (storage.FileStorageMana
 	return bfs, nil
 }
 
-func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (f *AzureFileShareFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 	bfs := &BlobFileShare{}
-	bfs.Credentials = GetAzureCredentialsFromEnv(env)
-	bfs.ResourceGroupName = env.Force("AZ_RESOURCE_GROUP")
-	bfs.StorageAccountName = env.Force("AZ_ACCOUNT")
-	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+	bfs.Credentials = GetAzureCredentialsFromEnvMgr(em)
+	bfs.ResourceGroupName = em.GetVar(prefix+"_AZ_RESOURCE_GROUP", "AZ_RESOURCE_GROUP")
+	bfs.StorageAccountName = em.GetVar(prefix+"_AZ_ACCOUNT", "AZ_ACCOUNT")
+	bfs.SubscriptionID = em.GetVar(prefix+"_AZ_SUBSCRIPTION_ID", "AZ_SUBSCRIPTION_ID")
 
 	err := bfs.Connect(context.Background())
 	if err != nil {

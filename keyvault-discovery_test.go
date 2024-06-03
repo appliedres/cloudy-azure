@@ -10,10 +10,10 @@ package cloudyazure
 // )
 
 // func TestKeyVaultDiscovery(t *testing.T) {
-// 	env := testutil.CreateTestEnvironment()
+// 	em := testutil.CreateTestEnvMgr()
 // 	ctx := cloudy.StartContext()
 
-// 	kvd, err := NewKeyVaultDiscoveryFromEnv(env)
+// 	kvd, err := NewKeyVaultDiscoveryFromEnvMgr(env)
 // 	assert.NoError(t, err)
 // 	if err != nil {
 // 		return

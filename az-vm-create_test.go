@@ -33,12 +33,13 @@ var LinuxVmTestConfig = &cloudyvm.VirtualMachineConfiguration{
 	},
 }
 
+// TODO: update to env manager
 func TestLinuxVMCreate(t *testing.T) {
 	ctx := cloudy.StartContext()
 
 	_ = testutil.LoadEnv("test.env")
 	vaultUrl := cloudy.ForceEnv("AZ_VAULT_URL", "")
-	creds := GetAzureCredentialsFromEnv(cloudy.DefaultEnvironment)
+	creds := GetAzureCredentialsFromEnvMgr(cloudy.DefaultEnvManager)
 
 	kve, _ := NewKeyVaultEnvironmentService(ctx, vaultUrl, creds, "")
 
@@ -261,14 +262,12 @@ func TestVMDelete(t *testing.T) {
 	testutil.MustSetTestEnv()
 	ctx := context.Background()
 
-	env := testutil.CreateTestEnvironment()
-	cloudy.SetDefaultEnvironment(env)
+	em := testutil.CreateTestEnvMgr()
 
-	vmCreds := env.LoadCredentials("TEST")
-	VMController, err := vm.VmControllers.NewFromEnv(env.SegmentWithCreds(vmCreds, "VMC"), "DRIVER")
+	VMController, err := vm.VmControllers.NewFromEnvMgr(em, "VMC_DRIVER")
 	assert.Nil(t, err)
 
-	sshPublicKey := env.Force("SALT_PUBLIC_KEY")
+	sshPublicKey := em.GetVar("SALT_PUBLIC_KEY")
 
 	LinuxVmTestConfig.Credientials.SSHKey = sshPublicKey
 

@@ -2,51 +2,49 @@ package cloudyazure
 
 import (
 	"fmt"
-	"log"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/datastore"
-	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
-func CreateCompleteEnvironment(envVar string, PrefixVar string, credentialPrefix string) *cloudy.Environment {
-	testutil.MustSetTestEnv()
-	// create a simple env first
-	tempEnv := cloudy.NewEnvironment(
-		cloudy.NewHierarchicalEnvironment(
-			cloudy.NewTieredEnvironment(
-				cloudy.NewTestFileEnvironmentService(),
-				cloudy.NewOsEnvironmentService()), ""))
-	envServiceList := tempEnv.Default(envVar, "test|osenv")
-	prefix := tempEnv.Get(PrefixVar)
+// func CreateCompleteEnvironment(envVar string, PrefixVar string, credentialPrefix string) *cloudy.Environment {
+// 	testutil.MustSetTestEnv()
+// 	// create a simple env first
+// 	tempEnv := cloudy.NewEnvironment(
+// 		cloudy.NewHierarchicalEnvironment(
+// 			cloudy.NewTieredEnvironment(
+// 				cloudy.NewTestFileEnvironmentService(),
+// 				cloudy.NewOsEnvironmentService()), ""))
+// 	envServiceList := tempEnv.Default(envVar, "test|osenv")
+// 	prefix := tempEnv.Get(PrefixVar)
 
-	// Split and iterate
-	envServiceDrivers := strings.Split(envServiceList, "|")
+// 	// Split and iterate
+// 	envServiceDrivers := strings.Split(envServiceList, "|")
 
-	// Create the overall environment
-	envServices := make([]cloudy.EnvironmentService, len(envServiceDrivers))
-	for i, svcDriver := range envServiceDrivers {
-		envSvcInstance, err := cloudy.EnvironmentProviders.NewFromEnvWith(tempEnv, svcDriver)
-		if err != nil {
-			log.Fatalf("Could not create environment: %v -> %v", svcDriver, err)
-		}
-		envServices[i] = envSvcInstance
-	}
+// 	// Create the overall environment
+// 	envServices := make([]cloudy.EnvironmentService, len(envServiceDrivers))
+// 	for i, svcDriver := range envServiceDrivers {
+// 		envSvcInstance, err := cloudy.EnvironmentProviders.NewFromEnvMgrWith(em, svcDriver)
+// 		if err != nil {
+// 			log.Fatalf("Could not create environment: %v -> %v", svcDriver, err)
+// 		}
+// 		envServices[i] = envSvcInstance
+// 	}
 
-	env := cloudy.NewEnvironment(cloudy.NewHierarchicalEnvironment(cloudy.NewTieredEnvironment(envServices...), prefix))
-	cloudy.SetDefaultEnvironment(env)
-	return env
-}
+// 	env := cloudy.NewEnvironment(cloudy.NewHierarchicalEnvironment(cloudy.NewTieredEnvironment(envServices...), prefix))
+// 	cloudy.SetDefaultEnvironment(env)
+// 	return env
+// }
 
 func TestCreateOne(t *testing.T) {
-	env := CreateCompleteEnvironment("ARKLOUD_ENV", "", "TEST")
+	em := cloudy.GetDefaultEnvManager()
+	em.LoadSources("test")
 
-	COSMOS_URL := env.Force("COSMOS_URL")
-	COSMOS_KEY := env.Force("COSMOS_KEY")
+	COSMOS_URL := em.GetVar("COSMOS_URL")
+	COSMOS_KEY := em.GetVar("COSMOS_KEY")
 
 	ctx := cloudy.StartContext()
 	db := NewAzureCosmosDb[TestItem](ctx, COSMOS_URL, COSMOS_KEY, "arkloud", "testitems", "PartitionKey", "PartitionKeyValue", true)
@@ -103,10 +101,11 @@ func TestCreateOne(t *testing.T) {
 }
 
 func TestCreate100(t *testing.T) {
-	env := CreateCompleteEnvironment("ARKLOUD_ENV", "", "TEST")
+	em := cloudy.GetDefaultEnvManager()
+	em.LoadSources("test")
 
-	COSMOS_URL := env.Force("COSMOS_URL")
-	COSMOS_KEY := env.Force("COSMOS_KEY")
+	COSMOS_URL := em.GetVar("COSMOS_URL")
+	COSMOS_KEY := em.GetVar("COSMOS_KEY")
 
 	ctx := cloudy.StartContext()
 	db := NewAzureCosmosDb[TestItem](ctx, COSMOS_URL, COSMOS_KEY, "arkloud", "testitems", "PartitionKey", "PartitionKeyValue", true)

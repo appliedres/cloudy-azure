@@ -28,8 +28,8 @@ type Cosmosdb struct {
 	addPK           bool
 }
 
-// func NewCosmosdbFromEnv(env *cloudy.Environment) (*Cosmosdb, error) {
-// 	creds := GetAzureCredentialsFromEnv(env)
+// func NewCosmosdbFromEnvMgr(em *cloudy.EnvManager) (*Cosmosdb, error) {
+// 	creds := GetAzureCredentialsFromEnvMgr(em)
 
 // 	client := azcosmos.New
 

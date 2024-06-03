@@ -9,22 +9,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TODO: finish updating to env manager, test
 func TestAllVMStatus(t *testing.T) {
 	testutil.MustSetTestEnv()
-	env := cloudy.CreateCompleteEnvironment("ARKLOUD_ENV", "USERAPI_PREFIX", "USER_API")
-	cloudy.SetDefaultEnvironment(env)
+	em := cloudy.GetDefaultEnvManager()
+	em.LoadSources("test")
 
 	ctx := cloudy.StartContext()
 
-	// _, err := cloudyvm.VmControllers.NewFromEnv(vmApi, "DRIVER")
+	// _, err := cloudyvm.VmControllers.NewFromEnvMgr(vmApi, "DRIVER")
 
-	tenantID := env.Force("AZ_TENANT_ID", "")
-	ClientID := env.Force("AZ_CLIENT_ID", "")
-	ClientSecret := env.Force("AZ_CLIENT_SECRET", "")
+	tenantID := em.GetVar("AZ_TENANT_ID", "")
+	ClientID := em.GetVar("AZ_CLIENT_ID", "")
+	ClientSecret := em.GetVar("AZ_CLIENT_SECRET", "")
 
-	vmApi := env.Segment("VMC")
-	resourceGroup := vmApi.Force("AZ_RESOURCE_GROUP", "")
-	SubscriptionID := vmApi.Force("AZ_SUBSCRIPTION_ID", "")
+	resourceGroup := em.GetVar("VMC_AZ_RESOURCE_GROUP", "")
+	SubscriptionID := em.GetVar("VMC_AZ_SUBSCRIPTION_ID", "")
 
 	vmc, err := NewAzureVMController(ctx, &AzureVMControllerConfig{
 		AzureCredentials: AzureCredentials{

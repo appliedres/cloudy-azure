@@ -19,7 +19,7 @@ type AVDManagerFactory struct {
 }
 
 func init() {
-	cloudy.AVDProviders.Register("AVD", &AVDManagerFactory{})
+	cloudy.AVDProviders.Register("AVD", &AVDManagerFactory{}, []cloudy.EnvDefinition{})
 }
 
 func (ms *AVDManagerFactory) Create(cfg interface{}) (cloudy.AVDManager, error) {
@@ -30,10 +30,10 @@ func (ms *AVDManagerFactory) Create(cfg interface{}) (cloudy.AVDManager, error) 
 	return NewAzureVirtualDesktop(context.Background(), *avd)
 }
 
-func (ms *AVDManagerFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (ms *AVDManagerFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 	cfg := &AzureVirtualDesktopConfig{}
-	cfg.subscription = env.Force("AZ_SUBSCRIPTION_ID", "")
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	cfg.subscription = em.GetVar("AZ_SUBSCRIPTION_ID")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
 	return cfg, nil
 }
 

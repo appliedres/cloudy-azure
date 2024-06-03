@@ -37,13 +37,13 @@ package cloudyazure
 // 	return NewKeyVaultDiscovery(context.Background(), sec.SubscriptionID, sec.AzureCredentials)
 // }
 
-// func (c *KeyVaultDiscoveryFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+// func (c *KeyVaultDiscoveryFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 // 	cfg := &KeyVaultConfig{}
-// 	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+// 	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
 // 	return cfg, nil
 // }
 
-// func (c *KeyVaultDiscoveryFactory) ListRequiredEnv(env *cloudy.Environment) []string {
+// func (c *KeyVaultDiscoveryFactory) ListRequiredEnvMgr(em *cloudy.EnvManager) []string {
 // 	cred := AzureGetRequiredEnv()
 // 	return cred
 // }
@@ -64,10 +64,10 @@ package cloudyazure
 // 	return k, err
 // }
 
-// func NewKeyVaultDiscoveryFromEnv(env *cloudy.Environment) (*KeyVaultDiscovery, error) {
+// func NewKeyVaultDiscoveryFromEnvMgr(em *cloudy.EnvManager) (*KeyVaultDiscovery, error) {
 // 	cfg := &KeyVaultDiscovery{}
-// 	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
-// 	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+// 	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
+// 	cfg.SubscriptionID = em.GetVar("AZ_SUBSCRIPTION_ID")
 // 	return NewKeyVaultDiscovery(context.Background(), cfg.SubscriptionID, cfg.AzureCredentials)
 // }
 

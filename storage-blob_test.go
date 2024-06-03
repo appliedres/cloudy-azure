@@ -11,12 +11,13 @@ import (
 
 func TestBlobAccount(t *testing.T) {
 	testutil.MustSetTestEnv()
-	env := cloudy.CreateEnvironment()
+	em := cloudy.GetDefaultEnvManager()
+	em.LoadSources("test")
 
 	ctx := cloudy.StartContext()
 	// _ = testutil.LoadEnv("test.env")
-	account := env.Force("account_blob", "")
-	accountKey := env.Force("account_blob_Key", "")
+	account := em.GetVar("account_blob", "")
+	accountKey := em.GetVar("account_blob_Key", "")
 
 	bsa, err := NewBlobStorageAccount(ctx, account, accountKey, "")
 	if err != nil {
@@ -30,11 +31,11 @@ func TestBlobAccount(t *testing.T) {
 
 func TestBlobFileAccount(t *testing.T) {
 	ctx := cloudy.StartContext()
-	// _ = testutil.LoadEnv("test.env")
-	env := cloudy.CreateEnvironment()
+	em := cloudy.GetDefaultEnvManager()
+	em.LoadSources("test")
 
-	account := env.Force("accountBlob", "")
-	accountKey := env.Force("accountBlobKey", "")
+	account := em.GetVar("accountBlob", "")
+	accountKey := em.GetVar("accountBlobKey", "")
 
 	bfa, err := NewBlobContainerShare(ctx, account, accountKey, "")
 	if err != nil {

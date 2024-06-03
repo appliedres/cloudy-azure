@@ -55,10 +55,10 @@ func getVMClient(ctx context.Context) (*armcompute.VirtualMachinesClient, error)
 		ctx = cloudy.StartContext()
 	}
 
-	tenantID := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_TENANT_ID")
-	clientID := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_CLIENT_ID")
-	clientSecret := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_CLIENT_SECRET")
-	subscriptionID := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_SUBSCRIPTION_ID")
+	tenantID := cloudy.DefaultEnvManager.GetVar("AZURE_COMPUTE_TENANT_ID")
+	clientID := cloudy.DefaultEnvManager.GetVar("AZURE_COMPUTE_CLIENT_ID")
+	clientSecret := cloudy.DefaultEnvManager.GetVar("AZURE_COMPUTE_CLIENT_SECRET")
+	subscriptionID := cloudy.DefaultEnvManager.GetVar("AZURE_COMPUTE_SUBSCRIPTION_ID")
 
 	azConfig := AzureCredentials{
 		TenantID:     tenantID,
@@ -94,7 +94,7 @@ func VmList(ctx context.Context, vmClient *armcompute.VirtualMachinesClient, rg 
 	var returnList []*cloudyvm.VirtualMachineStatus
 	statusOnly := "true"
 
-	// resourceGroup, _ := cloudy.DefaultEnvironment.Get("AZURE_COMPUTE_RESOURCE_GROUP")
+	// resourceGroup, _ := cloudy.DefaultEnvManager.GetVar("AZURE_COMPUTE_RESOURCE_GROUP")
 	pager := vmClient.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
 		// Filter:     &filter,
 		StatusOnly: &statusOnly,

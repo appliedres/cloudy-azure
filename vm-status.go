@@ -19,7 +19,82 @@ import (
 const AzureArmCompute = "azure-arm-compute"
 
 func init() {
-	cloudyvm.VmControllers.Register(AzureArmCompute, &AzureVMControllerFactory{})
+	var requiredEnvDefs = []cloudy.EnvDefinition{
+		// {
+		// 	Name:        "AZ_RESOURCE_GROUP",
+		// 	Description: "",
+		// 	DefaultValue:     "",
+		// 	Keys:        []string{"AZ_RESOURCE_GROUP"},
+		// },{
+		// 	Name:        "AZ_SUBSCRIPTION_ID",
+		// 	Description: "",
+		// 	DefaultValue:     "",
+		// 	Keys:        []string{"AZ_SUBSCRIPTION_ID"},
+		// },
+		{
+			Name:         "VMC_AZ_SUBSCRIPTION_ID",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_SUBSCRIPTION_ID"},
+		}, {
+			Name:         "VMC_AZ_RESOURCE_GROUP",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_RESOURCE_GROUP"},
+		}, {
+			Name:         "VMC_AZ_NETWORK_RESOURCE_GROUP",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_NETWORK_RESOURCE_GROUP"},
+		}, {
+			Name:         "VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP"},
+		}, {
+			Name:         "VMC_AZ_SOURCE_IMAGE_GALLERY_NAME",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_SOURCE_IMAGE_GALLERY_NAME"},
+		}, {
+			Name:         "VMC_AZ_NETWORK_SECURITY_GROUP_NAME",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_NETWORK_SECURITY_GROUP_NAME"},
+		}, {
+			Name:         "VMC_AZ_NETWORK_SECURITY_GROUP_ID",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_NETWORK_SECURITY_GROUP_ID"},
+		}, {
+			Name:         "VMC_SUBNETS",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_SUBNETS"},
+		}, {
+			Name:         "VMC_AZ_VNET",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_VNET"},
+		}, {
+			Name:         "VMC_DOMAIN_CONTROLLER_OVERRIDE",
+			Description:  "",
+			DefaultValue: "False",
+			Keys:         []string{"VMC_DOMAIN_CONTROLLER_OVERRIDE"},
+		}, {
+			Name:         "VMC_DOMAIN_CONTROLLERS",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_DOMAIN_CONTROLLERS"},
+		}, {
+			Name:         "VMC_AZ_LOG_BODY",
+			Description:  "",
+			DefaultValue: "",
+			Keys:         []string{"VMC_AZ_LOG_BODY"},
+		},
+	}
+
+	cloudyvm.VmControllers.Register(AzureArmCompute, &AzureVMControllerFactory{}, requiredEnvDefs)
 }
 
 type AzureVMControllerConfig struct {
@@ -63,33 +138,33 @@ func (f *AzureVMControllerFactory) Create(cfg interface{}) (cloudyvm.VMControlle
 	return NewAzureVMController(context.Background(), azCfg)
 }
 
-func (f *AzureVMControllerFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+func (f *AzureVMControllerFactory) FromEnvMgr(em *cloudy.EnvManager, prefix string) (interface{}, error) {
 	cfg := &AzureVMControllerConfig{}
-	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
-	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
-	cfg.ResourceGroup = env.Force("AZ_RESOURCE_GROUP")
-	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+	cfg.AzureCredentials = GetAzureCredentialsFromEnvMgr(em)
+	cfg.SubscriptionID = em.GetVar("VMC_AZ_SUBSCRIPTION_ID")
+	cfg.ResourceGroup = em.GetVar("VMC_AZ_RESOURCE_GROUP")
+	cfg.SubscriptionID = em.GetVar("VMC_AZ_SUBSCRIPTION_ID")
 
 	// Not always necessary but needed for creation
-	cfg.NetworkResourceGroup = env.Force("AZ_NETWORK_RESOURCE_GROUP")
-	cfg.SourceImageGalleryResourceGroup = env.Default("AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP", cfg.ResourceGroup)
-	cfg.SourceImageGalleryName = env.Force("AZ_SOURCE_IMAGE_GALLERY_NAME")
-	cfg.Vnet = env.Force("AZ_VNET")
-	cfg.NetworkSecurityGroupName = env.Force("AZ_NETWORK_SECURITY_GROUP_NAME")
-	cfg.NetworkSecurityGroupID = env.Force("AZ_NETWORK_SECURITY_GROUP_ID")
-	cfg.VaultURL = env.Force("AZ_VAULT_URL")
+	cfg.NetworkResourceGroup = em.GetVar("VMC_AZ_NETWORK_RESOURCE_GROUP")
+	cfg.SourceImageGalleryResourceGroup = em.GetVar("VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP")
+	cfg.SourceImageGalleryName = em.GetVar("VMC_AZ_SOURCE_IMAGE_GALLERY_NAME")
+	cfg.Vnet = em.GetVar("VMC_AZ_VNET")
+	cfg.NetworkSecurityGroupName = em.GetVar("VMC_AZ_NETWORK_SECURITY_GROUP_NAME")
+	cfg.NetworkSecurityGroupID = em.GetVar("VMC_AZ_NETWORK_SECURITY_GROUP_ID")
+	cfg.VaultURL = em.GetVar("VMC_AZ_VAULT_URL", "AZ_VAULT_URL")
 
-	subnets := env.Force("SUBNETS") //SUBNET1,SUBNET2
+	subnets := em.GetVar("VMC_SUBNETS") //SUBNET1,SUBNET2
 	cfg.AvailableSubnets = strings.Split(subnets, ",")
 
 	// Defaults to true for backwards compatibility
-	cfg.DomainControllerOverride = env.Default("DOMAIN_CONTROLLER_OVERRIDE", "True")
-	domainControllers := strings.Split(env.Force("DOMAIN_CONTROLLERS"), ",") // DC1, DC2
+	cfg.DomainControllerOverride = em.GetVar("VMC_DOMAIN_CONTROLLER_OVERRIDE")
+	domainControllers := strings.Split(em.GetVar("VMC_DOMAIN_CONTROLLERS"), ",") // DC1, DC2
 	for i := range domainControllers {
 		cfg.DomainControllers = append(cfg.DomainControllers, &domainControllers[i])
 	}
 
-	logBody := env.Get("AZ_LOG_BODY")
+	logBody := em.GetVar("VMC_AZ_LOG_BODY")
 	if strings.ToUpper(logBody) == "TRUE" {
 		cfg.LogBody = true
 	}

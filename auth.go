@@ -1,6 +1,7 @@
 package cloudyazure
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -35,17 +36,20 @@ func GetAzureClientSecretCredential(azCfg AzureCredentials) (*azidentity.ClientS
 	return cred, err
 }
 
-func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
+func GetAzureCredentialsFromEnvMgr(em *cloudy.EnvManager) AzureCredentials {
+	cloudy.Info(context.Background(), "GetAzureCredentialsFromEnvMgr")
+
 	// Check to see if there is already a set of credentials
-	creds := env.GetCredential(AzureCredentialsKey)
-	if creds != nil {
-		return creds.(AzureCredentials)
-	}
+	// TODO: re-enable creds?
+	// creds := env.GetCredential(AzureCredentialsKey)
+	// if creds != nil {
+	// 	return creds.(AzureCredentials)
+	// }
 
 	return AzureCredentials{
-		Region:       env.Default("AZ_REGION", DefaultRegion),
-		TenantID:     env.Force("AZ_TENANT_ID"),
-		ClientID:     env.Force("AZ_CLIENT_ID"),
-		ClientSecret: env.Force("AZ_CLIENT_SECRET"),
+		Region:       em.GetVar("AZ_REGION"),
+		TenantID:     em.GetVar("AZ_TENANT_ID"),
+		ClientID:     em.GetVar("AZ_CLIENT_ID"),
+		ClientSecret: em.GetVar("AZ_CLIENT_SECRET"),
 	}
 }
