@@ -17,38 +17,21 @@ var AzureBlob = "azure-blob"
 func init() {
 	var requiredEnvDefs = []cloudy.EnvDefinition{
 		{
-			Name:         "PERSONAL_FILE_SHARE_AZ_ACCOUNT",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"PERSONAL_FILE_SHARE_AZ_ACCOUNT"},
+			Key:		  "PERSONAL_FILE_SHARE_AZ_ACCOUNT",
+			Name:         "PERSONAL_FILE_SHARE_AZ_ACCOUNT",			
 		}, {
+			Key:		  "PERSONAL_FILE_SHARE_AZ_ACCOUNT_KEY",
 			Name:         "PERSONAL_FILE_SHARE_AZ_ACCOUNT_KEY",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"PERSONAL_FILE_SHARE_AZ_ACCOUNT_KEY"},
 		}, {
+			Key:		  "GROUP_FILE_SHARE_AZ_ACCOUNT",
 			Name:         "GROUP_FILE_SHARE_AZ_ACCOUNT",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"GROUP_FILE_SHARE_AZ_ACCOUNT"},
 		}, {
+			Key:		  "GROUP_FILE_SHARE_AZ_ACCOUNT_KEY",
 			Name:         "GROUP_FILE_SHARE_AZ_ACCOUNT_KEY",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"GROUP_FILE_SHARE_AZ_ACCOUNT_KEY"},
 		}, {
+			Key:		  "HOME_FILE_SHARE_AZ_ACCOUNT",
 			Name:         "HOME_FILE_SHARE_AZ_ACCOUNT",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"HOME_FILE_SHARE_AZ_ACCOUNT"},
 		},
-		// {
-		// 	Name:        "HOME_FILE_SHARE_AZ_ACCOUNT_KEY",
-		// 	Description: "",
-		// 	DefaultValue:     "",
-		// 	Keys:        []string{"HOME_FILE_SHARE_AZ_ACCOUNT_KEY"},
-		// },
-
 	}
 
 	storage.FileShareProviders.Register(AzureBlob, &AzureBlobFileShareFactory{}, requiredEnvDefs)

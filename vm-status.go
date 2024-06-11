@@ -20,6 +20,7 @@ const AzureArmCompute = "azure-arm-compute"
 
 func init() {
 	var requiredEnvDefs = []cloudy.EnvDefinition{
+		// TODO: lookup resource group + subscription id
 		// {
 		// 	Name:        "AZ_RESOURCE_GROUP",
 		// 	Description: "",
@@ -32,65 +33,44 @@ func init() {
 		// 	Keys:        []string{"AZ_SUBSCRIPTION_ID"},
 		// },
 		{
+			Key:		  "VMC_AZ_SUBSCRIPTION_ID",
 			Name:         "VMC_AZ_SUBSCRIPTION_ID",
 			Description:  "",
 			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_SUBSCRIPTION_ID"},
 		}, {
+			Key:		  "VMC_AZ_RESOURCE_GROUP",
 			Name:         "VMC_AZ_RESOURCE_GROUP",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_RESOURCE_GROUP"},
 		}, {
+			Key:		  "VMC_AZ_NETWORK_RESOURCE_GROUP",
 			Name:         "VMC_AZ_NETWORK_RESOURCE_GROUP",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_NETWORK_RESOURCE_GROUP"},
 		}, {
+			Key:		  "VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP",
 			Name:         "VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP"},
 		}, {
+			Key:		  "VMC_AZ_SOURCE_IMAGE_GALLERY_NAME",
 			Name:         "VMC_AZ_SOURCE_IMAGE_GALLERY_NAME",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_SOURCE_IMAGE_GALLERY_NAME"},
 		}, {
+			Key:		  "VMC_AZ_NETWORK_SECURITY_GROUP_NAME",
 			Name:         "VMC_AZ_NETWORK_SECURITY_GROUP_NAME",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_NETWORK_SECURITY_GROUP_NAME"},
 		}, {
+			Key:		  "VMC_AZ_NETWORK_SECURITY_GROUP_ID",
 			Name:         "VMC_AZ_NETWORK_SECURITY_GROUP_ID",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_NETWORK_SECURITY_GROUP_ID"},
 		}, {
+			Key:		  "VMC_SUBNETS",
 			Name:         "VMC_SUBNETS",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_SUBNETS"},
 		}, {
+			Key:		  "VMC_AZ_VNET",
 			Name:         "VMC_AZ_VNET",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_VNET"},
 		}, {
+			Key:		  "VMC_DOMAIN_CONTROLLER_OVERRIDE",
 			Name:         "VMC_DOMAIN_CONTROLLER_OVERRIDE",
-			Description:  "",
-			DefaultValue: "False",
-			Keys:         []string{"VMC_DOMAIN_CONTROLLER_OVERRIDE"},
+			DefaultValue: "True",
 		}, {
+			Key:		  "VMC_DOMAIN_CONTROLLERS",
 			Name:         "VMC_DOMAIN_CONTROLLERS",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_DOMAIN_CONTROLLERS"},
 		}, {
+			Key:		  "VMC_AZ_LOG_BODY",
 			Name:         "VMC_AZ_LOG_BODY",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"VMC_AZ_LOG_BODY"},
 		},
 	}
 

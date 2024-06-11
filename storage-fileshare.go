@@ -18,20 +18,14 @@ var AzureFiles = "azure-files"
 func init() {
 	var requiredEnvDefs = []cloudy.EnvDefinition{
 		{
+			Key:		  "HOME_FILE_SHARE_AZ_RESOURCE_GROUP",
 			Name:         "HOME_FILE_SHARE_AZ_RESOURCE_GROUP",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"HOME_FILE_SHARE_AZ_RESOURCE_GROUP"},
 		}, {
+			Key:		  "HOME_FILE_SHARE_AZ_ACCOUNT",
 			Name:         "HOME_FILE_SHARE_AZ_ACCOUNT",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"HOME_FILE_SHARE_AZ_ACCOUNT"},
 		}, {
+			Key:		  "HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID",
 			Name:         "HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID",
-			Description:  "",
-			DefaultValue: "",
-			Keys:         []string{"HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID"},
 		},
 	}
 

@@ -21,30 +21,20 @@ const KeyVaultCachedId = "azure-keyvault-cached"
 // TODO: switch these to envDefinition with default for region
 var requiredEnvDefs = []cloudy.EnvDefinition{
 	{
-		Name:         "AZ_TENANT_ID",
-		Description:  "",
-		DefaultValue: "",
-		Keys:         []string{"AZ_TENANT_ID"},
+		Key:          "AZ_TENANT_ID",
+		Name:         "Azure Tenant ID",
 	}, {
+		Key:          "AZ_CLIENT_ID",
 		Name:         "AZ_CLIENT_ID",
-		Description:  "",
-		DefaultValue: "",
-		Keys:         []string{"AZ_CLIENT_ID"},
 	}, {
+		Key:          "AZ_CLIENT_SECRET",
 		Name:         "AZ_CLIENT_SECRET",
-		Description:  "",
-		DefaultValue: "",
-		Keys:         []string{"AZ_CLIENT_SECRET"},
 	}, {
+		Key:          "AZ_REGION",
 		Name:         "AZ_REGION",
-		Description:  "",
-		DefaultValue: "",
-		Keys:         []string{"AZ_REGION"},
 	}, {
-		Name:         "AZ_VAULT_URL",
-		Description:  "",
-		DefaultValue: "",
-		Keys:         []string{"AZ_VAULT_URL"},
+		Key:          "AZ_VAULT_URL",
+		Name:         "Azure Vault URL",
 	},
 }
 
