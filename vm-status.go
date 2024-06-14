@@ -2,6 +2,7 @@ package cloudyazure
 
 import (
 	"context"
+	"log"
 	"sort"
 	"strings"
 
@@ -131,7 +132,13 @@ func (f *AzureVMControllerFactory) FromEnvMgr(em *cloudy.EnvManager, prefix stri
 	cfg.SourceImageGalleryName = em.GetVar("VMC_AZ_SOURCE_IMAGE_GALLERY_NAME")
 	cfg.Vnet = em.GetVar("VMC_AZ_VNET")
 	cfg.NetworkSecurityGroupName = em.GetVar("VMC_AZ_NETWORK_SECURITY_GROUP_NAME")
-	cfg.NetworkSecurityGroupID = em.GetVar("VMC_AZ_NETWORK_SECURITY_GROUP_ID")
+
+	nsgID, err := GetNSGIdByName(cfg.TenantID, cfg.SubscriptionID, cfg.ClientID, cfg.ClientSecret, cfg.ResourceGroup, cfg.NetworkSecurityGroupName)
+	if err != nil {
+		log.Fatalf("failed to lookup NSG ID")
+	}
+	cfg.NetworkSecurityGroupID = nsgID
+	
 	cfg.VaultURL = em.GetVar("VMC_AZ_VAULT_URL", "AZ_VAULT_URL")
 
 	subnets := em.GetVar("VMC_SUBNETS") //SUBNET1,SUBNET2

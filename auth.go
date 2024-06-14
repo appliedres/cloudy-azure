@@ -3,10 +3,14 @@ package cloudyazure
 import (
 	"context"
 	"fmt"
+	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
 	"github.com/appliedres/cloudy"
 )
 
@@ -39,17 +43,38 @@ func GetAzureClientSecretCredential(azCfg AzureCredentials) (*azidentity.ClientS
 func GetAzureCredentialsFromEnvMgr(em *cloudy.EnvManager) AzureCredentials {
 	cloudy.Info(context.Background(), "GetAzureCredentialsFromEnvMgr")
 
-	// Check to see if there is already a set of credentials
-	// TODO: re-enable creds?
-	// creds := env.GetCredential(AzureCredentialsKey)
-	// if creds != nil {
-	// 	return creds.(AzureCredentials)
-	// }
-
 	return AzureCredentials{
 		Region:       em.GetVar("AZ_REGION"),
 		TenantID:     em.GetVar("AZ_TENANT_ID"),
 		ClientID:     em.GetVar("AZ_CLIENT_ID"),
 		ClientSecret: em.GetVar("AZ_CLIENT_SECRET"),
 	}
+}
+
+func GetNSGIdByName(tenantID, subscriptionID, clientID, clientSecret, resourceGroupName, nsgName string) (string, error) {
+	
+	cred, err := GetAzureClientSecretCredential(GetAzureCredentialsFromEnvMgr(cloudy.DefaultEnvManager))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	options := arm.ClientOptions {
+		ClientOptions: azcore.ClientOptions {
+			Cloud: cloud.AzureGovernment,
+		},
+	}
+
+	networkClientFactory, err := armnetwork.NewClientFactory(subscriptionID, cred, &options)
+	if err != nil {
+		log.Fatal(err)
+	}
+	securityGroupsClient := networkClientFactory.NewSecurityGroupsClient()
+
+	nsg, err := securityGroupsClient.Get(context.Background(), resourceGroupName, nsgName, &armnetwork.SecurityGroupsClientGetOptions{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Return the NSG ID
+	return *nsg.ID, nil
 }
