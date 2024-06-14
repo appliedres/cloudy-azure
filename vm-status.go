@@ -41,21 +41,21 @@ func init() {
 		}, {
 			Key:		  "VMC_AZ_RESOURCE_GROUP",
 			Name:         "VMC_AZ_RESOURCE_GROUP",
+			FallbackKeys: []string{"AZ_RESOURCE_GROUP"},
 		}, {
 			Key:		  "VMC_AZ_NETWORK_RESOURCE_GROUP",
 			Name:         "VMC_AZ_NETWORK_RESOURCE_GROUP",
+			FallbackKeys: []string{"VMC_AZ_RESOURCE_GROUP", "AZ_RESOURCE_GROUP"},
 		}, {
 			Key:		  "VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP",
 			Name:         "VMC_AZ_SOURCE_IMAGE_GALLERY_RESOURCE_GROUP",
+			FallbackKeys: []string{"VMC_AZ_RESOURCE_GROUP", "AZ_RESOURCE_GROUP"},
 		}, {
 			Key:		  "VMC_AZ_SOURCE_IMAGE_GALLERY_NAME",
 			Name:         "VMC_AZ_SOURCE_IMAGE_GALLERY_NAME",
 		}, {
 			Key:		  "VMC_AZ_NETWORK_SECURITY_GROUP_NAME",
 			Name:         "VMC_AZ_NETWORK_SECURITY_GROUP_NAME",
-		}, {
-			Key:		  "VMC_AZ_NETWORK_SECURITY_GROUP_ID",
-			Name:         "VMC_AZ_NETWORK_SECURITY_GROUP_ID",
 		}, {
 			Key:		  "VMC_SUBNETS",
 			Name:         "VMC_SUBNETS",
@@ -133,7 +133,7 @@ func (f *AzureVMControllerFactory) FromEnvMgr(em *cloudy.EnvManager, prefix stri
 	cfg.Vnet = em.GetVar("VMC_AZ_VNET")
 	cfg.NetworkSecurityGroupName = em.GetVar("VMC_AZ_NETWORK_SECURITY_GROUP_NAME")
 
-	nsgID, err := GetNSGIdByName(cfg.TenantID, cfg.SubscriptionID, cfg.ClientID, cfg.ClientSecret, cfg.ResourceGroup, cfg.NetworkSecurityGroupName)
+	nsgID, err := GetNSGIdByName(cfg.SubscriptionID, cfg.ResourceGroup, cfg.NetworkSecurityGroupName)
 	if err != nil {
 		log.Fatalf("failed to lookup NSG ID")
 	}

@@ -2,7 +2,6 @@ package cloudyazure
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -33,7 +32,7 @@ func GetAzureClientSecretCredential(azCfg AzureCredentials) (*azidentity.ClientS
 		})
 
 	if err != nil {
-		fmt.Printf("GetAzureCredentials Error authentication provider: %v\n", err)
+		log.Fatalf("GetAzureCredentials Error authentication provider: %v\n", err)
 		return nil, err
 	}
 
@@ -51,7 +50,7 @@ func GetAzureCredentialsFromEnvMgr(em *cloudy.EnvManager) AzureCredentials {
 	}
 }
 
-func GetNSGIdByName(tenantID, subscriptionID, clientID, clientSecret, resourceGroupName, nsgName string) (string, error) {
+func GetNSGIdByName(subscriptionID, resourceGroupName, nsgName string) (string, error) {
 	
 	cred, err := GetAzureClientSecretCredential(GetAzureCredentialsFromEnvMgr(cloudy.DefaultEnvManager))
 	if err != nil {

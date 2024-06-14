@@ -20,12 +20,14 @@ func init() {
 		{
 			Key:		  "HOME_FILE_SHARE_AZ_RESOURCE_GROUP",
 			Name:         "HOME_FILE_SHARE_AZ_RESOURCE_GROUP",
+			FallbackKeys: []string{"AZ_RESOURCE_GROUP"},
 		}, {
 			Key:		  "HOME_FILE_SHARE_AZ_ACCOUNT",
 			Name:         "HOME_FILE_SHARE_AZ_ACCOUNT",
 		}, {
 			Key:		  "HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID",
 			Name:         "HOME_FILE_SHARE_AZ_SUBSCRIPTION_ID",
+			FallbackKeys: []string{"AZ_SUBSCRIPTION_ID"},
 		},
 	}
 
