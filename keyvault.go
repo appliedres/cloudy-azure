@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/secrets"
+	"github.com/hashicorp/go-multierror"
 )
 
 const KeyVaultId = "azure-keyvault"
@@ -78,6 +79,7 @@ func (k *KeyVault) Configure(ctx context.Context) error {
 
 	client, err := azsecrets.NewClient(k.VaultURL, cred, &azsecrets.ClientOptions{})
 	if err != nil {
+
 		return err
 	}
 
@@ -104,6 +106,28 @@ func (k *KeyVault) GetSecretBinary(ctx context.Context, key string) ([]byte, err
 		return nil, nil
 	}
 	return base64.StdEncoding.DecodeString(secretStr)
+}
+
+func (k *KeyVault) GetAllSecrets(ctx context.Context) (map[string]string, error) {
+	var merr *multierror.Error
+
+	pager := k.Client.NewListSecretsPager(&azsecrets.ListSecretsOptions{})
+	all := make(map[string]string)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			merr = multierror.Append(merr, err)
+			return all, merr
+		}
+		for _, item := range page.Value {
+			resp, err := k.Client.GetSecret(ctx, item.ID.Name(), "", nil)
+			merr = multierror.Append(merr, err)
+			if err == nil {
+				all[item.ID.Name()] = *resp.Value
+			}
+		}
+	}
+	return all, merr.ErrorOrNil()
 }
 
 func (k *KeyVault) GetSecret(ctx context.Context, key string) (string, error) {

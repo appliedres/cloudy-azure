@@ -6,8 +6,11 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 )
+
+var DefaultTransport policy.Transporter
 
 func is404(err error) bool {
 	var respErr *azcore.ResponseError

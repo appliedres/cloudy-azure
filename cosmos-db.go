@@ -25,49 +25,45 @@ type Cosmosdb struct {
 	pk              azcosmos.PartitionKey // Cannot figure out how to
 	pkField         string
 	pkValue         string
-	addPK           bool
+	idField         string
+	cred            *azcosmos.KeyCredential
 }
 
-// func NewCosmosdbFromEnv(env *cloudy.Environment) (*Cosmosdb, error) {
-// 	creds := GetAzureCredentialsFromEnv(env)
-
-// 	client := azcosmos.New
-
-// }
-
-func NewCosmosdb(ctx context.Context, db string, coll string, key string, endpoint string, partitionKeyField string, partitionKey string, addPK bool) (*Cosmosdb, error) {
+func NewCosmosdb(ctx context.Context, db string, coll string, key string, endpoint string, idField string, partitionKeyField string, partitionKey string) (*Cosmosdb, error) {
 	c := &Cosmosdb{
 		Database:  db,
 		Container: coll,
 		pkValue:   partitionKey,
 		pk:        azcosmos.NewPartitionKeyString(partitionKey),
 		pkField:   partitionKeyField,
-		addPK:     addPK,
+		idField:   idField,
 	}
 
 	keyCred, err := azcosmos.NewKeyCredential(key)
 	if err != nil {
 		return nil, err
 	}
+	c.cred = &keyCred
+
 	client, err := azcosmos.NewClientWithKey(endpoint, keyCred, &azcosmos.ClientOptions{
 		ClientOptions: policy.ClientOptions{
-			Cloud: cloud.AzureGovernment,
+			Cloud:     cloud.AzureGovernment,
+			Transport: DefaultTransport,
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	c.client = client
-
 	return c, nil
 }
 
-func (c *Cosmosdb) CreateOpen(ctx context.Context) error {
+func (c *Cosmosdb) CreateOpen(ctx context.Context, onCollectionCreate func(ctx context.Context, c *Cosmosdb) error) error {
 	err := c.findOrCreateDatabase(ctx)
 	if err != nil {
 		return err
 	}
-	err = c.findOrCreateContainer(ctx)
+	err = c.findOrCreateContainer(ctx, onCollectionCreate)
 	return err
 }
 
@@ -78,14 +74,13 @@ func (c *Cosmosdb) Healthy(ctx context.Context) error {
 
 // Find or create database by id
 func (c *Cosmosdb) findOrCreateDatabase(ctx context.Context) error {
-
 	dbClient, err := c.client.NewDatabase(c.Database)
 	if err != nil {
 		return err
 	}
 
 	resp, err := dbClient.Read(ctx, &azcosmos.ReadDatabaseOptions{})
-	if err != nil {
+	if err != nil && !is404(err) {
 		return err
 	}
 	if resp.DatabaseProperties != nil {
@@ -103,7 +98,7 @@ func (c *Cosmosdb) findOrCreateDatabase(ctx context.Context) error {
 }
 
 // Find or create Container by id
-func (c *Cosmosdb) findOrCreateContainer(ctx context.Context) error {
+func (c *Cosmosdb) findOrCreateContainer(ctx context.Context, onCollectionCreate func(ctx context.Context, c *Cosmosdb) error) error {
 	containerClient, err := c.dbclient.NewContainer(c.Container)
 	if err != nil {
 		return err
@@ -112,6 +107,11 @@ func (c *Cosmosdb) findOrCreateContainer(ctx context.Context) error {
 	pkField := c.pkField
 	if !strings.HasPrefix(pkField, "/") {
 		pkField = "/" + pkField
+	}
+
+	idField := c.idField
+	if !strings.HasPrefix(idField, "/") {
+		idField = "/" + idField
 	}
 
 	_, err = containerClient.Read(ctx, &azcosmos.ReadContainerOptions{})
@@ -131,6 +131,11 @@ func (c *Cosmosdb) findOrCreateContainer(ctx context.Context) error {
 		}
 		c.containerClient = containerClient
 		c.Container = createResponse.ContainerProperties.ID
+
+		if onCollectionCreate != nil {
+			onCollectionCreate(ctx, c)
+		}
+
 		return nil
 	}
 
@@ -157,6 +162,9 @@ func (c *Cosmosdb) Exists(ctx context.Context, id string) (bool, error) {
 func (c *Cosmosdb) GetRaw(ctx context.Context, id string) ([]byte, error) {
 	resp, err := c.containerClient.ReadItem(ctx, c.pk, id, &azcosmos.ItemOptions{})
 
+	if is404(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -183,12 +191,10 @@ func (c *Cosmosdb) GetAll(ctx context.Context) ([][]byte, error) {
 // Create user
 func (c *Cosmosdb) Add(ctx context.Context, id string, data []byte) error {
 	var err error
-	// Save to map
-	if c.addPK {
-		data, err = c.AddPK(data)
-		if err != nil {
-			return err
-		}
+
+	data, err = c.AddPK(data)
+	if err != nil {
+		return err
 	}
 
 	_, err = c.containerClient.CreateItem(ctx, c.pk, data, &azcosmos.ItemOptions{})
@@ -198,13 +204,12 @@ func (c *Cosmosdb) Add(ctx context.Context, id string, data []byte) error {
 // Update or insert
 func (c *Cosmosdb) Upsert(ctx context.Context, id string, data []byte) error {
 	var err error
-	// Save to map
-	if c.addPK {
-		data, err = c.AddPK(data)
-		if err != nil {
-			return err
-		}
+
+	data, err = c.AddPK(data)
+	if err != nil {
+		return err
 	}
+
 	_, err = c.containerClient.UpsertItem(ctx, c.pk, data, &azcosmos.ItemOptions{})
 	return err
 }
@@ -213,11 +218,9 @@ func (c *Cosmosdb) Upsert(ctx context.Context, id string, data []byte) error {
 func (c *Cosmosdb) Replace(ctx context.Context, id string, data []byte) error {
 	var err error
 	// Save to map
-	if c.addPK {
-		data, err = c.AddPK(data)
-		if err != nil {
-			return err
-		}
+	data, err = c.AddPK(data)
+	if err != nil {
+		return err
 	}
 	_, err = c.containerClient.ReplaceItem(ctx, c.pk, id, data, &azcosmos.ItemOptions{})
 	return err
@@ -246,11 +249,20 @@ func (c *Cosmosdb) QueryAll(ctx context.Context, query string) ([][]byte, error)
 
 func (c *Cosmosdb) AddPK(data []byte) ([]byte, error) {
 	obj := make(map[string]interface{})
+
 	err := json.Unmarshal(data, &obj)
 	if err != nil {
 		return data, err
 	}
-	obj[c.pkField] = c.pkValue
+
+	_, pkFound := obj[c.pkField]
+	if !pkFound {
+		obj[c.pkField] = c.pkValue
+	}
+	_, idFound := obj["id"]
+	if !idFound {
+		obj["id"] = obj[c.idField]
+	}
 
 	return json.Marshal(obj)
 }

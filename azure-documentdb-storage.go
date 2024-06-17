@@ -2,7 +2,6 @@ package cloudyazure
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,26 +10,76 @@ import (
 	"github.com/appliedres/cloudy/datastore"
 )
 
-type AzureCosmosDbDatastore[T any] struct {
-	url string
-	key string
-	DB  *Cosmosdb
+func init() {
+	datastore.UntypedJsonDataStoreFactoryProviders.Register(AzureCosmosDB, &CosmosDBFactory{})
 }
 
-func NewAzureCosmosDb[T any](ctx context.Context, url string, key string, database string, collection string, pkField string, pkValue string, addPK bool) *AzureCosmosDbDatastore[T] {
-	cosmosDb, _ := NewCosmosdb(ctx, database, collection, key, url, pkField, pkValue, addPK)
-	return &AzureCosmosDbDatastore[T]{
+// FACTORY --------------------------------
+const AzureCosmosDB = "azure-cosmosdb"
+
+type CosmosFactoryConfig struct {
+	URL      string
+	Key      string
+	Creds    *AzureCredentials
+	Database string
+}
+
+type CosmosDBFactory struct {
+	config *CosmosFactoryConfig
+}
+
+func (c *CosmosDBFactory) Create(cfg interface{}) (datastore.UntypedJsonDataStoreFactory, error) {
+	cloudy.Info(context.Background(), "CosmosDBFactory Create")
+	sec := cfg.(*CosmosFactoryConfig)
+	if sec == nil {
+		return nil, cloudy.ErrInvalidConfiguration
+	}
+	return &CosmosDBFactory{
+		config: cfg.(*CosmosFactoryConfig),
+	}, nil
+}
+
+func (c *CosmosDBFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+	// creds := GetAzureCredentialsFromEnv(env)
+
+	cfg := &CosmosFactoryConfig{
+		URL:      env.Force("AZ_COSMOS_URL"),
+		Key:      env.Force("AZ_COSMOS_KEY"),
+		Database: env.Default("AZ_COSMOS_DB", "arkloud"),
+		// Creds:    &creds,
+	}
+	return cfg, nil
+}
+
+func (c *CosmosDBFactory) CreateJsonDatastore(ctx context.Context, typename string, prefix string, idField string) datastore.UntypedJsonDataStore {
+	return NewAzureCosmosDb(ctx, c.config.URL, c.config.Key, c.config.Database, typename, idField, typename, typename)
+}
+
+// DATASTORE -------------------------------
+
+type AzureCosmosDbDatastore struct {
+	url      string
+	key      string
+	DB       *Cosmosdb
+	onCreate func(ctx context.Context, ds datastore.UntypedJsonDataStore) error
+}
+
+func NewAzureCosmosDb(ctx context.Context, url string, key string, database string, collection string, idField string, pkField string, pkValue string) *AzureCosmosDbDatastore {
+	cosmosDb, _ := NewCosmosdb(ctx, database, collection, key, url, idField, pkField, pkValue)
+	return &AzureCosmosDbDatastore{
 		url: url,
 		key: key,
 		DB:  cosmosDb,
 	}
 }
 
-func (az *AzureCosmosDbDatastore[T]) Open(ctx context.Context, config interface{}) error {
-	return az.DB.CreateOpen(ctx)
+func (az *AzureCosmosDbDatastore) Open(ctx context.Context, config interface{}) error {
+	return az.DB.CreateOpen(ctx, func(ctx context.Context, c *Cosmosdb) error {
+		return nil
+	})
 }
 
-func (az *AzureCosmosDbDatastore[T]) Close(ctx context.Context) error {
+func (az *AzureCosmosDbDatastore) Close(ctx context.Context) error {
 	// Nothing to do
 	return nil
 }
@@ -38,87 +87,47 @@ func (az *AzureCosmosDbDatastore[T]) Close(ctx context.Context) error {
 // Saves an item into the Elastic Search. This item MUST be JSON data.
 // The key is used as the ID for the document and is required to be unique
 // for this index
-func (az *AzureCosmosDbDatastore[T]) Save(ctx context.Context, item *T, key string) error {
-	data, err := json.Marshal(item)
-	if err != nil {
-		return err
-	}
-
+func (az *AzureCosmosDbDatastore) Save(ctx context.Context, data []byte, key string) error {
 	return az.DB.Upsert(ctx, key, data)
 }
 
-func (az *AzureCosmosDbDatastore[T]) fromBytes(data []byte) (T, error) {
-	var zero T
-	v, err := cloudy.NewT[T]()
-	if err != nil {
-		return zero, err
-	}
-	err = json.Unmarshal(data, &v)
-	if err != nil {
-		return zero, err
-	}
-	return v, err
-}
-
-func (az *AzureCosmosDbDatastore[T]) Get(ctx context.Context, id string) (T, error) {
-	var zero T
+func (az *AzureCosmosDbDatastore) Get(ctx context.Context, id string) ([]byte, error) {
 	data, err := az.DB.GetRaw(ctx, id)
-	if err != nil {
-		return zero, err
-	}
-	return az.fromBytes(data)
+	return data, err
 }
 
-func (az *AzureCosmosDbDatastore[T]) GetAll(ctx context.Context) ([]T, error) {
+func (az *AzureCosmosDbDatastore) GetAll(ctx context.Context) ([][]byte, error) {
 	cloudy.Info(ctx, "AzureCosmosDbDatastore.GetAll")
-
 	results, err := az.DB.GetAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rtn := make([]T, len(results))
-	for i, data := range results {
-		obj, err := az.fromBytes(data)
-		if err != nil {
-			return rtn, err
-		}
-		rtn[i] = obj
-	}
-	return rtn, err
+	return results, err
 }
 
-func (az *AzureCosmosDbDatastore[T]) Exists(ctx context.Context, key string) (bool, error) {
+func (az *AzureCosmosDbDatastore) Exists(ctx context.Context, key string) (bool, error) {
 	exist, err := az.DB.Exists(ctx, key)
 	return exist, err
 }
 
-func (az *AzureCosmosDbDatastore[T]) Delete(ctx context.Context, key string) error {
+func (az *AzureCosmosDbDatastore) Delete(ctx context.Context, key string) error {
 	err := az.DB.Remove(ctx, key)
 	return err
 }
 
-func (az *AzureCosmosDbDatastore[T]) Ping(ctx context.Context) bool {
+func (az *AzureCosmosDbDatastore) Ping(ctx context.Context) bool {
 	err := az.DB.Healthy(ctx)
 	return err == nil
 }
 
-func (az *AzureCosmosDbDatastore[T]) Query(ctx context.Context, query *datastore.SimpleQuery) ([]T, error) {
+func (az *AzureCosmosDbDatastore) Query(ctx context.Context, query *datastore.SimpleQuery) ([][]byte, error) {
+	cloudy.Info(ctx, "AzureCosmosDbDatastore.Query")
+
 	sql := new(CosmosDbQueryConverter).Convert(query, "c")
 
-	cloudy.Info(ctx, "AzureCosmosDbDatastore.Query")
 	results, err := az.DB.QueryAll(ctx, sql)
-	if err != nil {
-		return nil, err
-	}
-	rtn := make([]T, len(results))
-	for i, data := range results {
-		obj, err := az.fromBytes(data)
-		if err != nil {
-			return rtn, err
-		}
-		rtn[i] = obj
-	}
-	return rtn, err
+	return results, err
+}
+
+func (az *AzureCosmosDbDatastore) OnCreate(fn func(ctx context.Context, ds datastore.UntypedJsonDataStore) error) {
+	az.onCreate = fn
 }
 
 type CosmosDbQueryConverter struct {
@@ -227,7 +236,7 @@ func (qc *CosmosDbQueryConverter) ConvertCondition(c *datastore.SimpleQueryCondi
 			return fmt.Sprintf("%v in (%v)", qc.ToColumnName(c.Data[0]), strings.Join(xformed, ","))
 		}
 	case "null":
-		return fmt.Sprintf("%v IS NULL", qc.ToColumnName(c.Data[0]))
+		return fmt.Sprintf("IS_NULL(%v)", qc.ToColumnName(c.Data[0]))
 	}
 	return "UNKNOWN"
 }
