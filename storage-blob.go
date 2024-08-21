@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	// "github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -11,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/storage"
 )
@@ -358,4 +360,33 @@ func (b *BlobStorage) ListNative(ctx context.Context, prefix string) ([]*contain
 	}
 
 	return items, prefixes, nil
+}
+
+func (b *BlobStorage) GenUploadURL(ctx context.Context, key string) (string, error) {
+
+    expiryTime := time.Now().UTC().Add(1 * time.Hour)  // TODO: make dynamic
+
+	c := b.Client.NewBlobClient(key)
+	url, err := c.GetSASURL(sas.BlobPermissions{Write: true}, expiryTime, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return url, nil
+}
+
+func (b *BlobStorage) GenDownloadURL(ctx context.Context, key string) (string, error) {
+    // Set expiry time for the SAS token
+    expiryTime := time.Now().UTC().Add(1 * time.Hour)  // TODO: make dynamic
+
+    // Create a new Blob client for the specified key (blob name)
+    c := b.Client.NewBlobClient(key)
+
+    // Generate the SAS URL with read permissions
+    url, err := c.GetSASURL(sas.BlobPermissions{Read: true}, expiryTime, nil)
+    if err != nil {
+        return "", err
+    }
+
+    return url, nil
 }
