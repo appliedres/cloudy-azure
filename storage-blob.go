@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	// "github.com/Azure/azure-storage-blob-go/azblob"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
@@ -24,35 +26,123 @@ func init() {
 type AzureBlobStorageFactory struct{}
 
 func (f *AzureBlobStorageFactory) Create(cfg interface{}) (storage.ObjectStorageManager, error) {
-	azCfg := cfg.(*BlobContainerShare)
+	azCfg := cfg.(*AzureStorageAccount)
 	if azCfg == nil {
 		return nil, cloudy.ErrInvalidConfiguration
 	}
-
-	return NewBlobStorageAccount(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
+	return NewBlobStorageAccount(context.Background(), azCfg.AccountName, azCfg.AccountKey, azCfg.UrlSlug)
 }
 
 func (f *AzureBlobStorageFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
-	cfg := &BlobContainerShare{}
-	cfg.Account = env.Force("AZ_ACCOUNT")
+	cfg := &AzureStorageAccount{}
+	cfg.AccountName = env.Force("AZ_ACCOUNT")
 	cfg.AccountKey = env.Force("AZ_ACCOUNT_KEY")
-
 	return cfg, nil
 }
 
 // ObjectStorageManager  {
 type BlobStorageAccount struct {
-	Account    string
-	AccountKey string
-	UrlSlug    string
-	Client     *azblob.Client
+	Account string
+	// AccountKey string
+	// UrlSlug    string
+	Client *azblob.Client
+}
+
+func storageServiceUrl(accountName string, serviceUrl string, urlslug string) string {
+	var rtnUrl string
+	if serviceUrl != "" {
+		rtnUrl = serviceUrl
+	} else if strings.HasPrefix(urlslug, "http") {
+		rtnUrl = urlslug
+	} else {
+		if urlslug == "" {
+			urlslug = "blob.core.usgovcloudapi.net"
+		}
+		rtnUrl = fmt.Sprintf("https://%s.%s/", accountName, urlslug)
+	}
+	return rtnUrl
+}
+
+func storageSlug(regionName string) string {
+	regionNameFixed := fixRegionName(regionName)
+
+	switch regionNameFixed {
+	// Default to the government region
+	case "":
+		return "core.usgovcloudapi.net"
+	case RegionUSGovernment:
+		return "core.usgovcloudapi.net"
+	case RegionPublic:
+		return "core.windows.net"
+	default:
+		return ""
+	}
+}
+
+func acctStorageUrl(acct *AzureStorageAccount) string {
+	var rtnUrl string
+	if acct.ServiceURL != "" {
+		rtnUrl = acct.ServiceURL
+	} else if strings.HasPrefix(acct.UrlSlug, "http") {
+		rtnUrl = acct.UrlSlug
+	} else {
+		urlSlug := acct.UrlSlug
+		if urlSlug == "" {
+			if acct.Region != "" {
+				urlSlug = fmt.Sprintf("blob.%v", storageSlug(acct.Region))
+			} else {
+				urlSlug = "blob.core.usgovcloudapi.net"
+			}
+		}
+		rtnUrl = fmt.Sprintf("https://%s.%s/", acct.AccountName, urlSlug)
+	}
+	return rtnUrl
+}
+
+func NewBlobStorageAccount2(ctx context.Context, acct *AzureStorageAccount) (*BlobStorageAccount, error) {
+	serviceUrl := acctStorageUrl(acct)
+	var client *azblob.Client
+	if acct.AccountKey != "" {
+		cred, err := azblob.NewSharedKeyCredential(acct.AccountName, acct.AccountKey)
+		if err != nil {
+			return nil, err
+		}
+
+		client, err = azblob.NewClientWithSharedKeyCredential(serviceUrl, cred, nil)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		cred, err := NewAzureCredentials(&acct.AzureCredentials)
+		if err != nil {
+			return nil, err
+		}
+		client, err = azblob.NewClient(serviceUrl, cred, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &BlobStorageAccount{
+		Account: acct.AccountName,
+		// AccountKey: acct,
+		// UrlSlug:    urlslug,
+		Client: client,
+	}, nil
 }
 
 func NewBlobStorageAccount(ctx context.Context, account string, accountKey string, urlslug string) (*BlobStorageAccount, error) {
 	if urlslug == "" {
 		urlslug = "blob.core.usgovcloudapi.net"
 	}
-	serviceUrl := fmt.Sprintf("https://%s.%s/", account, urlslug)
+
+	var serviceUrl string
+	if strings.HasPrefix(urlslug, "http") {
+		serviceUrl = urlslug
+	} else {
+		serviceUrl = fmt.Sprintf("https://%s.%s/", account, urlslug)
+	}
 
 	cred, err := azblob.NewSharedKeyCredential(account, accountKey)
 	if err != nil {
@@ -66,10 +156,10 @@ func NewBlobStorageAccount(ctx context.Context, account string, accountKey strin
 
 	// handle(err)
 	return &BlobStorageAccount{
-		Account:    account,
-		AccountKey: accountKey,
-		UrlSlug:    urlslug,
-		Client:     service,
+		Account: account,
+		// AccountKey: accountKey,
+		// UrlSlug:    urlslug,
+		Client: service,
 	}, err
 }
 
@@ -364,7 +454,7 @@ func (b *BlobStorage) ListNative(ctx context.Context, prefix string) ([]*contain
 
 func (b *BlobStorage) GenUploadURL(ctx context.Context, key string) (string, error) {
 
-    expiryTime := time.Now().UTC().Add(1 * time.Hour)  // TODO: make dynamic
+	expiryTime := time.Now().UTC().Add(1 * time.Hour) // TODO: make dynamic
 
 	c := b.Client.NewBlobClient(key)
 	url, err := c.GetSASURL(sas.BlobPermissions{Write: true}, expiryTime, nil)
@@ -376,17 +466,17 @@ func (b *BlobStorage) GenUploadURL(ctx context.Context, key string) (string, err
 }
 
 func (b *BlobStorage) GenDownloadURL(ctx context.Context, key string) (string, error) {
-    // Set expiry time for the SAS token
-    expiryTime := time.Now().UTC().Add(1 * time.Hour)  // TODO: make dynamic
+	// Set expiry time for the SAS token
+	expiryTime := time.Now().UTC().Add(1 * time.Hour) // TODO: make dynamic
 
-    // Create a new Blob client for the specified key (blob name)
-    c := b.Client.NewBlobClient(key)
+	// Create a new Blob client for the specified key (blob name)
+	c := b.Client.NewBlobClient(key)
 
-    // Generate the SAS URL with read permissions
-    url, err := c.GetSASURL(sas.BlobPermissions{Read: true}, expiryTime, nil)
-    if err != nil {
-        return "", err
-    }
+	// Generate the SAS URL with read permissions
+	url, err := c.GetSASURL(sas.BlobPermissions{Read: true}, expiryTime, nil)
+	if err != nil {
+		return "", err
+	}
 
-    return url, nil
+	return url, nil
 }

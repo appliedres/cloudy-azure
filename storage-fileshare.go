@@ -7,7 +7,6 @@ import (
 	"github.com/appliedres/cloudy/storage"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
@@ -19,66 +18,66 @@ func init() {
 	storage.FileShareProviders.Register(AzureFiles, &AzureFileShareFactory{})
 }
 
+type AzureStorageAccount struct {
+	AzureCredentials
+
+	ServiceURL  string
+	UrlSlug     string
+	AccountName string
+	AccountKey  string
+}
+
 type AzureFileShareFactory struct{}
 
 func (f *AzureFileShareFactory) Create(cfg interface{}) (storage.FileStorageManager, error) {
-	bfs := cfg.(*BlobFileShare)
-	if bfs == nil {
+	acct := cfg.(*AzureStorageAccount)
+	if acct == nil {
 		return nil, cloudy.ErrInvalidConfiguration
 	}
+	return NewAzureFileShare(context.Background(), acct)
+}
 
-	err := bfs.Connect(context.Background())
+func NewAzureFileShare(ctx context.Context, acct *AzureStorageAccount) (*BlobFileShare, error) {
+	cred, err := NewAzureCredentials(&acct.AzureCredentials)
 	if err != nil {
 		return nil, err
 	}
 
-	return bfs, nil
-}
-
-func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
-	bfs := &BlobFileShare{}
-	bfs.Credentials = GetAzureCredentialsFromEnv(env)
-	bfs.ResourceGroupName = env.Force("AZ_RESOURCE_GROUP")
-	bfs.StorageAccountName = env.Force("AZ_ACCOUNT")
-	bfs.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
-
-	err := bfs.Connect(context.Background())
-	if err != nil {
-		return nil, err
-	}
-
-	return bfs, nil
-}
-
-// THe BlobFileShare provides file shares based on the Azure Blob Storage
-type BlobFileShare struct {
-	Client             *armstorage.FileSharesClient
-	Credentials        AzureCredentials
-	SubscriptionID     string
-	ResourceGroupName  string
-	StorageAccountName string
-}
-
-func (bfs *BlobFileShare) Connect(ctx context.Context) error {
-	cred, err := GetAzureClientSecretCredential(bfs.Credentials)
-	if err != nil {
-		return err
-	}
-
-	fileShareClient, err := armstorage.NewFileSharesClient(bfs.SubscriptionID,
-		cred,
+	client, err := armstorage.NewFileSharesClient(acct.SubscriptionID, cred,
 		&arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
-				Cloud: cloud.AzureGovernment,
+				Cloud: PolicyFromRegionString(acct.Region),
 			},
 		})
 
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return &BlobFileShare{
+		ResourceGroupName:  acct.ResourceGroup,
+		StorageAccountName: acct.AccountName,
+		Client:             client,
+	}, nil
 
-	bfs.Client = fileShareClient
-	return nil
+}
+
+func (f *AzureFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
+	cfg := &AzureStorageAccount{}
+	cfg.AzureCredentials = GetAzureCredentialsFromEnv(env)
+	cfg.ResourceGroup = env.Force("AZ_RESOURCE_GROUP")
+	cfg.AccountName = env.Force("AZ_ACCOUNT")
+	cfg.SubscriptionID = env.Force("AZ_SUBSCRIPTION_ID")
+
+	return NewAzureFileShare(context.Background(), cfg)
+}
+
+// THe BlobFileShare provides file shares based on the Azure Blob Storage
+type BlobFileShare struct {
+	Client *armstorage.FileSharesClient
+	// Credentials        AzureCredentials
+	SubscriptionID     string
+	ResourceGroupName  string
+	StorageAccountName string
 }
 
 func (bfs *BlobFileShare) List(ctx context.Context) ([]*storage.FileShare, error) {

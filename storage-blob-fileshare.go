@@ -2,7 +2,6 @@ package cloudyazure
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/appliedres/cloudy"
@@ -21,57 +20,71 @@ func init() {
 type AzureBlobFileShareFactory struct{}
 
 func (f *AzureBlobFileShareFactory) Create(cfg interface{}) (storage.FileStorageManager, error) {
-	azCfg := cfg.(*BlobContainerShare)
+	azCfg := cfg.(*AzureStorageAccount)
 	if azCfg == nil {
 		return nil, cloudy.ErrInvalidConfiguration
 	}
 
-	cloudy.Info(context.Background(), "NewBlobContainerShare account: %s", azCfg.Account)
+	cloudy.Info(context.Background(), "NewBlobContainerShare account: %s", azCfg.AccountName)
 
-	return NewBlobContainerShare(context.Background(), azCfg.Account, azCfg.AccountKey, azCfg.UrlSlug)
+	return NewBlobContainerShare2(context.Background(), azCfg)
 }
 
 func (f *AzureBlobFileShareFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
-	cfg := &BlobContainerShare{}
-	cfg.Account = env.Force("AZ_ACCOUNT")
+	cfg := &AzureStorageAccount{}
+	cfg.AccountName = env.Force("AZ_ACCOUNT")
 	cfg.AccountKey = env.Force("AZ_ACCOUNT_KEY")
-
 	return cfg, nil
 }
 
 // THe BlobContainerShare provides file shares based on the Azure Blob Storage
 type BlobContainerShare struct {
-	Account    string
-	AccountKey string
-	UrlSlug    string
-	Client     *azblob.Client
+	Account string
+	// AccountKey string
+	// UrlSlug    string
+	Client *azblob.Client
+}
+
+func NewBlobContainerShare2(ctx context.Context, acct *AzureStorageAccount) (*BlobContainerShare, error) {
+	serviceUrl := acctStorageUrl(acct)
+	var client *azblob.Client
+	if acct.AccountKey != "" {
+		cred, err := azblob.NewSharedKeyCredential(acct.AccountName, acct.AccountKey)
+		if err != nil {
+			return nil, err
+		}
+
+		client, err = azblob.NewClientWithSharedKeyCredential(serviceUrl, cred, nil)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		cred, err := NewAzureCredentials(&acct.AzureCredentials)
+		if err != nil {
+			return nil, err
+		}
+		client, err = azblob.NewClient(serviceUrl, cred, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &BlobContainerShare{
+		Account: acct.AccountName,
+		// AccountKey: acct,
+		// UrlSlug:    urlslug,
+		Client: client,
+	}, nil
 }
 
 func NewBlobContainerShare(ctx context.Context, account string, accountKey string, urlslug string) (*BlobContainerShare, error) {
-	if urlslug == "" {
-		urlslug = "blob.core.usgovcloudapi.net"
+	cfg := &AzureStorageAccount{
+		AccountName: account,
+		AccountKey:  accountKey,
+		UrlSlug:     urlslug,
 	}
-
-	cred, err := azblob.NewSharedKeyCredential(account, accountKey)
-	if err != nil {
-		return nil, err
-	}
-
-	serviceUrl := fmt.Sprintf("https://%s.%s/", account, urlslug)
-	cloudy.Info(ctx, "NewBlobContainerShare %s", serviceUrl)
-
-	service, err := azblob.NewClientWithSharedKeyCredential(serviceUrl, cred, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// handle(err)
-	return &BlobContainerShare{
-		Account:    account,
-		AccountKey: accountKey,
-		UrlSlug:    urlslug,
-		Client:     service,
-	}, err
+	return NewBlobContainerShare2(ctx, cfg)
 }
 
 func (bfs *BlobContainerShare) List(ctx context.Context) ([]*storage.FileShare, error) {
