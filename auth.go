@@ -21,6 +21,7 @@ type AzureCredentials struct {
 	ClientSecret   string
 	ResourceGroup  string
 	SubscriptionID string
+	Location       string
 }
 
 const (
@@ -36,8 +37,9 @@ const (
 )
 
 const (
-	RegionPublic       = "public"
-	RegionUSGovernment = "usgovernment"
+	RegionPublic            = "public"
+	RegionUSGovernment      = "usgovernment"
+	RegionAzureUSGovernment = "azureusgoverment"
 )
 
 func fixRegionName(regionName string) string {
@@ -55,6 +57,8 @@ func PolicyFromRegionString(regionName string) cloud.Configuration {
 	case "":
 		return cloud.AzureGovernment
 	case RegionUSGovernment:
+		return cloud.AzureGovernment
+	case RegionAzureUSGovernment:
 		return cloud.AzureGovernment
 	case RegionPublic:
 		return cloud.AzurePublic

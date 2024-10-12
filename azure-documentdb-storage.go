@@ -91,6 +91,10 @@ func (az *AzureCosmosDbDatastore) Save(ctx context.Context, data []byte, key str
 	return az.DB.Upsert(ctx, key, data)
 }
 
+func (az *AzureCosmosDbDatastore) SaveAll(ctx context.Context, b [][]byte, s []string) error {
+	return cloudy.Error(ctx, "Not implemented")
+}
+
 func (az *AzureCosmosDbDatastore) Get(ctx context.Context, id string) ([]byte, error) {
 	data, err := az.DB.GetRaw(ctx, id)
 	return data, err
@@ -112,6 +116,10 @@ func (az *AzureCosmosDbDatastore) Delete(ctx context.Context, key string) error 
 	return err
 }
 
+func (az *AzureCosmosDbDatastore) DeleteAll(ctx context.Context, key []string) error {
+	return cloudy.Error(ctx, "Not implemented")
+}
+
 func (az *AzureCosmosDbDatastore) Ping(ctx context.Context) bool {
 	err := az.DB.Healthy(ctx)
 	return err == nil
@@ -124,6 +132,18 @@ func (az *AzureCosmosDbDatastore) Query(ctx context.Context, query *datastore.Si
 
 	results, err := az.DB.QueryAll(ctx, sql)
 	return results, err
+}
+
+func (az *AzureCosmosDbDatastore) QueryAndUpdate(ctx context.Context, ds *datastore.SimpleQuery, f func(context.Context, [][]byte) ([][]byte, error)) ([][]byte, error) {
+	return nil, cloudy.Error(ctx, "Not implemented")
+}
+
+func (az *AzureCosmosDbDatastore) QueryAsMap(ctx context.Context, ds *datastore.SimpleQuery) ([]map[string]any, error) {
+	return nil, cloudy.Error(ctx, "Not implemented")
+}
+
+func (az *AzureCosmosDbDatastore) QueryTable(ctx context.Context, ds *datastore.SimpleQuery) ([][]interface{}, error) {
+	return nil, cloudy.Error(ctx, "Not implemented")
 }
 
 func (az *AzureCosmosDbDatastore) OnCreate(fn func(ctx context.Context, ds datastore.UntypedJsonDataStore) error) {

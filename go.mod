@@ -1,10 +1,10 @@
 module github.com/appliedres/cloudy-azure
 
-go 1.22.0
+go 1.23
 
-toolchain go1.22.1
+toolchain go1.23.1
 
-// replace github.com/appliedres/cloudy => ../cloudy
+replace github.com/appliedres/cloudy => ../cloudy
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.10.0
@@ -51,8 +51,14 @@ require (
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/go-openapi/analysis v0.23.0 // indirect
 	github.com/go-openapi/errors v0.22.0 // indirect
+	github.com/go-openapi/jsonpointer v0.21.0 // indirect
+	github.com/go-openapi/jsonreference v0.21.0 // indirect
+	github.com/go-openapi/loads v0.22.0 // indirect
+	github.com/go-openapi/spec v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
+	github.com/go-openapi/validate v0.24.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.0 // indirect
