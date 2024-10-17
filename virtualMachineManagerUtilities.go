@@ -2,18 +2,25 @@ package cloudyazure
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
+	"github.com/pkg/errors"
+)
+
+const (
+	vmNameTagKey = "Name"
 )
 
 func toResponseError(err error) *azcore.ResponseError {
@@ -35,12 +42,48 @@ func is404(err error) bool {
 	return false
 }
 
+func pollWrapper[T any](ctx context.Context, poller *runtime.Poller[T], pollerType string) (*T, error) {
+	log := logging.GetLogger(ctx)
+
+	ticker := time.NewTicker(5 * time.Second)
+	startTime := time.Now()
+	defer ticker.Stop()
+	defer func() {
+		log.InfoContext(ctx, fmt.Sprintf("%s complete (elapsed: %s)", pollerType,
+			fmt.Sprintf("%.0f seconds", time.Since(startTime).Seconds())))
+	}()
+
+	for {
+		select {
+		case <-ticker.C:
+			log.InfoContext(ctx, fmt.Sprintf("Waiting for %s to complete (elapsed: %s)",
+				pollerType, fmt.Sprintf("%.0f seconds", time.Since(startTime).Seconds())))
+		default:
+			_, err := poller.Poll(ctx)
+			if err != nil {
+				return nil, errors.Wrapf(err, "pollWrapper: %s (Poll)", pollerType)
+			}
+			if poller.Done() {
+				response, err := poller.Result(ctx)
+
+				if err != nil {
+					return nil, errors.Wrapf(err, "pollWrapper: %s (Result)", pollerType)
+				}
+
+				return &response, nil
+			}
+		}
+	}
+}
+
 func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) armcompute.VirtualMachine {
 	log := logging.GetLogger(ctx)
 
 	virtualMachineParameters := armcompute.VirtualMachine{
+		// vm Id is saved as ID and Name
+		// vm Name is saved in a Tag
 		ID:       &vm.ID,
-		Name:     &vm.Name,
+		Name:     &vm.ID,
 		Location: &vm.Location.Region,
 		Identity: &armcompute.VirtualMachineIdentity{
 			Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
@@ -49,6 +92,7 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 
 	if vm.Tags != nil {
 		virtualMachineParameters.Tags = vm.Tags
+		virtualMachineParameters.Tags[vmNameTagKey] = &vm.Name
 	}
 
 	if vm.Template == nil {
@@ -79,6 +123,9 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 			},
 		},
+		// SecurityProfile: &armcompute.SecurityProfile{
+		// 	SecurityType: to.Ptr(armcompute.SecurityTypesTrustedLaunch),
+		// },
 	}
 
 	virtualMachineParameters.Properties.OSProfile = &armcompute.OSProfile{
@@ -86,7 +133,7 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 		AdminUsername: &vm.Template.LocalAdministratorID,
 		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),
 	}
-	log.InfoContext(ctx, fmt.Sprintf("%v", virtualMachineParameters.Properties.OSProfile))
+	log.InfoContext(ctx, fmt.Sprintf("%+v", virtualMachineParameters.Properties.OSProfile))
 
 	switch vm.Template.OperatingSystem {
 	case "windows":
@@ -122,8 +169,8 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachine {
 
 	cloudyVm := models.VirtualMachine{
-		Name: *vm.Name,
 		ID:   *vm.ID,
+		Name: *vm.Name,
 		Location: &models.VirtualMachineLocation{
 			Region: *vm.Location,
 		},
@@ -133,6 +180,15 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 
 	if vm.Properties != nil {
 		cloudyVm.State = *vm.Properties.ProvisioningState
+
+		if vm.Properties.InstanceView != nil {
+			for _, status := range vm.Properties.InstanceView.Statuses {
+				if strings.Contains(*status.Code, "PowerState") {
+					statusParts := strings.Split(*status.Code, "/")
+					cloudyVm.Status = statusParts[1]
+				}
+			}
+		}
 
 		if vm.Properties.HardwareProfile != nil {
 			cloudyVm.Template.Size = &models.VirtualMachineSize{
@@ -155,7 +211,10 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 				cloudyVm.OsDisk = &models.VirtualMachineDisk{
 					ID:     *vm.Properties.StorageProfile.OSDisk.ManagedDisk.ID,
 					OsDisk: true,
-					Size:   int64(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB),
+				}
+
+				if vm.Properties.StorageProfile.OSDisk.DiskSizeGB != nil {
+					cloudyVm.OsDisk.Size = int64(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB)
 				}
 			}
 
@@ -175,7 +234,11 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 
 	if vm.Tags != nil {
 		for k, v := range vm.Tags {
-			cloudyVm.Tags[k] = v
+			if strings.EqualFold(k, vmNameTagKey) {
+				cloudyVm.Name = *v
+			} else {
+				cloudyVm.Tags[k] = v
+			}
 		}
 	}
 
@@ -195,15 +258,13 @@ func ToCloudyVirtualMachineSize(ctx context.Context, resource *armcompute.Resour
 		},
 	}
 
-	locations := []*models.VirtualMachineLocation{}
+	locations := map[string]*models.VirtualMachineLocation{}
 
 	for _, location := range resource.Locations {
-		cloudyLocation := &models.VirtualMachineLocation{
-			Cloud:  "azure",
-			Region: *location,
+		_, ok := locations[*location]
+		if !ok {
+			locations[*location] = ToCloudyVirtualMachineLocation(location)
 		}
-
-		locations = append(locations, cloudyLocation)
 	}
 	size.Locations = locations
 
@@ -312,4 +373,11 @@ func ToCloudyVirtualMachineSize(ctx context.Context, resource *armcompute.Resour
 	}
 
 	return &size
+}
+
+func ToCloudyVirtualMachineLocation(location *string) *models.VirtualMachineLocation {
+	return &models.VirtualMachineLocation{
+		Cloud:  "azure",
+		Region: *location,
+	}
 }

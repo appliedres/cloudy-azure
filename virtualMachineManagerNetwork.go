@@ -9,9 +9,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
+	"github.com/pkg/errors"
 )
 
 func (vmm *AzureVirtualMachineManager) GetAllNics(ctx context.Context) ([]*models.VirtualMachineNic, error) {
@@ -120,12 +120,10 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 
 func (vmm *AzureVirtualMachineManager) DeleteNics(ctx context.Context, nics []*models.VirtualMachineNic) error {
 
-	log := logging.GetLogger(ctx)
-
 	for _, nic := range nics {
 		err := vmm.DeleteNic(ctx, nic)
 		if err != nil {
-			log.ErrorContext(ctx, fmt.Sprintf("Unable to delete nic %s", nic.ID))
+			return errors.Wrap(err, "DeleteNics")
 		}
 	}
 
@@ -133,14 +131,17 @@ func (vmm *AzureVirtualMachineManager) DeleteNics(ctx context.Context, nics []*m
 }
 
 func (vmm *AzureVirtualMachineManager) DeleteNic(ctx context.Context, nic *models.VirtualMachineNic) error {
-	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, nic.ID, nil)
+	log := logging.GetLogger(ctx)
+	log.InfoContext(ctx, fmt.Sprintf("DeleteNic starting: %s", nic.Name))
+
+	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, nic.Name, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begindelete nic %s (%v)", nic.ID, err)
+		return errors.Wrap(err, "DeleteNic.BeginDelete")
 	}
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to polluntildone nic %s (%v)", nic.ID, err)
+		return errors.Wrap(err, "DeleteNic.PollUntilDone")
 	}
 
 	return nil
@@ -155,7 +156,7 @@ func (vmm *AzureVirtualMachineManager) findBestSubnet(ctx context.Context) (stri
 	for _, subnetId := range vmm.config.SubnetIds {
 		subnetCount, err := vmm.getSubnetAvailableIps(ctx, subnetId)
 		if err != nil {
-			log.ErrorContext(ctx, fmt.Sprintf("error counting ips in subnet: %s", subnetId))
+			log.ErrorContext(ctx, fmt.Sprintf("error counting ips in subnet: %s", subnetId), logging.WithError(err))
 			continue
 		}
 
@@ -179,7 +180,7 @@ func (vmm *AzureVirtualMachineManager) getSubnetAvailableIps(ctx context.Context
 		subnetId,
 		&armnetwork.SubnetsClientGetOptions{Expand: nil})
 	if err != nil {
-		return -1, cloudy.Error(ctx, "failed to finish the request: %v", err)
+		return 0, errors.Wrap(err, "getSubnetAvailableIps")
 	}
 
 	// Retrieve and parse the CIDR block
@@ -187,17 +188,17 @@ func (vmm *AzureVirtualMachineManager) getSubnetAvailableIps(ctx context.Context
 	if addressPrefix == nil && len(res.Subnet.Properties.AddressPrefixes) > 0 {
 		addressPrefix = res.Subnet.Properties.AddressPrefixes[0]
 	} else {
-		return -1, cloudy.Error(ctx, "addressprefix not found")
+		return 0, fmt.Errorf("getSubnetAvailableIps - addressprefix not found")
 	}
 
 	maskParts := strings.Split(*addressPrefix, "/")
 	if len(maskParts) != 2 {
-		return -1, cloudy.Error(ctx, "invalid address prefix: %v", addressPrefix)
+		return 0, fmt.Errorf("getSubnetAvailableIps - invalid address prefix: %s", *addressPrefix)
 	}
 
 	subnetMask, err := strconv.Atoi(maskParts[1])
 	if err != nil {
-		return -1, cloudy.Error(ctx, "invalid number in subnet mask: %v, %v", maskParts[1], err)
+		return 0, errors.Wrapf(err, "getSubnetAvailableIps - invalid subnet mask %s", maskParts[1])
 	}
 
 	netmaskLength := int(math.Pow(2, float64(32-subnetMask)))

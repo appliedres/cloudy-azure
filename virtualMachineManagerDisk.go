@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
+	"github.com/pkg/errors"
 )
 
 func (vmm *AzureVirtualMachineManager) GetAllDisks(ctx context.Context) ([]*models.VirtualMachineDisk, error) {
@@ -17,12 +19,13 @@ func (vmm *AzureVirtualMachineManager) GetAllDisks(ctx context.Context) ([]*mode
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "GetAllDisks")
 		}
 
 		for _, v := range resp.Value {
 			disk := models.VirtualMachineDisk{
 				ID:     *v.ID,
+				Name:   *v.Name,
 				OsDisk: false,
 				Size:   int64(*v.Properties.DiskSizeGB),
 			}
@@ -38,15 +41,21 @@ func (vmm *AzureVirtualMachineManager) GetAllDisks(ctx context.Context) ([]*mode
 	return disks, nil
 }
 
-func (vmm *AzureVirtualMachineManager) DeleteDisk(ctx context.Context, id string) error {
-	pollerResponse, err := vmm.diskClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, id, nil)
+func (vmm *AzureVirtualMachineManager) DeleteDisk(ctx context.Context, diskName string) error {
+	log := logging.GetLogger(ctx)
+
+	pollerResponse, err := vmm.diskClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, diskName, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begindelete disk %s (%v)", id, err)
+		if is404(err) {
+			log.InfoContext(ctx, fmt.Sprintf("Cannot delete, disk not found: %s", diskName))
+			return nil
+		}
+		return fmt.Errorf("failed to begindelete disk %s (%v)", diskName, err)
 	}
 
 	_, err = pollerResponse.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to polluntildone disk %s (%v)", id, err)
+		return fmt.Errorf("failed to polluntildone disk %s (%v)", diskName, err)
 	}
 
 	return nil
@@ -55,7 +64,7 @@ func (vmm *AzureVirtualMachineManager) DeleteDisk(ctx context.Context, id string
 func (vmm *AzureVirtualMachineManager) GetOsDisk(ctx context.Context, vmId string) (*models.VirtualMachineDisk, error) {
 	disks, err := vmm.GetAllDisks(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "GetOsDisk")
 	}
 
 	for _, disk := range disks {

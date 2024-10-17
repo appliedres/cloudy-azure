@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
+	"github.com/pkg/errors"
 )
 
 func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
 	if vm.ID == "" {
-		return nil, fmt.Errorf("New VM Id must be specified")
-
+		return nil, fmt.Errorf("Cannot create a VM without an ID")
 	}
+
+	log.InfoContext(ctx, "VM Create starting")
 
 	if vm.Location == nil {
 		vm.Location = &models.VirtualMachineLocation{
@@ -25,43 +25,41 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 		}
 	}
 
+	log.InfoContext(ctx, "VM Create creating nics")
+
 	nics, err := vmm.GetNics(ctx, vm.ID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "VM Create")
 	} else if len(nics) != 0 {
 		vm.Nics = nics
 	} else {
 		newNic, err := vmm.CreateNic(ctx, vm)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "VM Create")
 		}
 		vm.Nics = append(vm.Nics, newNic)
 	}
 
+	log.InfoContext(ctx, "VM Create converting from cloudy to azure")
+
 	virtualMachineParameters := FromCloudyVirtualMachine(ctx, vm)
 
+	log.InfoContext(ctx, "VM Create BeginCreateOrUpdate starting")
+
 	poller, err := vmm.vmClient.BeginCreateOrUpdate(ctx,
-		vmm.credentials.ResourceGroup, vm.Name, virtualMachineParameters, nil)
+		vmm.credentials.ResourceGroup, vm.ID, virtualMachineParameters, nil)
 	if err != nil {
-
-		respErr, ok := err.(*azcore.ResponseError)
-		if ok {
-			log.InfoContext(ctx, fmt.Sprintf("%v", respErr))
-		} else {
-
-		}
-
-		return nil, err
+		return nil, errors.Wrap(err, "VM Create")
 	}
 
-	response, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{})
+	response, err := pollWrapper(ctx, poller, "VM Create")
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "VM Create")
 	}
 
 	err = UpdateCloudyVirtualMachine(vm, response.VirtualMachine)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "VM Create")
 	}
 
 	return vm, nil

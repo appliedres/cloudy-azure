@@ -2,83 +2,66 @@ package cloudyazure
 
 import (
 	"context"
-	"fmt"
-	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/logging"
+	"github.com/pkg/errors"
 )
-
-func (vmm *AzureVirtualMachineManager) Deallocate(ctx context.Context, vmId string) error {
-
-	poller, err := vmm.vmClient.BeginDeallocate(ctx, vmm.credentials.ResourceGroup, vmId, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
-	if err != nil {
-		if is404(err) {
-			cloudy.Info(ctx, "[%s] VmTerminate VM not found", vmId)
-			return nil
-		}
-
-		_ = cloudy.Error(ctx, "[%s] VmTerminate Failed to obtain a response: %v", vmId, err)
-		return err
-	}
-
-	_, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
-		Frequency: 5 * time.Second,
-	})
-	if err != nil {
-		_ = cloudy.Error(ctx, "[%s] Failed to terminate the vm: %v", vmId, err)
-		return err
-	}
-
-	cloudy.Info(ctx, "[%s] terminated ", vmId)
-
-	return nil
-}
 
 func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) error {
 	log := logging.GetLogger(ctx)
 
+	log.InfoContext(ctx, "DeleteVM Starting Deallocate")
 	err := vmm.Deallocate(ctx, vmId)
 	if err != nil {
 		return err
 	}
 
-	log.InfoContext(ctx, fmt.Sprintf("[%s] Starting GetVmOsDisk", vmId))
+	log.InfoContext(ctx, "DeleteVM Starting BeginDelete")
+	poller, err := vmm.vmClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, vmId, &armcompute.VirtualMachinesClientBeginDeleteOptions{})
+	if err != nil {
+		if is404(err) {
+			log.InfoContext(ctx, "BeginDelete vm not found")
+		} else {
+			return errors.Wrap(err, "VM Delete")
+		}
+	} else {
+		_, err = pollWrapper(ctx, poller, "VM Delete")
+		if err != nil {
+			return errors.Wrap(err, "VM Delete")
+		}
+	}
+
+	log.InfoContext(ctx, "GetVmOsDisk")
 	osDisk, err := vmm.GetOsDisk(ctx, vmId)
 	if err != nil {
-		log.ErrorContext(ctx, fmt.Sprintf("[%s] failed to find vm os disk: %v", vmId, err))
-		return err
+		return errors.Wrap(err, "VM Delete")
 	}
 
 	if osDisk != nil {
-		cloudy.Info(ctx, "[%s] Starting DeleteDisk", vmId)
-		err = vmm.DeleteDisk(ctx, osDisk.ID)
+		log.InfoContext(ctx, "Starting DeleteDisk")
+		err = vmm.DeleteDisk(ctx, osDisk.Name)
 		if err != nil {
-			log.ErrorContext(ctx, fmt.Sprintf("[%s] %v", vmId, err), logging.WithError(err))
-			return err
+			return errors.Wrap(err, "VM Delete")
 		}
 	} else {
-		cloudy.Info(ctx, "[%s] No OS Disk found", vmId)
+		log.InfoContext(ctx, "No OS Disk found")
 	}
 
-	cloudy.Info(ctx, "[%s] Starting GetNics", vmId)
+	log.InfoContext(ctx, "Starting GetNics")
 	nics, err := vmm.GetNics(ctx, vmId)
 	if err != nil {
-		log.ErrorContext(ctx, fmt.Sprintf("[%s] failed to find vm nic: %v", vmId, err))
-		return err
+		return errors.Wrap(err, "VM Delete")
 	}
 
 	if len(nics) > 0 {
-		cloudy.Info(ctx, "[%s] Starting DeleteNIC", vmId)
+		log.InfoContext(ctx, "Starting DeleteNics")
 		err = vmm.DeleteNics(ctx, nics)
 		if err != nil {
-			log.ErrorContext(ctx, fmt.Sprintf("[%s] %v", vmId, err))
-			return err
+			return errors.Wrap(err, "VM Delete")
 		}
 	} else {
-		cloudy.Info(ctx, "[%s] No Nics found", vmId)
+		log.InfoContext(ctx, "No Nics found")
 	}
 
 	return nil

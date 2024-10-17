@@ -103,15 +103,15 @@ func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) 
 		return nil, cloudy.Error(ctx, "Authentication failure: %+v", err)
 	}
 
-	client, err := NewVMClient(ctx, config)
-	if err != nil {
-		return nil, err
-	}
+	// client, err := NewVMClient(ctx, config)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	usage, err := NewUsageClient(ctx, config)
-	if err != nil {
-		return nil, err
-	}
+	// usage, err := NewUsageClient(ctx, config)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	v, err := NewKeyVault(ctx, config.VaultURL, config.AzureCredentials)
 	if err != nil {
@@ -119,8 +119,8 @@ func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) 
 	}
 
 	return &AzureVMController{
-		Client: client,
-		Usage:  usage,
+		// Client: client,
+		// Usage:  usage,
 		Config: config,
 		cred:   cred,
 		Vault:  v,
@@ -128,31 +128,38 @@ func NewAzureVMController(ctx context.Context, config *AzureVMControllerConfig) 
 }
 
 func (vmc *AzureVMController) ListAll(ctx context.Context) ([]*cloudyvm.VirtualMachineStatus, error) {
-	return VmList(ctx, vmc.Client, vmc.Config.ResourceGroup)
+	// return VmList(ctx, vmc.Client, vmc.Config.ResourceGroup)
+	return nil, nil
 }
 
 func (vmc *AzureVMController) ListWithTag(ctx context.Context, tag string) ([]*cloudyvm.VirtualMachineStatus, error) {
-	return VmList(ctx, vmc.Client, vmc.Config.ResourceGroup)
+	// return VmList(ctx, vmc.Client, vmc.Config.ResourceGroup)
+	return nil, nil
 }
 
 func (vmc *AzureVMController) Status(ctx context.Context, vmName string) (*cloudyvm.VirtualMachineStatus, error) {
-	return VmStatus(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup)
+	// return VmStatus(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup)
+	return nil, nil
 }
 
 func (vmc *AzureVMController) SetState(ctx context.Context, state cloudyvm.VirtualMachineAction, vmName string, wait bool) (*cloudyvm.VirtualMachineStatus, error) {
-	return VmState(ctx, vmc.Client, state, vmName, vmc.Config.ResourceGroup, wait)
+	// return VmState(ctx, vmc.Client, state, vmName, vmc.Config.ResourceGroup, wait)
+	return nil, nil
 }
 
 func (vmc *AzureVMController) Start(ctx context.Context, vmName string, wait bool) error {
-	return VmStart(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
+	// return VmStart(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
+	return nil
 }
 
 func (vmc *AzureVMController) Stop(ctx context.Context, vmName string, wait bool) error {
-	return VmStop(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
+	// return VmStop(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
+	return nil
 }
 
 func (vmc *AzureVMController) Terminate(ctx context.Context, vmName string, wait bool) error {
-	return VmTerminate(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
+	// return VmTerminate(ctx, vmc.Client, vmName, vmc.Config.ResourceGroup, wait)
+	return nil
 }
 
 func (vmc *AzureVMController) GetLimits(ctx context.Context) ([]*cloudyvm.VirtualMachineLimit, error) {
