@@ -32,6 +32,8 @@ type AzureVirtualMachineManager struct {
 
 	galleryClient *armcompute.SharedGalleryImageVersionsClient
 
+	avdManager *AzureVirtualDesktopManager
+
 	LogBody bool
 }
 
@@ -108,6 +110,12 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 	}
 	vmm.usageClient = usageClient
 
+	avdManager, err := NewAzureVirtualDesktopManager(ctx, vmm.credentials, &vmm.config.AvdConfig)
+	if err != nil {
+		return err
+	}
+	vmm.avdManager = avdManager
+
 	return nil
 }
 
@@ -171,6 +179,17 @@ func (vmm *AzureVirtualMachineManager) Deallocate(ctx context.Context, vmName st
 }
 
 func (vmm *AzureVirtualMachineManager) Update(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+	return nil, nil
+}
+
+// Given a vmName, generates a VirtualMachineConnection from AVD, which includes the connection URL
+func (vmm *AzureVirtualMachineManager) Connect(ctx context.Context, vmName string) (*models.VirtualMachineConnection, error) {
+	hostPools, err := vmm.avdManager.listHostPools(ctx, "arkloud-avd-testing-usva")
+	if err != nil {
+		return nil, errors.Wrap(err, "AVD Host Pool list")
+	}
+	_ = hostPools
+
 	return nil, nil
 }
 

@@ -29,7 +29,7 @@ var (
 	clientId       string
 	clientSecret   string
 	subscriptionId string
-	avd            *AzureVirtualDesktop
+	avd            *AzureVirtualDesktopManager
 	testConfig     Config
 	vaultUrl       string
 )
@@ -47,19 +47,23 @@ func initAVD() error {
 	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID", "")
 	vaultUrl = env.Force("AZ_VAULT_URL", "")
 
-	avd, err = NewAzureVirtualDesktop(ctx, AzureVirtualDesktopConfig{
-		AzureCredentials: AzureCredentials{
-			TenantID:     tenantId,
-			ClientID:     clientId,
-			ClientSecret: clientSecret,
-			Region:       "usgovvirginia",
-		},
-		subscription: subscriptionId})
+	creds := AzureCredentials{
+		TenantID:     tenantId,
+		ClientID:     clientId,
+		ClientSecret: clientSecret,
+		Region:       "usgovvirginia",
+	}
+
+	config := AzureVirtualDesktopConfig{
+
+	}
+
+	avd, err = NewAzureVirtualDesktopManager(ctx, &creds, &config)
 	if err != nil {
 		return err
 	}
 
-	cred, err := GetAzureClientSecretCredential(avd.config.AzureCredentials)
+	cred, err := GetAzureClientSecretCredential(*avd.credentials)
 	if err != nil {
 		return err
 	}

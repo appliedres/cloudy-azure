@@ -6,4 +6,17 @@ type VirtualMachineManagerConfig struct {
 	SubnetIds []string
 
 	VnetId string
+
+	AvdConfig AzureVirtualDesktopConfig
+}
+
+type AzureVirtualDesktopConfig struct {
+	ConnectionTimeout int
+	HostPoolsConfig []HostPoolsConfig
+}
+
+type HostPoolsConfig struct {
+	HostPoolName string
+	ConnectionType string
+	MaxSessions int
 }
