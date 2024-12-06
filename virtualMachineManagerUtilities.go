@@ -123,9 +123,9 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 			},
 		},
-		// SecurityProfile: &armcompute.SecurityProfile{
-		// 	SecurityType: to.Ptr(armcompute.SecurityTypesTrustedLaunch),
-		// },
+		SecurityProfile: &armcompute.SecurityProfile{
+			SecurityType: to.Ptr(armcompute.SecurityTypesTrustedLaunch),
+		},
 	}
 
 	virtualMachineParameters.Properties.OSProfile = &armcompute.OSProfile{
