@@ -27,7 +27,7 @@ type AzureVirtualMachineManager struct {
 	diskClient   *armcompute.DisksClient
 	subnetClient *armnetwork.SubnetsClient
 
-	dataClient  *armcompute.ResourceSKUsClient
+	sizesClient  *armcompute.ResourceSKUsClient
 	usageClient *armcompute.UsageClient
 
 	galleryClient *armcompute.SharedGalleryImageVersionsClient
@@ -90,11 +90,11 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 	}
 	vmm.subnetClient = subnetClient
 
-	dataClient, err := armcompute.NewResourceSKUsClient(vmm.credentials.SubscriptionID, credential, options)
+	sizesClient, err := armcompute.NewResourceSKUsClient(vmm.credentials.SubscriptionID, credential, options)
 	if err != nil {
 		return err
 	}
-	vmm.dataClient = dataClient
+	vmm.sizesClient = sizesClient
 
 	galleryClient, err := armcompute.NewSharedGalleryImageVersionsClient(vmm.credentials.SubscriptionID, credential, options)
 	if err != nil {
