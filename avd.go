@@ -2,6 +2,7 @@ package cloudyazure
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -11,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization"
 	"github.com/appliedres/cloudy"
+	cloudymodels "github.com/appliedres/cloudy/models"
 	"github.com/google/uuid"
 )
 
@@ -291,4 +293,50 @@ func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Conte
 		}
 	}
 	return nil, cloudy.Error(ctx, "GetAvailableSessionHost failure (no available session host): %+v", err)
+}
+
+// GenerateConnectionURL generates the connection URL for the VM in a specified host pool
+func (avd *AzureVirtualDesktopManager) GenerateConnectionURL(ctx context.Context, rg string, hpname string, vmID string, upn string) (*cloudymodels.VirtualMachineConnection, error) {
+	token, err := avd.RetrieveRegistrationToken(ctx, rg, hpname)
+	if err != nil {
+		return nil, err
+	}
+
+	hostPools, err := avd.listHostPools(ctx, rg)
+	if err != nil {
+		return nil, err
+	}
+	_ = hostPools
+
+	hp, err := avd.FindFirstAvailableHostPool(ctx, rg, upn)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionHosts, err := avd.listSessionHosts(ctx, rg, *hp)
+	if err != nil {
+		return nil, err
+	}
+	_ = sessionHosts
+
+	sessionHost, err := avd.getAvailableSessionHost(ctx, rg, *hp)
+	if err != nil {
+		return nil, err
+	}
+	_ = sessionHost
+
+	err = avd.AssignSessionHost(ctx, rg, *hp, *sessionHost, upn)
+	if err != nil {
+		return nil, err
+	}
+
+	connectionURL := fmt.Sprintf("rdp://%s@%s?token=%s", vmID, hpname, *token)
+
+	connection := &cloudymodels.VirtualMachineConnection{
+		RemoteDesktopProvider: "Azure Virtual Desktop",
+		URL:                   connectionURL,
+		VMID:                  vmID,
+	}
+
+	return connection, nil
 }

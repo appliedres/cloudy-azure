@@ -183,14 +183,13 @@ func (vmm *AzureVirtualMachineManager) Update(ctx context.Context, vm *models.Vi
 }
 
 // Given a vmName, generates a VirtualMachineConnection from AVD, which includes the connection URL
-func (vmm *AzureVirtualMachineManager) Connect(ctx context.Context, vmName string) (*models.VirtualMachineConnection, error) {
-	hostPools, err := vmm.avdManager.listHostPools(ctx, "arkloud-avd-testing-usva")
+func (vmm *AzureVirtualMachineManager) Connect(ctx context.Context, vmName string, upn string) (*models.VirtualMachineConnection, error) {
+	connection, err := vmm.avdManager.GenerateConnectionURL(ctx, "arkloud-avd-testing-usva", "vulcanpp-AVD-HP-0", vmName, upn)
 	if err != nil {
 		return nil, errors.Wrap(err, "AVD Host Pool list")
 	}
-	_ = hostPools
 
-	return nil, nil
+	return connection, nil
 }
 
 func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachine armcompute.VirtualMachine) error {
