@@ -3,7 +3,6 @@ package cloudyazure
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,51 +58,38 @@ type ScoredVMSize struct {
 	Size  *models.VirtualMachineSize
 }
 
-func (vmm *AzureVirtualMachineManager) GetSizesForTemplate(ctx context.Context, template models.VirtualMachineTemplate) (map[string]*models.VirtualMachineSize, error) {
-	// Step 1: Get all available sizes
+func (vmm *AzureVirtualMachineManager) GetSizesForTemplate(ctx context.Context, template models.VirtualMachineTemplate) (
+	matches map[string]*models.VirtualMachineSize, 
+	worse map[string]*models.VirtualMachineSize, 
+	better map[string]*models.VirtualMachineSize,  
+	err error) {
+
 	sizes, err := vmm.GetSizesWithUsage(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not query all sizes")
+		return nil, nil, nil, errors.Wrap(err, "could not query all sizes")
 	}
 
-	// Step 2: Score all sizes
-	scoredSizes := []ScoredVMSize{}
-	for _, size := range sizes {
+	matches = make(map[string]*models.VirtualMachineSize)
+	worse = make(map[string]*models.VirtualMachineSize)
+	better = make(map[string]*models.VirtualMachineSize)
 
-		if size.Available < 1{
-			continue
+	for _, size := range sizes {
+		if size.Available < 1 {
+			continue  // ignore sizes that are not available
 		}
 
 		score := scoreVMSize(size, template)
-		if score == 1 {  // TODO: for now only include exact matches
-			scoredSizes = append(scoredSizes, ScoredVMSize{
-				Score: score,
-				Size:  size,
-			})
+
+		if score == 1 {
+			matches[strconv.Itoa(len(matches))] = size // Perfect match
+		} else if score < 0 {
+			worse[strconv.Itoa(len(worse))] = size // overall worse performance
+		} else {
+			better[strconv.Itoa(len(better))] = size // overall better performance, including score == 0
 		}
 	}
 
-	// Step 3: Sort the scored sizes
-    // sort.Slice(scoredSizes, func(i, j int) bool {
-    //     // Exact match first (highest score = 1.0)
-    //     if scoredSizes[i].Score == 1.0 && scoredSizes[j].Score != 1.0 {
-    //         return true
-    //     }
-    //     if scoredSizes[i].Score != 1.0 && scoredSizes[j].Score == 1.0 {
-    //         return false
-    //     }
-
-    //     // For all other cases, prioritize higher scores
-    //     return scoredSizes[i].Score > scoredSizes[j].Score
-    // })
-
-	// Step 4: Rank the sizes and assign them to a map by rank as string
-	rankedMap := make(map[string]*models.VirtualMachineSize)
-	for rank, scoredSize := range scoredSizes {
-		rankedMap[strconv.Itoa(rank)] = scoredSize.Size
-	}
-
-	return rankedMap, nil
+	return matches, worse, better, nil
 }
 
 func (vmm *AzureVirtualMachineManager) GetUsage(ctx context.Context) (map[string]models.VirtualMachineFamily, error) {
@@ -192,59 +178,47 @@ func isSizeRestricted(restrictions []*armcompute.ResourceSKURestrictions) bool {
 
 	return false
 }
-
 func scoreVMSize(size *models.VirtualMachineSize, template models.VirtualMachineTemplate) float64 {
-    score := 0.0
-    isExactMatch := true
+    var cpuScore, ramScore, gpuScore, totalScore float64
 
     // CPU score
-    cpuScore := 0.0
-    if template.MinCPU > 0 && size.CPU < template.MinCPU {
-        isExactMatch = false
-        cpuScore = float64(size.CPU) / float64(template.MinCPU)
-    } else if template.MaxCPU > 0 && size.CPU > template.MaxCPU {
-        isExactMatch = false
-        cpuScore = float64(template.MaxCPU) / float64(size.CPU)
-    } else if template.MinCPU > 0 && template.MaxCPU > 0 {
-        cpuScore = 1.0 - math.Abs(float64(size.CPU-template.MinCPU))/float64(template.MaxCPU-template.MinCPU)
+    if template.MinCPU != nil && size.CPU < *template.MinCPU {
+        cpuScore = -1 + (float64(size.CPU) / float64(*template.MinCPU)) // worse
+    } else if template.MaxCPU != nil && size.CPU > *template.MaxCPU {
+        cpuScore = 1 - (float64(*template.MaxCPU) / float64(size.CPU)) // better
     } else {
-        cpuScore = 1.0
+        cpuScore = 0.0 // Perfect match
     }
 
     // RAM score
-    ramScore := 0.0
-    if template.MinRAM > 0 && size.RAM < template.MinRAM {
-        isExactMatch = false
-        ramScore = float64(size.RAM) / float64(template.MinRAM)
-    } else if template.MaxRAM > 0 && size.RAM > template.MaxRAM {
-        isExactMatch = false
-        ramScore = float64(template.MaxRAM) / float64(size.RAM)
-    } else if template.MinRAM > 0 && template.MaxRAM > 0 {
-        ramScore = 1.0 - math.Abs(float64(size.RAM-template.MinRAM))/float64(template.MaxRAM-template.MinRAM)
+    if template.MinRAM != nil && size.RAM < *template.MinRAM {
+        ramScore = -1 + (float64(size.RAM) / float64(*template.MinRAM)) // worse
+    } else if template.MaxRAM != nil && size.RAM > *template.MaxRAM {
+        ramScore = 1 - (float64(*template.MaxRAM) / float64(size.RAM)) // better
     } else {
-        ramScore = 1.0
+        ramScore = 0.0 // Perfect match
     }
 
     // GPU score
-    gpuScore := 0.0
-    if template.MinGpu > 0 && size.Gpu < template.MinGpu {
-        isExactMatch = false
-        gpuScore = float64(size.Gpu) / float64(template.MinGpu)
-    } else if template.MaxGpu > 0 && size.Gpu > template.MaxGpu {
-        isExactMatch = false
-        gpuScore = float64(template.MaxGpu) / float64(size.Gpu)
-    } else if template.MinGpu > 0 && template.MaxGpu > 0 {
-        gpuScore = 1.0 - math.Abs(float64(size.Gpu-template.MinGpu))/float64(template.MaxGpu-template.MinGpu)
+    if template.MinGpu != nil && size.Gpu < *template.MinGpu {
+        gpuScore = -1 + (float64(size.Gpu) / float64(*template.MinGpu)) // worse
+    } else if template.MaxGpu != nil && size.Gpu > *template.MaxGpu {
+        gpuScore = 1 - (float64(*template.MaxGpu) / float64(size.Gpu)) // better
     } else {
-        gpuScore = 1.0
+        gpuScore = 0.0 // Perfect match
     }
 
-    if isExactMatch {
-        return 1.0
+    if cpuScore == 0 &&
+        ramScore == 0 &&
+        gpuScore == 0 {
+        return 1 // exact match
     }
-
-    score = (cpuScore + ramScore + gpuScore) / 3.0
-    return score
+    
+    // Calculate final score. 
+    // The closer to 0, the better the match. A value above 0 indicates better performance, 
+    // and below 0 indicates worse performance.
+	totalScore = (cpuScore + ramScore + gpuScore) / 3
+    return totalScore
 }
 
 // This function was unused in v1
