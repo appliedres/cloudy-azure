@@ -4,7 +4,7 @@ go 1.23
 
 toolchain go1.23.1
 
-replace github.com/appliedres/cloudy => ../cloudy
+// replace github.com/appliedres/cloudy => ../cloudy
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.15.0
@@ -17,7 +17,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork v1.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.6.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.1
-	github.com/appliedres/cloudy v0.0.49
+	github.com/appliedres/cloudy v0.0.50
 	github.com/go-openapi/strfmt v0.23.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
