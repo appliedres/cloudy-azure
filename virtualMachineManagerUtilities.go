@@ -191,8 +191,10 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 		}
 
 		if vm.Properties.HardwareProfile != nil {
-			cloudyVm.Template.Size = &models.VirtualMachineSize{
-				Name: string(*vm.Properties.HardwareProfile.VMSize),
+			if vm.Properties.HardwareProfile.VMSize != nil {
+				cloudyVm.Template.Size = &models.VirtualMachineSize{
+					Name: string(*vm.Properties.HardwareProfile.VMSize),
+				}
 			}
 		}
 
