@@ -3,18 +3,26 @@ package cloudyazure
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 	"github.com/pkg/errors"
 )
 
-func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string) (*models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string, statusOnly bool) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
+	var expandGet *armcompute.InstanceViewTypes
+
+	if statusOnly {
+		expandGet = to.Ptr(armcompute.InstanceViewTypesInstanceView)
+	}
+
 	resp, err := vmm.vmClient.Get(ctx, vmm.credentials.ResourceGroup, id, &armcompute.VirtualMachinesClientGetOptions{
-		Expand: nil,
+		Expand: expandGet,
 	})
 
 	if err != nil {
@@ -31,14 +39,14 @@ func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string) (
 	return vm, nil
 }
 
-func (vmm *AzureVirtualMachineManager) GetAll(ctx context.Context, filter string, attrs []string) (*[]models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) GetAll(ctx context.Context, filter string, attrs []string, statusOnly bool) (*[]models.VirtualMachine, error) {
 
 	vmList := []models.VirtualMachine{}
 
-	statusOnly := "false"
+	statusOnlyString := strconv.FormatBool(statusOnly)
 
 	pager := vmm.vmClient.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
-		StatusOnly: &statusOnly,
+		StatusOnly: &statusOnlyString,
 	})
 
 	for pager.More() {
