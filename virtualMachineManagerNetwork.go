@@ -79,7 +79,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.credentials.ResourceGroup, nicName, armnetwork.Interface{
 		Location: &vmm.credentials.Location,
 		Properties: &armnetwork.InterfacePropertiesFormat{
-			EnableAcceleratedNetworking: to.Ptr(vm.Template.AcceleratedNetworking),
+			EnableAcceleratedNetworking: vm.Template.AcceleratedNetworking,
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
 					Name: to.Ptr(fmt.Sprintf("%v-ip", vm.ID)),

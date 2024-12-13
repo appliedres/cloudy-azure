@@ -123,9 +123,9 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 			},
 		},
-		// SecurityProfile: &armcompute.SecurityProfile{
-		// 	SecurityType: to.Ptr(armcompute.SecurityTypesTrustedLaunch),
-		// },
+		SecurityProfile: &armcompute.SecurityProfile{
+			SecurityType: to.Ptr(armcompute.SecurityTypesTrustedLaunch),
+		},
 	}
 
 	virtualMachineParameters.Properties.OSProfile = &armcompute.OSProfile{
@@ -191,8 +191,10 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 		}
 
 		if vm.Properties.HardwareProfile != nil {
-			cloudyVm.Template.Size = &models.VirtualMachineSize{
-				Name: string(*vm.Properties.HardwareProfile.VMSize),
+			if vm.Properties.HardwareProfile.VMSize != nil {
+				cloudyVm.Template.Size = &models.VirtualMachineSize{
+					Name: string(*vm.Properties.HardwareProfile.VMSize),
+				}
 			}
 		}
 
