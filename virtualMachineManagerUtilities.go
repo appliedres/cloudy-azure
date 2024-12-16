@@ -92,8 +92,10 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 
 	if vm.Tags != nil {
 		virtualMachineParameters.Tags = vm.Tags
-		virtualMachineParameters.Tags[vmNameTagKey] = &vm.Name
+	} else {
+		virtualMachineParameters.Tags = make(map[string]*string)
 	}
+	virtualMachineParameters.Tags[vmNameTagKey] = &vm.Name
 
 	if vm.Template == nil {
 		vm.Template = &models.VirtualMachineTemplate{}
