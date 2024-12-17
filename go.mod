@@ -4,7 +4,7 @@ go 1.23
 
 toolchain go1.23.1
 
-// replace github.com/appliedres/cloudy => ../cloudy
+replace github.com/appliedres/cloudy => ../cloudy
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.16.0
