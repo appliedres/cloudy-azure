@@ -15,26 +15,22 @@ import (
 func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string, statusOnly bool) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
-	var expandGet *armcompute.InstanceViewTypes
-
-	if statusOnly {
-		expandGet = to.Ptr(armcompute.InstanceViewTypesInstanceView)
-	}
+	expandGet := to.Ptr(armcompute.InstanceViewTypesInstanceView)  // Always get the status
 
 	resp, err := vmm.vmClient.Get(ctx, vmm.credentials.ResourceGroup, id, &armcompute.VirtualMachinesClientGetOptions{
 		Expand: expandGet,
 	})
-
 	if err != nil {
 		if is404(err) {
-			log.InfoContext(ctx, fmt.Sprintf("GetById vm not found: %s", id))
+			log.InfoContext(ctx, fmt.Sprintf("Azure vmm.GetById VM not found: [%s]", id))
 			return nil, nil
 		}
 
-		return nil, errors.Wrap(err, "VM GetById")
+		return nil, errors.Wrap(err, "Azure vmm.GetById Error")
 	}
 
-	vm := ToCloudyVirtualMachine(&resp.VirtualMachine)
+	vm := ToCloudyVirtualMachine(ctx, &resp.VirtualMachine)
+	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s] status:[%s]", id, vm.State, vm.Status))
 
 	return vm, nil
 }
@@ -56,7 +52,7 @@ func (vmm *AzureVirtualMachineManager) GetAll(ctx context.Context, filter string
 		}
 
 		for _, vm := range resp.Value {
-			cloudyVm := ToCloudyVirtualMachine(vm)
+			cloudyVm := ToCloudyVirtualMachine(ctx, vm)
 			vmList = append(vmList, *cloudyVm)
 		}
 

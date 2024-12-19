@@ -21,11 +21,24 @@ import (
 
 const (
 	vmNameTagKey = "Name"
+
+	// Cloudy VM States
+	CREATING = "creating"
+	STARTING = "starting"
+	RUNNING = "running"
+	UPDATING = "updating"
+	STOPPING = "stopping"
+	STOPPED = "stopped"
+	DELETING = "deleting"
+	DELETED = "deleted"
+	RESTARTING = "restarting"
+	FAILED = "failed"
+	UNKNOWN = "unknown"
 )
 
 func toResponseError(err error) *azcore.ResponseError {
 	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	if errors.As(err, &respErr) {
 		return respErr
 	}
 
@@ -76,50 +89,50 @@ func pollWrapper[T any](ctx context.Context, poller *runtime.Poller[T], pollerTy
 	}
 }
 
-func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) armcompute.VirtualMachine {
+func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) armcompute.VirtualMachine {
 	log := logging.GetLogger(ctx)
 
-	virtualMachineParameters := armcompute.VirtualMachine{
-		// vm Id is saved as ID and Name
-		// vm Name is saved in a Tag
-		ID:       &vm.ID,
-		Name:     &vm.ID,
-		Location: &vm.Location.Region,
+	azVM := armcompute.VirtualMachine{
+		// cloudyVM Id is saved as ID and Name
+		// cloudyVM Name is saved in a Tag
+		ID:       &cloudyVM.ID,
+		Name:     &cloudyVM.ID,
+		Location: &cloudyVM.Location.Region,
 		Identity: &armcompute.VirtualMachineIdentity{
 			Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
 		},
 	}
 
-	if vm.Tags != nil {
-		virtualMachineParameters.Tags = vm.Tags
+	if cloudyVM.Tags != nil {
+		azVM.Tags = cloudyVM.Tags
 	} else {
-		virtualMachineParameters.Tags = make(map[string]*string)
+		azVM.Tags = make(map[string]*string)
 	}
-	virtualMachineParameters.Tags[vmNameTagKey] = &vm.Name
+	azVM.Tags[vmNameTagKey] = &cloudyVM.Name
 
-	if vm.Template == nil {
-		vm.Template = &models.VirtualMachineTemplate{}
+	if cloudyVM.Template == nil {
+		cloudyVM.Template = &models.VirtualMachineTemplate{}
 	}
 
-	if vm.Template.Tags != nil {
-		for k, v := range vm.Template.Tags {
-			_, ok := virtualMachineParameters.Tags[k]
+	if cloudyVM.Template.Tags != nil {
+		for k, v := range cloudyVM.Template.Tags {
+			_, ok := azVM.Tags[k]
 
 			// Will not overwrite tags already in the VM object
 			if !ok {
-				virtualMachineParameters.Tags[k] = v
+				azVM.Tags[k] = v
 			}
 		}
 	}
 
-	virtualMachineParameters.Properties = &armcompute.VirtualMachineProperties{
+	azVM.Properties = &armcompute.VirtualMachineProperties{
 
 		HardwareProfile: &armcompute.HardwareProfile{
-			VMSize: (*armcompute.VirtualMachineSizeTypes)(&vm.Template.Size.ID),
+			VMSize: (*armcompute.VirtualMachineSizeTypes)(&cloudyVM.Template.Size.ID),
 		},
 		StorageProfile: &armcompute.StorageProfile{
 			ImageReference: &armcompute.ImageReference{
-				ID: &vm.OsBaseImageID,
+				ID: &cloudyVM.OsBaseImageID,
 			},
 			OSDisk: &armcompute.OSDisk{
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
@@ -130,30 +143,30 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 		},
 	}
 
-	virtualMachineParameters.Properties.OSProfile = &armcompute.OSProfile{
-		ComputerName:  to.Ptr(vm.ID),
-		AdminUsername: &vm.Template.LocalAdministratorID,
+	azVM.Properties.OSProfile = &armcompute.OSProfile{
+		ComputerName:  to.Ptr(cloudyVM.ID),
+		AdminUsername: &cloudyVM.Template.LocalAdministratorID,
 		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),
 	}
-	log.InfoContext(ctx, fmt.Sprintf("%+v", virtualMachineParameters.Properties.OSProfile))
+	log.InfoContext(ctx, fmt.Sprintf("%+v", azVM.Properties.OSProfile))
 
-	switch vm.Template.OperatingSystem {
+	switch cloudyVM.Template.OperatingSystem {
 	case "windows":
-		virtualMachineParameters.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
-		virtualMachineParameters.Properties.OSProfile.WindowsConfiguration = &armcompute.WindowsConfiguration{}
+		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
+		azVM.Properties.OSProfile.WindowsConfiguration = &armcompute.WindowsConfiguration{}
 	case "linux":
-		virtualMachineParameters.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
-		virtualMachineParameters.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
+		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
+		azVM.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: to.Ptr(true),
 			ProvisionVMAgent:              to.Ptr(true),
 		}
-		virtualMachineParameters.Properties.OSProfile.AllowExtensionOperations = to.Ptr(true)
+		azVM.Properties.OSProfile.AllowExtensionOperations = to.Ptr(true)
 
 	}
 
 	nics := []*armcompute.NetworkInterfaceReference{}
 
-	for _, cloudyNic := range vm.Nics {
+	for _, cloudyNic := range cloudyVM.Nics {
 		nic := &armcompute.NetworkInterfaceReference{
 			ID: &cloudyNic.ID,
 		}
@@ -161,70 +174,106 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 		nics = append(nics, nic)
 	}
 
-	virtualMachineParameters.Properties.NetworkProfile = &armcompute.NetworkProfile{
+	azVM.Properties.NetworkProfile = &armcompute.NetworkProfile{
 		NetworkInterfaces: nics,
 	}
 
-	return virtualMachineParameters
+	return azVM
 }
 
-func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachine {
+func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachine {
+	log := logging.GetLogger(ctx)
 
 	cloudyVm := models.VirtualMachine{
-		ID:   *vm.ID,
-		Name: *vm.Name,
+		ID:   *azVM.Name,  // Azure VM Name is cloudy ID, in UVM-<alphanumeric> format
+		Name: *azVM.Name,  // this will later get overwritten with azure VM tag stored in ['Name']
 		Location: &models.VirtualMachineLocation{
-			Region: *vm.Location,
+			Region: *azVM.Location,
 		},
 		Template: &models.VirtualMachineTemplate{},
 		Tags:     map[string]*string{},
 	}
 
-	if vm.Properties != nil {
-		cloudyVm.State = *vm.Properties.ProvisioningState
+	if azVM.Properties != nil {
+		provState := strings.ToLower(*azVM.Properties.ProvisioningState)
+		var powerState string
 
-		if vm.Properties.InstanceView != nil {
-			for _, status := range vm.Properties.InstanceView.Statuses {
+		if azVM.Properties.InstanceView != nil {
+			for _, status := range azVM.Properties.InstanceView.Statuses {
 				if strings.Contains(*status.Code, "PowerState") {
 					statusParts := strings.Split(*status.Code, "/")
-					cloudyVm.Status = statusParts[1]
+					powerState = strings.ToLower(statusParts[1])
 				}
 			}
 		}
 
-		if vm.Properties.HardwareProfile != nil {
-			if vm.Properties.HardwareProfile.VMSize != nil {
-				cloudyVm.Template.Size = &models.VirtualMachineSize{
-					Name: string(*vm.Properties.HardwareProfile.VMSize),
-				}
+		// map the provisioning and power state into a single cloudy state
+		switch provState {
+		case CREATING:
+			cloudyVm.State = CREATING
+		case DELETING:
+			cloudyVm.State = DELETING
+		case "succeeded":
+			switch powerState {
+			case STARTING:
+				cloudyVm.State = STARTING
+			case RUNNING:
+				cloudyVm.State = RUNNING
+			case STOPPED:
+				cloudyVm.State = STOPPED
+			case "deallocated": 
+				cloudyVm.State = STOPPED  // TODO: Should VM ever be in deallocated state?
+			case STOPPING:
+				cloudyVm.State = STOPPING
+			case UPDATING:
+				cloudyVm.State = UPDATING
+			case RESTARTING:
+				cloudyVm.State = RESTARTING
+			default:
+				cloudyVm.State = UNKNOWN
 			}
+		case UPDATING:
+			switch powerState {
+			case "deallocating":
+				cloudyVm.State = STOPPING
+			}
+		case FAILED:
+			cloudyVm.State = FAILED
+		default:
+			cloudyVm.State = UNKNOWN
 		}
 
-		if vm.Properties.NetworkProfile != nil {
+		log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: vmid:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
+			cloudyVm.ID, provState, powerState, cloudyVm.State))
+
+		if azVM.Properties.NetworkProfile != nil {
 			nics := []*models.VirtualMachineNic{}
-			for _, nic := range vm.Properties.NetworkProfile.NetworkInterfaces {
+			for _, nic := range azVM.Properties.NetworkProfile.NetworkInterfaces {
 				nics = append(nics, &models.VirtualMachineNic{ID: *nic.ID})
 			}
 			cloudyVm.Nics = nics
 		}
 
-		if vm.Properties.StorageProfile != nil {
-			if vm.Properties.StorageProfile.OSDisk != nil {
-				cloudyVm.Template.OperatingSystem = string(*vm.Properties.StorageProfile.OSDisk.OSType)
+		if azVM.Properties.StorageProfile != nil {
+			if azVM.Properties.StorageProfile.OSDisk != nil {
+				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType)
 
-				cloudyVm.OsDisk = &models.VirtualMachineDisk{
-					ID:     *vm.Properties.StorageProfile.OSDisk.ManagedDisk.ID,
-					OsDisk: true,
-				}
+				if azVM.Properties.StorageProfile.OSDisk.ManagedDisk != nil &&
+					azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID != nil {
+					cloudyVm.OsDisk = &models.VirtualMachineDisk{
+						ID:     *azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID,
+						OsDisk: true,
+					}
 
-				if vm.Properties.StorageProfile.OSDisk.DiskSizeGB != nil {
-					cloudyVm.OsDisk.Size = int64(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB)
+					if azVM.Properties.StorageProfile.OSDisk.DiskSizeGB != nil {
+						cloudyVm.OsDisk.Size = int64(*azVM.Properties.StorageProfile.OSDisk.DiskSizeGB)
+					}
 				}
 			}
 
-			if vm.Properties.StorageProfile.DataDisks != nil {
+			if azVM.Properties.StorageProfile.DataDisks != nil {
 				disks := []*models.VirtualMachineDisk{}
-				for _, disk := range vm.Properties.StorageProfile.DataDisks {
+				for _, disk := range azVM.Properties.StorageProfile.DataDisks {
 					disks = append(disks, &models.VirtualMachineDisk{
 						ID:     *disk.ManagedDisk.ID,
 						OsDisk: false,
@@ -236,8 +285,8 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 		}
 	}
 
-	if vm.Tags != nil {
-		for k, v := range vm.Tags {
+	if azVM.Tags != nil {
+		for k, v := range azVM.Tags {
 			if strings.EqualFold(k, vmNameTagKey) {
 				cloudyVm.Name = *v
 			} else {
@@ -384,4 +433,9 @@ func ToCloudyVirtualMachineLocation(location *string) *models.VirtualMachineLoca
 		Cloud:  "azure",
 		Region: *location,
 	}
+}
+
+func LongIdToShortId(longId string) string {
+	parts := strings.Split(longId, "/")
+	return parts[len(parts)-1]
 }
