@@ -84,11 +84,11 @@ import (
 // 	}
 
 // 	var returnList []*cloudyvm.VirtualMachineStatus
-// 	statusOnly := "true"
+// 	includeState := "true"
 
 // 	pager := vmClient.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
 // 		// Filter:     &filter,
-// 		StatusOnly: &statusOnly,
+// 		IncludeState: &includeState,
 // 	})
 // 	for pager.More() {
 // 		resp, err := pager.NextPage(ctx)

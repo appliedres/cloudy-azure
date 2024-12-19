@@ -215,35 +215,39 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 			cloudyVm.State = DELETING
 		case "succeeded":
 			switch powerState {
-			case STARTING:
-				cloudyVm.State = STARTING
 			case RUNNING:
 				cloudyVm.State = RUNNING
 			case STOPPED:
 				cloudyVm.State = STOPPED
 			case "deallocated": 
-				cloudyVm.State = STOPPED  // TODO: Should VM ever be in deallocated state?
-			case STOPPING:
-				cloudyVm.State = STOPPING
-			case UPDATING:
-				cloudyVm.State = UPDATING
-			case RESTARTING:
-				cloudyVm.State = RESTARTING
+				cloudyVm.State = STOPPED  // TODO: Should VM ever be left in deallocated state?
 			default:
 				cloudyVm.State = UNKNOWN
 			}
 		case UPDATING:
 			switch powerState {
+			case STARTING:
+				cloudyVm.State = STARTING
 			case "deallocating":
 				cloudyVm.State = STOPPING
+			case STOPPING:
+				cloudyVm.State = STOPPING
+			case RESTARTING:
+				cloudyVm.State = RESTARTING
+			default:
+				cloudyVm.State = UNKNOWN
 			}
 		case FAILED:
 			cloudyVm.State = FAILED
 		default:
 			cloudyVm.State = UNKNOWN
 		}
+		
+		if cloudyVm.State == UNKNOWN {
+			log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", UNKNOWN, cloudyVm.ID))
+		}
 
-		log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: vmid:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
+		log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
 			cloudyVm.ID, provState, powerState, cloudyVm.State))
 
 		if azVM.Properties.NetworkProfile != nil {
