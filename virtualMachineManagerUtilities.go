@@ -21,6 +21,8 @@ import (
 
 const (
 	vmNameTagKey = "Name"
+	vmCreatorTagKey = "CreatorID"
+	vmUserTagKey = "UserID"
 )
 
 func toResponseError(err error) *azcore.ResponseError {
@@ -95,12 +97,20 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 	} else {
 		azVM.Tags = make(map[string]*string)
 	}
+
 	azVM.Tags[vmNameTagKey] = &cloudyVM.Name
+
+	// Add CreatorID and UserID as tags
+	if cloudyVM.CreatorID != "" {
+		azVM.Tags[vmCreatorTagKey] = &cloudyVM.CreatorID
+	}
+	if cloudyVM.UserID != "" {
+		azVM.Tags[vmUserTagKey] = &cloudyVM.UserID
+	}
 
 	if cloudyVM.Template == nil {
 		cloudyVM.Template = &models.VirtualMachineTemplate{}
 	}
-
 	if cloudyVM.Template.Tags != nil {
 		for k, v := range cloudyVM.Template.Tags {
 			_, ok := azVM.Tags[k]
@@ -113,7 +123,6 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 	}
 
 	azVM.Properties = &armcompute.VirtualMachineProperties{
-
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: (*armcompute.VirtualMachineSizeTypes)(&cloudyVM.Template.Size.ID),
 		},
@@ -137,6 +146,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 	}
 	log.InfoContext(ctx, fmt.Sprintf("%+v", azVM.Properties.OSProfile))
 
+	// OS-specific items
 	switch cloudyVM.Template.OperatingSystem {
 	case "windows":
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
@@ -148,19 +158,16 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 			ProvisionVMAgent:              to.Ptr(true),
 		}
 		azVM.Properties.OSProfile.AllowExtensionOperations = to.Ptr(true)
-
 	}
 
+	// NICs
 	nics := []*armcompute.NetworkInterfaceReference{}
-
 	for _, cloudyNic := range cloudyVM.Nics {
 		nic := &armcompute.NetworkInterfaceReference{
 			ID: &cloudyNic.ID,
 		}
-
 		nics = append(nics, nic)
 	}
-
 	azVM.Properties.NetworkProfile = &armcompute.NetworkProfile{
 		NetworkInterfaces: nics,
 	}
@@ -225,6 +232,10 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 		for k, v := range azVM.Tags {
 			if strings.EqualFold(k, vmNameTagKey) {
 				cloudyVm.Name = *v
+			} else if strings.EqualFold(k, vmCreatorTagKey) {
+				cloudyVm.CreatorID = *v
+			} else if strings.EqualFold(k, vmUserTagKey) {
+				cloudyVm.UserID = *v
 			} else {
 				cloudyVm.Tags[k] = v
 			}

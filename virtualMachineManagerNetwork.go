@@ -57,7 +57,6 @@ func (vmm *AzureVirtualMachineManager) GetNics(ctx context.Context, vmId string)
 
 	return nics, nil
 }
-
 func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachineNic, error) {
 	log := logging.GetLogger(ctx)
 
@@ -76,8 +75,24 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 		dnsServers = vmm.config.DomainControllers
 	}
 
+	// apply VM info as tags to NIC
+	tags := map[string]*string{}
+	if vm.Name != "" {
+		tags[vmNameTagKey] = &vm.Name
+	}
+	if vm.CreatorID != "" {
+		tags[vmCreatorTagKey] = &vm.CreatorID
+	}
+	if vm.UserID != "" {
+		tags[vmUserTagKey] = &vm.UserID
+	}
+	for key, value := range vm.Tags {
+		tags[key] = value
+	}
+
 	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.credentials.ResourceGroup, nicName, armnetwork.Interface{
 		Location: &vmm.credentials.Location,
+		Tags:     tags,
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			EnableAcceleratedNetworking: vm.Template.AcceleratedNetworking,
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
