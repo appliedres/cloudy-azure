@@ -446,6 +446,10 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 			return models.VirtualMachineCloudStateStopping
 		case string(models.VirtualMachineCloudStateRestarting):
 			return models.VirtualMachineCloudStateRestarting
+		case string(models.VirtualMachineCloudStateRunning):  // 'updating' a 'running' VM is 'stopping'
+			return models.VirtualMachineCloudStateStopping
+		case string(models.VirtualMachineCloudStateStopped):  // 'updating' a 'stopped' VM is 'starting'
+			return models.VirtualMachineCloudStateStarting
 		default:
 			return models.VirtualMachineCloudStateUnknown
 		}
