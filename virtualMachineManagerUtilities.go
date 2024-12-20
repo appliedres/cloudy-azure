@@ -21,19 +21,6 @@ import (
 
 const (
 	vmNameTagKey = "Name"
-
-	// Cloudy VM States
-	CREATING = "creating"
-	STARTING = "starting"
-	RUNNING = "running"
-	UPDATING = "updating"
-	STOPPING = "stopping"
-	STOPPED = "stopped"
-	DELETING = "deleting"
-	DELETED = "deleted"
-	RESTARTING = "restarting"
-	FAILED = "failed"
-	UNKNOWN = "unknown"
 )
 
 func toResponseError(err error) *azcore.ResponseError {
@@ -182,8 +169,6 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 }
 
 func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachine {
-	log := logging.GetLogger(ctx)
-
 	cloudyVm := models.VirtualMachine{
 		ID:   *azVM.Name,  // Azure VM Name is cloudy ID, in UVM-<alphanumeric> format
 		Name: *azVM.Name,  // this will later get overwritten with azure VM tag stored in ['Name']
@@ -195,60 +180,7 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 	}
 
 	if azVM.Properties != nil {
-		provState := strings.ToLower(*azVM.Properties.ProvisioningState)
-		var powerState string
-
-		if azVM.Properties.InstanceView != nil {
-			for _, status := range azVM.Properties.InstanceView.Statuses {
-				if strings.Contains(*status.Code, "PowerState") {
-					statusParts := strings.Split(*status.Code, "/")
-					powerState = strings.ToLower(statusParts[1])
-				}
-			}
-		}
-
-		// map the provisioning and power state into a single cloudy state
-		switch provState {
-		case CREATING:
-			cloudyVm.State = CREATING
-		case DELETING:
-			cloudyVm.State = DELETING
-		case "succeeded":
-			switch powerState {
-			case RUNNING:
-				cloudyVm.State = RUNNING
-			case STOPPED:
-				cloudyVm.State = STOPPED
-			case "deallocated": 
-				cloudyVm.State = STOPPED  // TODO: Should VM ever be left in deallocated state?
-			default:
-				cloudyVm.State = UNKNOWN
-			}
-		case UPDATING:
-			switch powerState {
-			case STARTING:
-				cloudyVm.State = STARTING
-			case "deallocating":
-				cloudyVm.State = STOPPING
-			case STOPPING:
-				cloudyVm.State = STOPPING
-			case RESTARTING:
-				cloudyVm.State = RESTARTING
-			default:
-				cloudyVm.State = UNKNOWN
-			}
-		case FAILED:
-			cloudyVm.State = FAILED
-		default:
-			cloudyVm.State = UNKNOWN
-		}
-		
-		if cloudyVm.State == UNKNOWN {
-			log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", UNKNOWN, cloudyVm.ID))
-		}
-
-		log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
-			cloudyVm.ID, provState, powerState, cloudyVm.State))
+		cloudyVm.CloudState = mapProvisioningAndPowerState(ctx, azVM)
 
 		if azVM.Properties.NetworkProfile != nil {
 			nics := []*models.VirtualMachineNic{}
@@ -442,4 +374,73 @@ func ToCloudyVirtualMachineLocation(location *string) *models.VirtualMachineLoca
 func LongIdToShortId(longId string) string {
 	parts := strings.Split(longId, "/")
 	return parts[len(parts)-1]
+}
+
+// Finds and converts Azure's ProvisioningState and PowerState into a cloudy CloudState
+func mapProvisioningAndPowerState(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachineCloudState {
+	log := logging.GetLogger(ctx)
+
+	provState := strings.ToLower(*azVM.Properties.ProvisioningState)
+	var powerState string
+
+	if azVM.Properties.InstanceView == nil {
+		return nil // no InstanceView, we likely did not query with IncludeState
+	}
+
+	for _, status := range azVM.Properties.InstanceView.Statuses {
+		if strings.Contains(*status.Code, "PowerState") {
+			statusParts := strings.Split(*status.Code, "/")
+			powerState = strings.ToLower(statusParts[1])
+			break
+		}
+	}
+
+	cloudState := mapCloudState(provState, powerState)
+
+	if cloudState == models.VirtualMachineCloudStateUnknown {
+		log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", models.VirtualMachineCloudStateUnknown, azVM.ID))
+	}
+
+	log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
+		*azVM.Name, provState, powerState, cloudState))
+
+	return &cloudState
+}
+
+// Maps to a single cloudy CloudyState from Azure's combination of provisioning and power states
+func mapCloudState(provState, powerState string) models.VirtualMachineCloudState {
+	switch provState {
+	case string(models.VirtualMachineCloudStateCreating):
+		return models.VirtualMachineCloudStateCreating
+	case string(models.VirtualMachineCloudStateDeleting):
+		return models.VirtualMachineCloudStateDeleting
+	case "succeeded":
+		switch powerState {
+		case string(models.VirtualMachineCloudStateRunning):
+			return models.VirtualMachineCloudStateRunning
+		case string(models.VirtualMachineCloudStateStopped):
+			return models.VirtualMachineCloudStateStopped
+		case "deallocated": 
+			return models.VirtualMachineCloudStateDeleted  // TODO: Should VM ever be left in deallocated state?
+		default:
+			return models.VirtualMachineCloudStateUnknown
+		}
+	case "updating":
+		switch powerState {
+		case string(models.VirtualMachineCloudStateStarting):
+			return models.VirtualMachineCloudStateStarting
+		case "deallocating":
+			return models.VirtualMachineCloudStateDeleting
+		case string(models.VirtualMachineCloudStateStopping):
+			return models.VirtualMachineCloudStateStopping
+		case string(models.VirtualMachineCloudStateRestarting):
+			return models.VirtualMachineCloudStateRestarting
+		default:
+			return models.VirtualMachineCloudStateUnknown
+		}
+	case string(models.VirtualMachineCloudStateFailed):
+		return models.VirtualMachineCloudStateFailed
+	default:
+		return models.VirtualMachineCloudStateUnknown
+	}
 }

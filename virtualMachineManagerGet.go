@@ -35,10 +35,12 @@ func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string, i
 	}
 
 	vm := ToCloudyVirtualMachine(ctx, &resp.VirtualMachine)
-	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s] status:[%s]", id, vm.State, vm.Status))
-	if !includeState {
-		vm.State = "" // suppress the "unknown" state, since we intended to not retrieve the state
+	
+	stateString := ""
+	if vm.CloudState != nil {
+		stateString = string(*vm.CloudState)
 	}
+	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s] status:[%s]", id, stateString, vm.Status))
 
 	return vm, nil
 }
@@ -64,9 +66,6 @@ func (vmm *AzureVirtualMachineManager) GetAll(ctx context.Context, filter string
 
 		for _, vm := range resp.Value {
 			cloudyVm := ToCloudyVirtualMachine(ctx, vm)
-			if !includeState {
-				cloudyVm.State = "" // suppress the "unknown" state, since we intended to not retrieve the state
-			}
 			vmList = append(vmList, *cloudyVm)
 		}
 
