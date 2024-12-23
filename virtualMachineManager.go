@@ -3,7 +3,7 @@ package cloudyazure
 import (
 	"context"
 	"fmt"
-	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -113,7 +113,7 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 	}
 	vmm.usageClient = usageClient
 
-	avdManager, err := NewAzureVirtualDesktopManager(ctx, vmm.credentials, &vmm.config.AvdConfig)
+	avdManager, err := NewAzureVirtualDesktopManager(ctx, vmm.credentials, &vmm.config.AvdConfig)  // TODO: use AVD only creds
 	if err != nil {
 		return err
 	}
@@ -185,53 +185,36 @@ func (vmm *AzureVirtualMachineManager) Update(ctx context.Context, vm *models.Vi
 	return nil, nil
 }
 
-func (vmm *AzureVirtualMachineManager) AvdRegister(ctx context.Context, vm *models.VirtualMachine, avdRgName, hpName, upn, domainName, domainUsername, domainPassword string) error {
+func (vmm *AzureVirtualMachineManager) AvdRegister(ctx context.Context, vm *models.VirtualMachine, domainName, domainUsername, domainPassword string) (*models.VirtualMachine, error) {
+	log := logging.GetLogger(ctx)
+	
+	log.InfoContext(ctx, "Configuring AVD for VM", "VM", vm.ID)
+
 	var err error
 	
-	regToken, err := vmm.avdManager.PreRegister(ctx, avdRgName, hpName)
+	start := time.Now()
+	hostPool, regToken, err := vmm.avdManager.PreRegister(ctx, vm, avdRgName)
+	log.DebugContext(ctx, "AVD Pre-Register completed", "time", time.Since(start).String())
 	if err != nil {
-		return errors.Wrap(err, "AVD PreRegister")
+		return nil, errors.Wrap(err, "AVD Pre-register")
 	}
 
+	start = time.Now()
 	err = vmm.runAvdRegistrationScript(ctx, vm, *regToken, domainName, domainUsername, domainPassword)
+	log.DebugContext(ctx, "AVD Registration Script completed in %s", "time", time.Since(start).String())
 	if err != nil {
-		return errors.Wrap(err, "AVD Register Script")
+		return nil, errors.Wrap(err, "AVD Register Script")
 	}
 
-	err = vmm.avdManager.PostRegister(ctx, avdRgName, hpName, vm.ID, upn)
+	start = time.Now()
+	connection, err := vmm.avdManager.PostRegister(ctx, avdRgName, *hostPool.Name, vm.UserID, vm)
+	log.DebugContext(ctx, "AVD Post-Register completed in %s", "time", time.Since(start).String())
 	if err != nil {
-		return errors.Wrap(err, "AVD PostRegister")
+		return nil, errors.Wrap(err, "AVD Post-register")
 	}
 
-	return nil
-}
-
-// Given a vmName, generates a VirtualMachineConnection from AVD, which includes the connection URL
-func (vmm *AzureVirtualMachineManager) Connect(ctx context.Context, vmID string) (*models.VirtualMachineConnection, error) {
-	rgName := "arkloud-avd-testing-usva"  // TODO: handle separate RG for AVD
-	hostPoolName := "vulcanpp-AVD-HP-0"  // TODO: pass in host pool name from avd config
-
-	sessionHost, err := vmm.avdManager.FindSessionHostForVM(ctx, rgName, hostPoolName, vmID)
-	if err != nil {
-		return nil, errors.Wrap(err, "Connect failed, error finding session host")
-	}
-	if sessionHost == nil {
-		return nil, fmt.Errorf("Could not find a session host for VM [%s]", vmID)
-	}
-
-	// sessionHost.Name is in the format "hostpoolName/sessionHostName", so we need to split it
-	parts := strings.SplitN(*sessionHost.Name, "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("Could not split sessionHost.Name: %s", *sessionHost.Name)
-	}
-	sessionHostName := parts[1]
-	
-	connection, err := vmm.avdManager.GenerateConnectionURL(ctx, hostPoolName, sessionHostName, vmID)
-	if err != nil {
-		return nil, errors.Wrap(err, "AVD Host Pool list")
-	}
-
-	return connection, nil
+	vm.Connect = connection
+	return vm, nil
 }
 
 func (vmm *AzureVirtualMachineManager) runAvdRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationKey, domainName, domainUsername, domainPassword string) error {	
@@ -380,7 +363,7 @@ Stop-Transcript
 	}
 
 	// Output the command's result
-	if result.Value != nil && len(result.Value) > 0 {
+	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
 				fmt.Printf("Command Output: %s\n", *output.Message)
@@ -392,8 +375,6 @@ Stop-Transcript
 
 	return nil
 }
-
-
 
 func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachine armcompute.VirtualMachine) error {
 

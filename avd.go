@@ -3,19 +3,34 @@ package cloudyazure
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/logging"
-	cloudymodels "github.com/appliedres/cloudy/models"
+	"github.com/appliedres/cloudy/models"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
+
+)
+
+const (
+	// TODO: Make these an AVD config item, stored in AVD manager
+	avdRgName = ""  
+	avdRegion = "usgovvirginia"
+	prefixBase = "VULCAN-AVD"
+	hostPoolNamePrefix = prefixBase+"-HP-"
+	workspaceNamePrefix = prefixBase+"-WS-"
+	appGroupNamePrefix = prefixBase+"-DAG-"
+	desktopApplicationUserRoleID = "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63"  // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/compute#desktop-virtualization-user
+	avdUserGroupID = ""
+	uriEnv = "usgov"
 )
 
 type AzureVirtualDesktopManager struct {
@@ -26,8 +41,11 @@ type AzureVirtualDesktopManager struct {
 	hostPoolsClient       *armdesktopvirtualization.HostPoolsClient
 	sessionHostsClient    *armdesktopvirtualization.SessionHostsClient
 	userSessionsClient    *armdesktopvirtualization.UserSessionsClient
-	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
 	appGroupsClient       *armdesktopvirtualization.ApplicationGroupsClient
+	appsClient			  *armdesktopvirtualization.ApplicationsClient
+	desktopsClient		  *armdesktopvirtualization.DesktopsClient
+
+	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
 }
 
 func NewAzureVirtualDesktopManager(ctx context.Context, credentials *AzureCredentials, config *AzureVirtualDesktopConfig) (*AzureVirtualDesktopManager, error) {
@@ -49,64 +67,47 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 		return err
 	}
 
-	// TODO: load host pools list from config
-	// TODO: load connection timeout from config
-
-	options := arm.ClientOptions{
+	baseOptions := arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
 		},
+		
 	}
 
-	workspacesclient, err := armdesktopvirtualization.NewWorkspacesClient(avd.credentials.SubscriptionID, cred, &options)
+	avdOptions := baseOptions
+	avdOptions.APIVersion = "2023-09-05"  // Important! Latest AVD API version is not supported in Azure Govt
+	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.credentials.SubscriptionID, cred, &avdOptions)
 	if err != nil {
 		return err
 	}
-	avd.workspacesClient = workspacesclient
 
-	hostPoolsClient, err := armdesktopvirtualization.NewHostPoolsClient(avd.credentials.SubscriptionID, cred, &options)
-	if err != nil {
-		return err
-	}
-	avd.hostPoolsClient = hostPoolsClient
+	avd.workspacesClient = 	clientFactory.NewWorkspacesClient()
+	avd.hostPoolsClient = clientFactory.NewHostPoolsClient()
+	avd.sessionHostsClient = clientFactory.NewSessionHostsClient()
+	avd.userSessionsClient = clientFactory.NewUserSessionsClient()
+	avd.appGroupsClient = clientFactory.NewApplicationGroupsClient()
+	avd.appsClient = clientFactory.NewApplicationsClient()
+	avd.desktopsClient = clientFactory.NewDesktopsClient()
 
-	sessionhostsclient, err := armdesktopvirtualization.NewSessionHostsClient(avd.credentials.SubscriptionID, cred, &options)
-	if err != nil {
-		return err
-	}
-	avd.sessionHostsClient = sessionhostsclient
-
-	usersessionsclient, err := armdesktopvirtualization.NewUserSessionsClient(avd.credentials.SubscriptionID, cred, &options)
-	if err != nil {
-		return err
-	}
-	avd.userSessionsClient = usersessionsclient
-
-	roleassignmentsclient, err := armauthorization.NewRoleAssignmentsClient(avd.credentials.SubscriptionID, cred, &options)
+	roleassignmentsclient, err := armauthorization.NewRoleAssignmentsClient(avd.credentials.SubscriptionID, cred, &baseOptions)
 	if err != nil {
 		return err
 	}
 	avd.roleAssignmentsClient = roleassignmentsclient
 
-	appgroupsClient, err := armdesktopvirtualization.NewApplicationGroupsClient(avd.credentials.SubscriptionID, cred, &options)
-	if err != nil {
-		return err
-	}
-	avd.appGroupsClient = appgroupsClient
-
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Context, rg string, upn string) (*armdesktopvirtualization.HostPool, error) {
+func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Context, rgName string, upn string) (*armdesktopvirtualization.HostPool, error) {
 	// Get all the host pools
-	all, err := avd.listHostPools(ctx, rg)
+	all, err := avd.listHostPools(ctx, rgName, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, hostpool := range all {
 		// List all the sessions for a given host pool
-		sessions, err := avd.listSessionHosts(ctx, rg, *hostpool.Name)
+		sessions, err := avd.listSessionHosts(ctx, rgName, *hostpool.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -128,10 +129,10 @@ func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Co
 	return nil, nil
 }
 
-func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rg string, hpname string) (*string, error) {
+func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rgName string, hpname string) (*string, error) {
 
 	// avd.hostpools.RetrieveRegistrationToken returns nil if registration token doesn't exist or is expired
-	tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rg, hpname, nil)
+	tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
 
 	if tokenresponse.Token == nil {
 		// no go function to create/replace a registration key in armdesktopvirtualization
@@ -161,10 +162,10 @@ func (avd *AzureVirtualDesktopManager) AssignSessionHost(ctx context.Context, rg
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, rg string, hpname string, sessionhost string) error {
+func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, rgName string, hpname string, sessionhost string) error {
 	// removes session host from host pool, does not delete VM
 
-	res, err := avd.sessionHostsClient.Delete(ctx, rg, hpname, sessionhost, nil)
+	res, err := avd.sessionHostsClient.Delete(ctx, rgName, hpname, sessionhost, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "AssignSessionHost failure: %+v", err)
 	}
@@ -173,13 +174,13 @@ func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, rg
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) DeleteUserSession(ctx context.Context, rg string, hpname string, sessionHost string, upn string) error {
-	sessionId, err := avd.getUserSessionId(ctx, rg, hpname, sessionHost, upn)
+func (avd *AzureVirtualDesktopManager) DeleteUserSession(ctx context.Context, rgName string, hpname string, sessionHost string, upn string) error {
+	sessionId, err := avd.getUserSessionId(ctx, rgName, hpname, sessionHost, upn)
 	if err != nil {
 		return cloudy.Error(ctx, "UnassignSessionHost failure (no user session): %+v", err)
 	}
 
-	res, err := avd.userSessionsClient.Delete(ctx, rg, hpname, sessionHost, *sessionId, nil)
+	res, err := avd.userSessionsClient.Delete(ctx, rgName, hpname, sessionHost, *sessionId, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "UnassignSessionHost failure (user session delete failed): %+v", err)
 	}
@@ -188,13 +189,13 @@ func (avd *AzureVirtualDesktopManager) DeleteUserSession(ctx context.Context, rg
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) DisconnecteUserSession(ctx context.Context, rg string, hpname string, sessionHost string, upn string) error {
-	sessionId, err := avd.getUserSessionId(ctx, rg, hpname, sessionHost, upn)
+func (avd *AzureVirtualDesktopManager) DisconnecteUserSession(ctx context.Context, rgName string, hpname string, sessionHost string, upn string) error {
+	sessionId, err := avd.getUserSessionId(ctx, rgName, hpname, sessionHost, upn)
 	if err != nil {
 		return cloudy.Error(ctx, "DisconnecteUserSession failure (no user session): %+v", err)
 	}
 
-	res, err := avd.userSessionsClient.Disconnect(ctx, rg, hpname, sessionHost, *sessionId, nil)
+	res, err := avd.userSessionsClient.Disconnect(ctx, rgName, hpname, sessionHost, *sessionId, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "UnassignSessionHost failure (user session disconnect failed ): %+v", err)
 	}
@@ -203,8 +204,8 @@ func (avd *AzureVirtualDesktopManager) DisconnecteUserSession(ctx context.Contex
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rg string, roleid string, upn string) error {
-	scope := "/subscriptions/" + avd.credentials.SubscriptionID + "/resourceGroups/" + rg
+func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgName string, roleid string, upn string) error {
+	scope := "/subscriptions/" + avd.credentials.SubscriptionID + "/resourceGroups/" + rgName
 	roledefid := "/subscriptions/" + avd.credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleid
 	uuidWithHyphen := uuid.New().String()
 
@@ -222,8 +223,33 @@ func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rg 
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) getUserSessionId(ctx context.Context, rg string, hpname string, sessionHost string, upn string) (*string, error) {
-	pager := avd.userSessionsClient.NewListPager(rg, hpname, sessionHost, nil)
+func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.Context, desktopAppGroupName string) error {
+	// Source: https://learn.microsoft.com/en-us/answers/questions/2104093/azure-virtual-desktop-application-group-assignment
+	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s", 
+		avd.credentials.SubscriptionID, avdRgName, desktopAppGroupName)
+
+	roleDefID := "/subscriptions/" + avd.credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + desktopApplicationUserRoleID
+	uuidWithHyphen := uuid.New().String()
+
+	res, err := avd.roleAssignmentsClient.Create(ctx, scope, uuidWithHyphen,
+		armauthorization.RoleAssignmentCreateParameters{
+			Properties: &armauthorization.RoleAssignmentProperties{
+				RoleDefinitionID: to.Ptr(roleDefID),
+				PrincipalID:      to.Ptr(string(avdUserGroupID)),
+			},
+		}, nil)
+
+	if err != nil && strings.Split(err.Error(), "ERROR CODE: RoleAssignmentExists") == nil {
+		return cloudy.Error(ctx, "AssignRoleToGroup failure: %+v", err)
+	}
+
+	_ = res
+	return nil
+}
+
+
+func (avd *AzureVirtualDesktopManager) getUserSessionId(ctx context.Context, rgName string, hpname string, sessionHost string, upn string) (*string, error) {
+	pager := avd.userSessionsClient.NewListPager(rgName, hpname, sessionHost, nil)
 	var all []*armdesktopvirtualization.UserSession
 	for {
 		if !pager.More() {
@@ -248,10 +274,10 @@ func (avd *AzureVirtualDesktopManager) getUserSessionId(ctx context.Context, rg 
 	return nil, nil
 }
 
-func (avd *AzureVirtualDesktopManager) listHostPools(ctx context.Context, rg string) ([]*armdesktopvirtualization.HostPool, error) {
-	// TODO: add back resource group 
-	pager := avd.hostPoolsClient.NewListPager(&armdesktopvirtualization.HostPoolsClientListOptions{})
+func (avd *AzureVirtualDesktopManager) listHostPools(ctx context.Context, rgName string, prefixFilter *string) ([]*armdesktopvirtualization.HostPool, error) {
+	pager := avd.hostPoolsClient.NewListByResourceGroupPager(rgName, &armdesktopvirtualization.HostPoolsClientListByResourceGroupOptions{})
 	var all []*armdesktopvirtualization.HostPool
+	
 	for {
 		if !pager.More() {
 			break
@@ -260,14 +286,20 @@ func (avd *AzureVirtualDesktopManager) listHostPools(ctx context.Context, rg str
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, resp.HostPoolList.Value...)
+		
+		// Filter host pools by prefixFilter
+		for _, pool := range resp.HostPoolList.Value {
+			if prefixFilter == nil || strings.HasPrefix(*pool.Name, *prefixFilter) {
+				all = append(all, pool)
+			}
+		}
 	}
 
 	return all, nil
 }
 
-func (avd *AzureVirtualDesktopManager) listSessionHosts(ctx context.Context, rg string, hostPool string) ([]*armdesktopvirtualization.SessionHost, error) {
-	pager := avd.sessionHostsClient.NewListPager(rg, hostPool, nil)
+func (avd *AzureVirtualDesktopManager) listSessionHosts(ctx context.Context, rgName string, hostPoolName string) ([]*armdesktopvirtualization.SessionHost, error) {
+	pager := avd.sessionHostsClient.NewListPager(rgName, hostPoolName, nil)
 	var all []*armdesktopvirtualization.SessionHost
 	for {
 		if !pager.More() {
@@ -283,8 +315,8 @@ func (avd *AzureVirtualDesktopManager) listSessionHosts(ctx context.Context, rg 
 }
 
 // only used if there is a pool of available VMs to assign to users
-func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, rg string, hpname string) (*string, error) {
-	sessions, err := avd.listSessionHosts(ctx, rg, hpname)
+func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, rgName string, hpname string) (*string, error) {
+	sessions, err := avd.listSessionHosts(ctx, rgName, hpname)
 	if err != nil {
 		return nil, err
 	}
@@ -308,113 +340,193 @@ func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Conte
 // Prior to VM registration, this process generates a token for a given host pool.
 // This token will later be used in the registration process to join the VM to the host pool
 // The user is also assigned to the related desktop application group.
-func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, rgName string, hpName string) (token *string, err error) {
-	token, err = avd.RetrieveRegistrationToken(ctx, rgName, hpName)
+func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *models.VirtualMachine, rgName string) (hostPool *armdesktopvirtualization.HostPool, token *string, err error) {
+	log := logging.GetLogger(ctx)
+	
+	// Step 1: Check existing host pools
+	hpFilter := hostPoolNamePrefix
+	hostPools, err := avd.listHostPools(ctx, rgName, &hpFilter)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("failed to retrieve host pools: %w", err)
 	}
 
-	// TODO: For now, desktop application group (DAG) membership is handled by adding a user to the "AVDUsers" group, 
-	// 	which is manually assigned to the DAG.
-	// dag, err := avd.GetDesktopApplicationGroup(ctx, rgName, hpName)
-	// if err != nil {
-	// 	return nil, nil, err
-	// }
+	// TODO: check that host pool is valid, with necessary resources (WS, DAG). It may have previously failed creation
 
-	// err = avd.AddUserToApplicationGroup(ctx, rgName, *dag.ID, upn)
-	// if err != nil {
-	// 	return nil, nil, err
-	// }
+	// Check if the user can be assigned to any existing host pool
+	var targetHostPool *armdesktopvirtualization.HostPool
+	var hostPoolSuffixes []string
+	for _, pool := range hostPools {
+		canAssign, err := avd.CanAssignUserToHostPool(ctx, rgName, *pool.Name, vm.UserID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Error checking assignments in host pool")
+		}
+		if canAssign {
+			targetHostPool = pool
+			break
+		}
+		hostPoolSuffixes = append(hostPoolSuffixes, strings.TrimPrefix(*pool.Name, hostPoolNamePrefix))
+	}
 
-	return token, nil
+	// TODO: tag all resources
+
+	// Step 2: If no suitable host pool exists, create a new one
+	if targetHostPool == nil {
+
+		nameSuffix, err := GenerateNextName(hostPoolSuffixes, 2)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to generate new host pool name: %w", err)
+		}
+
+		log.InfoContext(ctx, "AVD: Creating new host pool, workspace, application group", "VM", vm.ID, "suffix", nameSuffix)
+
+		// Create host pool
+		targetHostPool, err = avd.CreateHostPool(ctx, rgName, nameSuffix)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create host pool: %w", err)
+		}
+
+		// Create application group linted to the new host pool
+		desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, nameSuffix)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create application group: %w", err)
+		}
+
+		// Create workspace linked to the desktop application group
+		workspace, err := avd.CreateWorkspace(ctx, rgName, nameSuffix, *desktopAppGroup.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create workspace: %w", err)
+		}
+		_ = workspace
+
+		// Assign AVD user group to the new desktop application group (DAG)
+		// FIXME: This is broken. Group is not being added as an assignment.
+		err = avd.AssignGroupToDesktopAppGroup(ctx, *desktopAppGroup.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to assign AVD User group to Desktop Application Group [%s]", *desktopAppGroup.Name)
+		}
+	}
+
+	// TODO: handle existing host pools with expired registration keys. need to call update host pool with new exp date
+
+	// Step 3: Retrieve registration token
+	token, err = avd.RetrieveRegistrationToken(ctx, rgName, *targetHostPool.Name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to retrieve registration token: %w", err)
+	}
+
+	return targetHostPool, token, nil
 }
 
 // After registering, the user must then be assigned to the new session host
-func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, rg, hp, vmID, upn string) error {
-	sessionHost, err := avd.FindSessionHostForVM(ctx, rg, hp, vmID)
+func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, rgName, hpName, upn string, vm *models.VirtualMachine) (*models.VirtualMachineConnection, error) {
+	sessionHost, err := avd.WaitForSessionHost(ctx, avdRgName, hpName, vm.ID, 10*time.Minute)
 	if err != nil {
-		return err
-	}
-	if sessionHost == nil {
-		return fmt.Errorf("Could not find a session host for VM [%s]", vmID)
+		return nil, errors.Wrap(err, "Waiting for session host to be ready")
 	}
 
 	// sessionHost.Name is in the format "hostpoolName/sessionHostName", so we need to split it
 	parts := strings.SplitN(*sessionHost.Name, "/", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("Could not split sessionHost.Name: %s", *sessionHost.Name)
+		return nil, fmt.Errorf("Could not split sessionHost.Name: %s", *sessionHost.Name)
 	}
 	sessionHostName := parts[1]
 	
-	err = avd.AssignSessionHost(ctx, rg, hp, sessionHostName, upn)
+	err = avd.AssignSessionHost(ctx, rgName, hpName, sessionHostName, upn)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
-}
-
-// GenerateConnectionURL generates the connection URL for the VM in a specified host pool
-func (avd *AzureVirtualDesktopManager) GenerateConnectionURL(ctx context.Context, hostPoolName string, sessionHostName string, vmID string) (*cloudymodels.VirtualMachineConnection, error) {
-	tenantID := avd.credentials.TenantID
-
-	// Validate required inputs
-	if tenantID == "" || hostPoolName == "" || sessionHostName == "" {
-		return nil, fmt.Errorf("tenantID, hostPoolName, and sessionHostName cannot be empty")
+	// find desktop application group from host pool
+	desktopApplicationGroup, err := avd.GetDesktopApplicationGroupFromHostpool(ctx, rgName, hpName)
+	if err != nil {
+		return nil, err
 	}
 
-	// Base URL for Azure Virtual Desktop web client
-	baseURL := "https://rdweb.wvd.microsoft.com/arm/webclient/index.html"
+	// determine workspace from desktop application group
+	workspacePathSegments := strings.Split(*desktopApplicationGroup.Properties.WorkspaceArmPath, "/")
+	workspaceName := workspacePathSegments[len(workspacePathSegments)-1]
 
-	// Build query parameters
-	queryParams := url.Values{}
-	queryParams.Set("tenantId", tenantID)
-	queryParams.Set("hostPoolName", hostPoolName)
-	queryParams.Set("sessionHostName", sessionHostName)
+	workspace, err := avd.GetWorkspaceByName(ctx, rgName, workspaceName)
+	if err != nil {
+		return nil, err
+	}
+	workspaceID := *workspace.Properties.ObjectID
 
-	// Combine base URL and query parameters
-	fullURL := fmt.Sprintf("%s?%s", baseURL, queryParams.Encode())
+	// find the resource id of the desktop application
+	desktop, err := avd.getSingleDesktop(ctx, rgName, *desktopApplicationGroup.Name)
+	if err != nil {
+		return nil, err
+	}
+	resourceID := *desktop.Properties.ObjectID
+
+	version := "0"
+	useMultiMon := false  // TODO: add support for multi monitor to endpoint
 	
-	connection := &cloudymodels.VirtualMachineConnection{
+	connection := &models.VirtualMachineConnection{
 		RemoteDesktopProvider: "AVD",
-		URL:                   fullURL,
-		VMID:                  vmID,
+		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, uriEnv, version, useMultiMon),
 	}
 
 	return connection, nil
 }
 
+// GenerateWindowsClientURI generates a URI for connecting to an AVD session with the Windows client.
+func generateWindowsClientURI(workspaceID, resourceID, upn, env, version string, useMultiMon bool) string {
+	// https://learn.microsoft.com/en-us/azure/virtual-desktop/uri-scheme
+	base := "ms-avd:connect"
+	
+	return fmt.Sprintf(
+		"%s?workspaceid=%s&resourceid=%s&username=%s&env=%s&version=%s&usemultimon=%t",
+		base,
+		workspaceID,
+		resourceID,
+		upn,
+		env,
+		version,
+		useMultiMon,
+	)
+}
+
 // Given a Host Pool, finds the Desktop Application Group linked to it
-func (avd *AzureVirtualDesktopManager) GetDesktopApplicationGroup(ctx context.Context, rg string, hp string) (*armdesktopvirtualization.ApplicationGroup, error) {
+func (avd *AzureVirtualDesktopManager) GetDesktopApplicationGroupFromHostpool(ctx context.Context, rgName string, hpName string) (*armdesktopvirtualization.ApplicationGroup, error) {
 	log := logging.GetLogger(ctx)
 	
-	pager := avd.appGroupsClient.NewListByResourceGroupPager(rg, nil)
+	pager := avd.appGroupsClient.NewListByResourceGroupPager(rgName, nil)
     for pager.More() {
         page, err := pager.NextPage(ctx)
         if err != nil {
             return nil, fmt.Errorf("failed to list application groups: %w", err)
         }
         for _, group := range page.Value {
-            if *group.Properties.HostPoolArmPath == hp && *group.Properties.ApplicationGroupType == armdesktopvirtualization.ApplicationGroupTypeDesktop {
-				log.InfoContext(ctx, "Found Desktop Application Group [%s], linked to Host Pool [%s]", group.Name, hp)
-				return group, nil
-            }
+			if group.Properties != nil && group.Properties.HostPoolArmPath != nil {
+				hostPoolPathSegments := strings.Split(*group.Properties.HostPoolArmPath, "/")
+				parsedHostPoolName := hostPoolPathSegments[len(hostPoolPathSegments)-1]
+
+				if parsedHostPoolName == hpName && *group.Properties.ApplicationGroupType == armdesktopvirtualization.ApplicationGroupTypeDesktop {
+					log.DebugContext(ctx, "Found Desktop Application Group linked to Host Pool", "Desktop App Group Name", *group.Name, "Host Pool Name", hpName)
+					return group, nil
+				}
+			}
         }
     }
 
-    return nil, fmt.Errorf("no desktop application group found for host pool %s", hp)
+    return nil, fmt.Errorf("no desktop application group found for host pool %s", hpName)
 }
 
 // Searches for a session host with a name that contains the VMs ID
-func (avd *AzureVirtualDesktopManager) FindSessionHostForVM(ctx context.Context, rg string, hostPoolName string, vmName string) (*armdesktopvirtualization.SessionHost, error) {
-	allSessionHosts, err := avd.listSessionHosts(ctx, rg, hostPoolName)
+func (avd *AzureVirtualDesktopManager) FindSessionHostByVMNameInHostPool(ctx context.Context, rgName string, hostPoolName string, vmID string) (*armdesktopvirtualization.SessionHost, error) {
+	log := logging.GetLogger(ctx)
+
+	log.DebugContext(ctx, "Searching for session host in host pool", "Host Pool Name", hostPoolName)
+	
+	allSessionHosts, err := avd.listSessionHosts(ctx, rgName, hostPoolName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list session hosts: %w", err)
 	}
 
 	for _, sessionHost := range allSessionHosts {
 		if sessionHost.Properties != nil && sessionHost.Properties.ResourceID != nil {
-			if strings.Contains(*sessionHost.Properties.ResourceID, vmName) {
+			if strings.Contains(*sessionHost.Properties.ResourceID, vmID) {
 				return sessionHost, nil
 			}
 		}
@@ -423,21 +535,343 @@ func (avd *AzureVirtualDesktopManager) FindSessionHostForVM(ctx context.Context,
 	return nil, nil
 }
 
-// func (avd *AzureVirtualDesktopManager) AddUserToApplicationGroup(ctx context.Context, rg string, appGroupID string, upn string) error {
-//     assignmentName := fmt.Sprintf("%s-assignment", upn)
+func (avd *AzureVirtualDesktopManager) GetWorkspaceByName(ctx context.Context, rgName string, workspaceName string) (*armdesktopvirtualization.Workspace, error) {
+	log := logging.GetLogger(ctx)
 
-//     parameters := armdesktopvirtualization.ApplicationGroupAssignment{
-//         Properties: &armdesktopvirtualization.ApplicationGroupAssignmentProperties{
-//             ApplicationGroupName: &appGroupID,
-//             ResourceType:         armdesktopvirtualization.ResourceTypeUser,
-//             ResourceID:           &upn,
-//         },
-//     }
+	// Create the pager to list workspaces
+	pager := avd.workspacesClient.NewListByResourceGroupPager(rgName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list workspaces: %w", err)
+		}
+		for _, workspace := range page.Value {
+			if workspace.Name != nil && *workspace.Name == workspaceName {
+				log.DebugContext(ctx, "Found object ID for Workspace", "Workspace name", *workspace.Name)
+				return workspace, nil
+			}
+		}
+	}
 
-//     _, err := avd.appGroupsClient.CreateOrUpdate(ctx, rg, appGroupID, assignmentName, parameters, nil)
-//     if err != nil {
-//         return fmt.Errorf("failed to add user %s to application group %s: %w", upn, appGroupID, err)
-//     }
+	return nil, fmt.Errorf("workspace with name %s not found in resource group %s", workspaceName, rgName)
+}
 
-//     return nil
-// }
+func (avd *AzureVirtualDesktopManager) GetDesktopApplicationObjectIDFromAppGroup(ctx context.Context, rgName string, appGroup *armdesktopvirtualization.ApplicationGroup) (string, error) {
+	log := logging.GetLogger(ctx)
+
+	if appGroup == nil || appGroup.Name == nil {
+		return "", fmt.Errorf("invalid application group provided")
+	}
+
+	appPager := avd.appsClient.NewListPager(rgName, *appGroup.Name, nil)
+	for appPager.More() {
+		page, err := appPager.NextPage(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to list applications for application group %s: %w", *appGroup.Name, err)
+		}
+		for _, app := range page.Value {
+			if app.Properties != nil && app.Properties.FriendlyName != nil {
+				log.InfoContext(ctx, "Found Desktop Application in App Group", "App Group Name", appGroup.Name)
+				return *app.ID, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no desktop application found in application group %s", *appGroup.Name)
+}
+
+func (avd *AzureVirtualDesktopManager) GetAllDesktopApplications(ctx context.Context, rgName string) ([]string, error) {
+	log := logging.GetLogger(ctx)
+
+	appGroupPager := avd.appGroupsClient.NewListByResourceGroupPager(rgName, nil)
+	var appIDs []string
+
+	for appGroupPager.More() {
+		page, err := appGroupPager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list application groups in resource group %s: %w", rgName, err)
+		}
+		for _, appGroup := range page.Value {
+			if appGroup.Name != nil {
+				log.InfoContext(ctx, "Found Application Group", "group_name", *appGroup.Name)
+
+				appPager := avd.appsClient.NewListPager(rgName, *appGroup.Name, nil)
+				for appPager.More() {
+					appPage, err := appPager.NextPage(ctx)
+					if err != nil {
+						return nil, fmt.Errorf("failed to list applications for application group %s: %w", *appGroup.Name, err)
+					}
+					for _, app := range appPage.Value {
+						if app.Properties != nil && app.Properties.FriendlyName != nil {
+							log.InfoContext(ctx, "Found Desktop Application [%s] with Object ID [%s]", *app.Properties.FriendlyName, *app.ID)
+							appIDs = append(appIDs, *app.ID)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(appIDs) == 0 {
+		return nil, fmt.Errorf("no desktop applications found in resource group %s", rgName)
+	}
+
+	return appIDs, nil
+}
+
+func (avd *AzureVirtualDesktopManager) listDesktops(ctx context.Context, rgName string, appGroupName string) ([]*armdesktopvirtualization.Desktop, error) {
+    pager := avd.desktopsClient.NewListPager(rgName, appGroupName, nil)
+    var allDesktops []*armdesktopvirtualization.Desktop
+
+    for {
+        if !pager.More() {
+            break
+        }
+
+        resp, err := pager.NextPage(ctx)
+        if err != nil {
+            return nil, err
+        }
+
+        allDesktops = append(allDesktops, resp.Value...)
+    }
+
+    return allDesktops, nil
+}
+
+func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, rgName string, appGroupName string) (*armdesktopvirtualization.Desktop, error) {
+    desktops, err := avd.listDesktops(ctx, rgName, appGroupName)
+    if err != nil {
+        return nil, fmt.Errorf("failed to list desktops: %w", err)
+    }
+
+    if len(desktops) == 0 {
+        return nil, fmt.Errorf("no desktops found for appGroupName: %s", appGroupName)
+    }
+    if len(desktops) > 1 {
+        return nil, fmt.Errorf("multiple desktops found for appGroupName: %s", appGroupName)
+    }
+
+    return desktops[0], nil
+}
+
+// WaitForSessionHost waits for a VM to appear as a session host in a specified host pool and ensures its status is 'Available'.
+func (avd *AzureVirtualDesktopManager) WaitForSessionHost(ctx context.Context, rgName, hpName, vmID string, timeout time.Duration) (*armdesktopvirtualization.SessionHost, error) {
+	// Set up a timer for the timeout
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(10 * time.Second) // TODO: switch to exponential backoff
+	defer ticker.Stop()
+
+	for {
+		// TODO: switch to multiple waits - 1 for session host existing, another for when it's ready.
+
+		// Check if the VM is registered as a session host
+		sessionHost, err := avd.FindSessionHostByVMNameInHostPool(ctx, rgName, hpName, vmID)
+		if err != nil {
+			return nil, fmt.Errorf("error finding session host: %w", err)
+		}
+
+		// If the session host is found, check its status
+		if sessionHost != nil {
+			if sessionHost.Properties != nil && sessionHost.Properties.Status != nil {
+				if *sessionHost.Properties.Status == armdesktopvirtualization.StatusAvailable{
+					// Session host is found and its status is 'Available'
+					return sessionHost, nil
+				}
+			}
+		}
+
+		// Check if we've exceeded the timeout
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for session host to become available")
+		}
+
+		// Wait for the next polling interval
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			// Continue polling
+		}
+	}
+}
+
+
+// CanAssignUserToHostPool checks if the specified user is already assigned to a session host in the given host pool.
+func (avd *AzureVirtualDesktopManager) CanAssignUserToHostPool(ctx context.Context, rgName, hostPoolName, userName string) (bool, error) {
+	pager := avd.sessionHostsClient.NewListPager(rgName, hostPoolName, nil)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return false, fmt.Errorf("failed to list session hosts: %w", err)
+		}
+
+		for _, sessionHost := range page.Value {
+			if sessionHost.Properties != nil && sessionHost.Properties.AssignedUser != nil {
+				if strings.EqualFold(*sessionHost.Properties.AssignedUser, userName) {
+					return false, nil // User is already assigned to this session host
+				}
+			}
+		}
+	}
+
+	return true, nil // User is not assigned to any session host in the host pool
+}
+
+func GenerateNextName(suffixes []string, maxSequences int) (string, error) {
+	if len(suffixes) == 0 {
+		newName := phoneticAlphabet[0]
+		return newName, nil
+	}
+
+	var highestSuffix string
+	for _, suffix := range suffixes {
+		if suffix != "" {
+			suffix = strings.ToUpper(suffix)
+			if suffix > highestSuffix {
+				highestSuffix = suffix
+			}
+		}
+	}
+
+	nextSuffix, err := getNextPhoneticWord(highestSuffix, maxSequences)
+	if err != nil {
+		return "", err
+	}
+
+	return nextSuffix, nil
+}
+
+var phoneticAlphabet = []string{
+	"ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL",
+	"INDIA", "JULIET", "KILO", "LIMA", "MIKE", "NOVEMBER", "OSCAR", "PAPA", "QUEBEC",
+	"ROMEO", "SIERRA", "TANGO", "UNIFORM", "VICTOR", "WHISKEY", "XRAY", "YANKEE", "ZULU",
+}
+
+// generateNextWord generates the next word in the phonetic sequence given the current word and max sequences.
+func getNextPhoneticWord(current string, maxSequences int) (string, error) {
+	parts := strings.Split(current, "-")
+	if len(parts) > maxSequences {
+		return "", fmt.Errorf("Current word exceeds max sequences param")
+	}
+
+	lastWord := parts[len(parts)-1]
+	index := indexOf(lastWord, phoneticAlphabet)
+	if index == -1 {
+		return "", fmt.Errorf("Invalid current word")
+	}
+
+	if index < len(phoneticAlphabet)-1 {
+		parts[len(parts)-1] = phoneticAlphabet[index+1]
+	} else {
+		for i := len(parts) - 1; i >= 0; i-- {
+			if parts[i] != phoneticAlphabet[len(phoneticAlphabet)-1] {
+				parts[i] = phoneticAlphabet[indexOf(parts[i], phoneticAlphabet)+1]
+				break
+			} else {
+				parts[i] = phoneticAlphabet[0]
+				if i == 0 {
+					if len(parts) < maxSequences {
+						parts = append([]string{phoneticAlphabet[0]}, parts...)
+					} else {
+						return "", fmt.Errorf("Max sequences exceeded")
+					}
+				}
+			}
+		}
+	}
+
+	output := strings.Join(parts, "-") 
+	return output, nil
+}
+
+// indexOf returns the index of a word in the phonetic alphabet.
+func indexOf(word string, list []string) int {
+	for i, w := range list {
+		if w == word {
+			return i
+		}
+	}
+	return -1
+}
+
+// CreateHostPool creates a new host pool.
+func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgName, suffix string) (*armdesktopvirtualization.HostPool, error) {
+	hostPoolName := hostPoolNamePrefix + suffix
+
+	// Expiration time can be 1 hour to 27 days. We'll use 25 days.
+	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
+
+	newHostPool := armdesktopvirtualization.HostPool{
+		Location: to.Ptr(string(avdRegion)),
+		Properties: &armdesktopvirtualization.HostPoolProperties{
+			FriendlyName: to.Ptr("Host Pool " + suffix),
+			Description:  to.Ptr("Generated via cloudy-azure"),
+			HostPoolType: to.Ptr(armdesktopvirtualization.HostPoolTypePersonal),
+			RegistrationInfo: &armdesktopvirtualization.RegistrationInfo{
+				ExpirationTime: &expirationTime,
+				RegistrationTokenOperation: to.Ptr(armdesktopvirtualization.RegistrationTokenOperationUpdate),
+			},
+		},
+	}
+
+	resp, err := avd.hostPoolsClient.CreateOrUpdate(ctx, rgName, hostPoolName, newHostPool, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create host pool: %w", err)
+	}
+
+	return &resp.HostPool, nil
+}
+
+// CreateApplicationGroup creates an application group for the given host pool.
+func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string) (*armdesktopvirtualization.ApplicationGroup, error) {
+	appGroupName := appGroupNamePrefix + suffix
+	hostPoolName := hostPoolNamePrefix + suffix
+
+	hostPoolArmPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/hostPools/%s", 
+		avd.credentials.SubscriptionID, rgName, hostPoolName)
+
+	appGroup := armdesktopvirtualization.ApplicationGroup{
+		Location: to.Ptr(string(avdRegion)),
+		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
+			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
+			FriendlyName: 		  to.Ptr("App Group " + suffix),
+			Description:  		  to.Ptr("Generated via cloudy-azure"),
+			HostPoolArmPath: 	  to.Ptr(hostPoolArmPath),
+		},
+	}
+
+	resp, err := avd.appGroupsClient.CreateOrUpdate(ctx, rgName, appGroupName, appGroup, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create application group: %w", err)
+	}
+	return &resp.ApplicationGroup, nil
+}
+
+// CreateWorkspace creates a new workspace for the given host pool.
+func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string) (*armdesktopvirtualization.Workspace, error) {
+	workspaceName := workspaceNamePrefix + suffix
+
+	appGroupPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s", 
+	avd.credentials.SubscriptionID, rgName, appGroupName)
+
+	appGroups := []*string{
+		&appGroupPath,
+	}
+
+	newWorkspace := armdesktopvirtualization.Workspace{
+		Location: to.Ptr(string(avdRegion)),
+		Properties: &armdesktopvirtualization.WorkspaceProperties{
+			ApplicationGroupReferences: appGroups,
+			FriendlyName: to.Ptr("Workspace " + suffix),
+			Description:  to.Ptr("Generated via cloudy-azure"),
+		},
+	}
+
+	resp, err := avd.workspacesClient.CreateOrUpdate(ctx, rgName, workspaceName, newWorkspace, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace: %w", err)
+	}
+	return &resp.Workspace, nil
+}

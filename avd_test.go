@@ -3,10 +3,12 @@ package cloudyazure
 // Import key modules.
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
@@ -132,7 +134,7 @@ func _TestRetrieveRegistrationToken(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	hostpools, err = avd.listHostPools(ctx, testConfig.ResourceGroupName)
+	hostpools, err = avd.listHostPools(ctx, testConfig.ResourceGroupName, nil)
 	assert.Nil(t, err)
 	assert.NotZero(t, len(hostpools))
 
@@ -142,24 +144,24 @@ func _TestRetrieveRegistrationToken(t *testing.T) {
 		assert.Nil(t, err)
 	}
 
-	firstHostpoolName, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
+	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
 	assert.Nil(t, err)
-	assert.NotEmpty(t, firstHostpoolName)
+	assert.NotEmpty(t, firstHostpool.Name)
 
 	if err == nil {
-		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpoolName)
+		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, regToken)
 	}
 
 	if err == nil {
-		sessionHost, err = avd.getAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpoolName)
+		sessionHost, err = avd.getAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, sessionHost)
 	}
 
 	if err == nil {
-		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpoolName, *sessionHost, testConfig.Upn)
+		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name, *sessionHost, testConfig.Upn)
 		assert.Nil(t, err)
 	}
 }
@@ -205,4 +207,159 @@ func _TestAssignUsertoRoles(t *testing.T) {
 
 	err = avd.AssignRoleToUser(ctx, testConfig.ResourceGroupName, testConfig.VirtualMachineUserLoginRoleId, testConfig.UserObjectId)
 	assert.Nil(t, err)
+}
+
+func TestGetNextPhoneticName(t *testing.T) {
+	tests := []struct {
+		name         string
+		current      string
+		maxSequences int
+		expected     string
+		expectError  bool
+	}{
+		{
+			name:         "Initial value (empty string)",
+			current:      "",
+			maxSequences: 3,
+			expected:     "ALPHA",
+			expectError:  true,
+		},
+		{
+			name:         "Next phonetic after ALPHA",
+			current:      "ALPHA",
+			maxSequences: 3,
+			expected:     "BRAVO",
+			expectError:  false,
+		},
+		{
+			name:         "Next phonetic after ZULU with room for more sequences",
+			current:      "ZULU",
+			maxSequences: 3,
+			expected:     "ALPHA-ALPHA",
+			expectError:  false,
+		},
+		{
+			name:         "Next phonetic after ALPHA-ALPHA",
+			current:      "ALPHA-ALPHA",
+			maxSequences: 3,
+			expected:     "ALPHA-BRAVO",
+			expectError:  false,
+		},
+		{
+			name:         "Exceeded maxSequences",
+			current:      "ALPHA-ALPHA-ALPHA",
+			maxSequences: 2,
+			expected:     "",
+			expectError:  true,
+		},
+		{
+			name:         "Exceeded maxSequences",
+			current:      "ZULU-ZULU",
+			maxSequences: 3,
+			expected:     "ALPHA-ALPHA-ALPHA",
+			expectError:  false,
+		},
+		{
+			name:         "Exceeded maxSequences",
+			current:      "ZULU-ZULU",
+			maxSequences: 2,
+			expected:     "",
+			expectError:  true,
+		},
+		{
+			name:         "Invalid input starts over",
+			current:      "INVALID",
+			maxSequences: 3,
+			expected:     "",
+			expectError:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			startTime := time.Now()
+			result, err := getNextPhoneticWord(tc.current, tc.maxSequences)
+			elapsedTime := time.Since(startTime)
+
+			fmt.Printf("Test '%s' took %s\n", tc.name, elapsedTime)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected an error but got none")
+			} else {
+				assert.NoError(t, err, "Unexpected error: %v", err)
+				assert.Equal(t, tc.expected, result, "Unexpected result for input: %s", tc.current)
+			}
+		})
+	}
+}
+
+func TestGenerateNextName(t *testing.T) {
+	tests := []struct {
+		name         string
+		existing     []string
+		baseName     string
+		maxSequences int
+		expected     string
+		expectError  bool
+	}{
+		{
+			name:         "Initial name generation",
+			existing:     []string{},
+			maxSequences: 3,
+			expected:     "ALPHA",
+			expectError:  false,
+		},
+		{
+			name:         "Next name generation after ALPHA",
+			existing:     []string{"ALPHA"},
+			maxSequences: 3,
+			expected:     "BRAVO",
+			expectError:  false,
+		},
+		{
+			name:         "Next name generation with sequences",
+			existing:     []string{"ZULU"},
+			maxSequences: 3,
+			expected:     "ALPHA-ALPHA",
+			expectError:  false,
+		},
+		{
+			name:         "Exceeds max sequences",
+			existing:     []string{"ALPHA-ALPHA", "ALPHA-BRAVO"},
+			maxSequences: 1,
+			expected:     "",
+			expectError:  true,
+		},
+		{
+			name:         "Invalid names",
+			existing:     []string{"INVALID"},
+			maxSequences: 3,
+			expected:     "",
+			expectError:  true,
+		},
+		{
+			name:         "Multiple existing names",
+			existing:     []string{"ALPHA", "BRAVO", "CHARLIE"},
+			maxSequences: 3,
+			expected:     "DELTA",
+			expectError:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			startTime := time.Now()
+			result, err := GenerateNextName(tc.existing, tc.maxSequences)
+			elapsedTime := time.Since(startTime)
+
+			fmt.Printf("Test '%s' took %s\n", tc.name, elapsedTime)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected an error but got none")
+			} else {
+				assert.NoError(t, err, "Unexpected error: %v", err)
+				assert.Equal(t, tc.expected, result, "Unexpected result")
+			}
+		})
+	}
 }
