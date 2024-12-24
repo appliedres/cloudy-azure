@@ -77,7 +77,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	}
 
 	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.credentials.ResourceGroup, nicName, armnetwork.Interface{
-		Location: &vmm.credentials.Location,
+		Location: &vmm.credentials.Region,
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			EnableAcceleratedNetworking: vm.Template.AcceleratedNetworking,
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{

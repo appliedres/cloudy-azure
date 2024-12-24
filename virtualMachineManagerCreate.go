@@ -20,8 +20,8 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 
 	if vm.Location == nil {
 		vm.Location = &models.VirtualMachineLocation{
-			Cloud:  "azure",
-			Region: vmm.credentials.Location,
+			Cloud:  CloudAzureUSGovernment,
+			Region: vmm.credentials.Region,
 		}
 	}
 
@@ -29,13 +29,13 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 
 	nics, err := vmm.GetNics(ctx, vm.ID)
 	if err != nil {
-		return nil, errors.Wrap(err, "VM Create")
+		return nil, errors.Wrap(err, "VM Create, Get NICs")
 	} else if len(nics) != 0 {
 		vm.Nics = nics
 	} else {
 		newNic, err := vmm.CreateNic(ctx, vm)
 		if err != nil {
-			return nil, errors.Wrap(err, "VM Create")
+			return nil, errors.Wrap(err, "VM Create, Create NIC")
 		}
 		vm.Nics = append(vm.Nics, newNic)
 	}

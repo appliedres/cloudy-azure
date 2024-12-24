@@ -46,7 +46,7 @@ func NewAzureFileShare(ctx context.Context, acct *AzureStorageAccount) (*BlobFil
 	client, err := armstorage.NewFileSharesClient(acct.SubscriptionID, cred,
 		&arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
-				Cloud: PolicyFromRegionString(acct.Region),
+				Cloud: PolicyFromCloudString(acct.Cloud),
 			},
 		})
 

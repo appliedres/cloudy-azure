@@ -96,7 +96,7 @@ func (vmm *AzureVirtualMachineManager) GetUsage(ctx context.Context) (map[string
 
 	usageList := map[string]models.VirtualMachineFamily{}
 
-	pager := vmm.usageClient.NewListPager(vmm.credentials.Location, &armcompute.UsageClientListOptions{})
+	pager := vmm.usageClient.NewListPager(vmm.credentials.Region, &armcompute.UsageClientListOptions{})
 
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
