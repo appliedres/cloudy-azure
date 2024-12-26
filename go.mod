@@ -17,7 +17,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork v1.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.6.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.5.0
-	github.com/appliedres/cloudy v0.0.51
+	github.com/appliedres/cloudy v0.0.54
 	github.com/go-openapi/strfmt v0.23.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
@@ -69,7 +69,7 @@ require (
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/matoous/go-nanoid/v2 v2.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect

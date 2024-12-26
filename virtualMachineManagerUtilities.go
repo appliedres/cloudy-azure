@@ -21,11 +21,13 @@ import (
 
 const (
 	vmNameTagKey = "Name"
+	vmCreatorTagKey = "CreatorID"
+	vmUserTagKey = "UserID"
 )
 
 func toResponseError(err error) *azcore.ResponseError {
 	var respErr *azcore.ResponseError
-	if !errors.As(err, &respErr) {
+	if errors.As(err, &respErr) {
 		return respErr
 	}
 
@@ -76,50 +78,57 @@ func pollWrapper[T any](ctx context.Context, poller *runtime.Poller[T], pollerTy
 	}
 }
 
-func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) armcompute.VirtualMachine {
+func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) armcompute.VirtualMachine {
 	log := logging.GetLogger(ctx)
 
-	virtualMachineParameters := armcompute.VirtualMachine{
-		// vm Id is saved as ID and Name
-		// vm Name is saved in a Tag
-		ID:       &vm.ID,
-		Name:     &vm.ID,
-		Location: &vm.Location.Region,
+	azVM := armcompute.VirtualMachine{
+		// cloudyVM Id is saved as ID and Name
+		// cloudyVM Name is saved in a Tag
+		ID:       &cloudyVM.ID,
+		Name:     &cloudyVM.ID,
+		Location: &cloudyVM.Location.Region,
 		Identity: &armcompute.VirtualMachineIdentity{
 			Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
 		},
 	}
 
-	if vm.Tags != nil {
-		virtualMachineParameters.Tags = vm.Tags
+	if cloudyVM.Tags != nil {
+		azVM.Tags = cloudyVM.Tags
 	} else {
-		virtualMachineParameters.Tags = make(map[string]*string)
-	}
-	virtualMachineParameters.Tags[vmNameTagKey] = &vm.Name
-
-	if vm.Template == nil {
-		vm.Template = &models.VirtualMachineTemplate{}
+		azVM.Tags = make(map[string]*string)
 	}
 
-	if vm.Template.Tags != nil {
-		for k, v := range vm.Template.Tags {
-			_, ok := virtualMachineParameters.Tags[k]
+	azVM.Tags[vmNameTagKey] = &cloudyVM.Name
+
+	// Add CreatorID and UserID as tags
+	if cloudyVM.CreatorID != "" {
+		azVM.Tags[vmCreatorTagKey] = &cloudyVM.CreatorID
+	}
+	if cloudyVM.UserID != "" {
+		azVM.Tags[vmUserTagKey] = &cloudyVM.UserID
+	}
+
+	if cloudyVM.Template == nil {
+		cloudyVM.Template = &models.VirtualMachineTemplate{}
+	}
+	if cloudyVM.Template.Tags != nil {
+		for k, v := range cloudyVM.Template.Tags {
+			_, ok := azVM.Tags[k]
 
 			// Will not overwrite tags already in the VM object
 			if !ok {
-				virtualMachineParameters.Tags[k] = v
+				azVM.Tags[k] = v
 			}
 		}
 	}
 
-	virtualMachineParameters.Properties = &armcompute.VirtualMachineProperties{
-
+	azVM.Properties = &armcompute.VirtualMachineProperties{
 		HardwareProfile: &armcompute.HardwareProfile{
-			VMSize: (*armcompute.VirtualMachineSizeTypes)(&vm.Template.Size.ID),
+			VMSize: (*armcompute.VirtualMachineSizeTypes)(&cloudyVM.Template.Size.ID),
 		},
 		StorageProfile: &armcompute.StorageProfile{
 			ImageReference: &armcompute.ImageReference{
-				ID: &vm.OsBaseImageID,
+				ID: &cloudyVM.OsBaseImageID,
 			},
 			OSDisk: &armcompute.OSDisk{
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
@@ -130,101 +139,84 @@ func FromCloudyVirtualMachine(ctx context.Context, vm *models.VirtualMachine) ar
 		},
 	}
 
-	virtualMachineParameters.Properties.OSProfile = &armcompute.OSProfile{
-		ComputerName:  to.Ptr(vm.ID),
-		AdminUsername: &vm.Template.LocalAdministratorID,
+	azVM.Properties.OSProfile = &armcompute.OSProfile{
+		ComputerName:  to.Ptr(cloudyVM.ID),
+		AdminUsername: &cloudyVM.Template.LocalAdministratorID,
 		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),
 	}
-	log.InfoContext(ctx, fmt.Sprintf("%+v", virtualMachineParameters.Properties.OSProfile))
+	log.InfoContext(ctx, fmt.Sprintf("%+v", azVM.Properties.OSProfile))
 
-	switch vm.Template.OperatingSystem {
+	// OS-specific items
+	switch cloudyVM.Template.OperatingSystem {
 	case "windows":
-		virtualMachineParameters.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
-		virtualMachineParameters.Properties.OSProfile.WindowsConfiguration = &armcompute.WindowsConfiguration{}
+		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
+		azVM.Properties.OSProfile.WindowsConfiguration = &armcompute.WindowsConfiguration{}
 	case "linux":
-		virtualMachineParameters.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
-		virtualMachineParameters.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
+		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
+		azVM.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: to.Ptr(true),
 			ProvisionVMAgent:              to.Ptr(true),
 		}
-		virtualMachineParameters.Properties.OSProfile.AllowExtensionOperations = to.Ptr(true)
-
+		azVM.Properties.OSProfile.AllowExtensionOperations = to.Ptr(true)
 	}
 
+	// NICs
 	nics := []*armcompute.NetworkInterfaceReference{}
-
-	for _, cloudyNic := range vm.Nics {
+	for _, cloudyNic := range cloudyVM.Nics {
 		nic := &armcompute.NetworkInterfaceReference{
 			ID: &cloudyNic.ID,
 		}
-
 		nics = append(nics, nic)
 	}
-
-	virtualMachineParameters.Properties.NetworkProfile = &armcompute.NetworkProfile{
+	azVM.Properties.NetworkProfile = &armcompute.NetworkProfile{
 		NetworkInterfaces: nics,
 	}
 
-	return virtualMachineParameters
+	return azVM
 }
 
-func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachine {
-
+func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachine {
 	cloudyVm := models.VirtualMachine{
-		ID:   *vm.ID,
-		Name: *vm.Name,
+		ID:   *azVM.Name,  // Azure VM Name is cloudy ID, in UVM-<alphanumeric> format
+		Name: *azVM.Name,  // this will later get overwritten with azure VM tag stored in ['Name']
 		Location: &models.VirtualMachineLocation{
-			Region: *vm.Location,
+			Region: *azVM.Location,
 		},
 		Template: &models.VirtualMachineTemplate{},
 		Tags:     map[string]*string{},
 	}
 
-	if vm.Properties != nil {
-		cloudyVm.State = *vm.Properties.ProvisioningState
+	if azVM.Properties != nil {
+		cloudyVm.CloudState = mapProvisioningAndPowerState(ctx, azVM)
 
-		if vm.Properties.InstanceView != nil {
-			for _, status := range vm.Properties.InstanceView.Statuses {
-				if strings.Contains(*status.Code, "PowerState") {
-					statusParts := strings.Split(*status.Code, "/")
-					cloudyVm.Status = statusParts[1]
-				}
-			}
-		}
-
-		if vm.Properties.HardwareProfile != nil {
-			if vm.Properties.HardwareProfile.VMSize != nil {
-				cloudyVm.Template.Size = &models.VirtualMachineSize{
-					Name: string(*vm.Properties.HardwareProfile.VMSize),
-				}
-			}
-		}
-
-		if vm.Properties.NetworkProfile != nil {
+		if azVM.Properties.NetworkProfile != nil {
 			nics := []*models.VirtualMachineNic{}
-			for _, nic := range vm.Properties.NetworkProfile.NetworkInterfaces {
+			for _, nic := range azVM.Properties.NetworkProfile.NetworkInterfaces {
 				nics = append(nics, &models.VirtualMachineNic{ID: *nic.ID})
 			}
 			cloudyVm.Nics = nics
 		}
 
-		if vm.Properties.StorageProfile != nil {
-			if vm.Properties.StorageProfile.OSDisk != nil {
-				cloudyVm.Template.OperatingSystem = string(*vm.Properties.StorageProfile.OSDisk.OSType)
+		if azVM.Properties.StorageProfile != nil {
+			if azVM.Properties.StorageProfile.OSDisk != nil {
+				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType)
 
-				cloudyVm.OsDisk = &models.VirtualMachineDisk{
-					ID:     *vm.Properties.StorageProfile.OSDisk.ManagedDisk.ID,
-					OsDisk: true,
-				}
+				if azVM.Properties.StorageProfile.OSDisk.ManagedDisk != nil &&
+					azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID != nil {
+					cloudyVm.OsDisk = &models.VirtualMachineDisk{
+						ID:     *azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID,
+						OsDisk: true,
+					}
 
-				if vm.Properties.StorageProfile.OSDisk.DiskSizeGB != nil {
-					cloudyVm.OsDisk.Size = int64(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB)
+					if azVM.Properties.StorageProfile.OSDisk.DiskSizeGB != nil {
+						cloudyVm.OsDisk.Size = int64(*azVM.Properties.StorageProfile.OSDisk.DiskSizeGB)
+					}
 				}
 			}
 
-			if vm.Properties.StorageProfile.DataDisks != nil {
+			if azVM.Properties.StorageProfile.DataDisks != nil {
 				disks := []*models.VirtualMachineDisk{}
-				for _, disk := range vm.Properties.StorageProfile.DataDisks {
+				for _, disk := range azVM.Properties.StorageProfile.DataDisks {
 					disks = append(disks, &models.VirtualMachineDisk{
 						ID:     *disk.ManagedDisk.ID,
 						OsDisk: false,
@@ -236,10 +228,14 @@ func ToCloudyVirtualMachine(vm *armcompute.VirtualMachine) *models.VirtualMachin
 		}
 	}
 
-	if vm.Tags != nil {
-		for k, v := range vm.Tags {
+	if azVM.Tags != nil {
+		for k, v := range azVM.Tags {
 			if strings.EqualFold(k, vmNameTagKey) {
 				cloudyVm.Name = *v
+			} else if strings.EqualFold(k, vmCreatorTagKey) {
+				cloudyVm.CreatorID = *v
+			} else if strings.EqualFold(k, vmUserTagKey) {
+				cloudyVm.UserID = *v
 			} else {
 				cloudyVm.Tags[k] = v
 			}
@@ -383,5 +379,83 @@ func ToCloudyVirtualMachineLocation(location *string) *models.VirtualMachineLoca
 	return &models.VirtualMachineLocation{
 		Cloud:  "azure",
 		Region: *location,
+	}
+}
+
+func LongIdToShortId(longId string) string {
+	parts := strings.Split(longId, "/")
+	return parts[len(parts)-1]
+}
+
+// Finds and converts Azure's ProvisioningState and PowerState into a cloudy CloudState
+func mapProvisioningAndPowerState(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachineCloudState {
+	log := logging.GetLogger(ctx)
+
+	provState := strings.ToLower(*azVM.Properties.ProvisioningState)
+	var powerState string
+
+	if azVM.Properties.InstanceView == nil {
+		return nil // no InstanceView, we likely did not query with IncludeState
+	}
+
+	for _, status := range azVM.Properties.InstanceView.Statuses {
+		if strings.Contains(*status.Code, "PowerState") {
+			statusParts := strings.Split(*status.Code, "/")
+			powerState = strings.ToLower(statusParts[1])
+			break
+		}
+	}
+
+	cloudState := mapCloudState(provState, powerState)
+
+	if cloudState == models.VirtualMachineCloudStateUnknown {
+		log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", models.VirtualMachineCloudStateUnknown, azVM.ID))
+	}
+
+	log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
+		*azVM.Name, provState, powerState, cloudState))
+
+	return &cloudState
+}
+
+// Maps to a single cloudy CloudyState from Azure's combination of provisioning and power states
+func mapCloudState(provState, powerState string) models.VirtualMachineCloudState {
+	switch provState {
+	case string(models.VirtualMachineCloudStateCreating):
+		return models.VirtualMachineCloudStateCreating
+	case string(models.VirtualMachineCloudStateDeleting):
+		return models.VirtualMachineCloudStateDeleting
+	case "succeeded":
+		switch powerState {
+		case string(models.VirtualMachineCloudStateRunning):
+			return models.VirtualMachineCloudStateRunning
+		case string(models.VirtualMachineCloudStateStopped):
+			return models.VirtualMachineCloudStateStopped
+		case "deallocated": 
+			return models.VirtualMachineCloudStateDeleted  // TODO: Should VM ever be left in deallocated state?
+		default:
+			return models.VirtualMachineCloudStateUnknown
+		}
+	case "updating":
+		switch powerState {
+		case string(models.VirtualMachineCloudStateStarting):
+			return models.VirtualMachineCloudStateStarting
+		case "deallocating":
+			return models.VirtualMachineCloudStateDeleting
+		case string(models.VirtualMachineCloudStateStopping):
+			return models.VirtualMachineCloudStateStopping
+		case string(models.VirtualMachineCloudStateRestarting):
+			return models.VirtualMachineCloudStateRestarting
+		case string(models.VirtualMachineCloudStateRunning):  // 'updating' a 'running' VM is 'stopping'
+			return models.VirtualMachineCloudStateStopping
+		case string(models.VirtualMachineCloudStateStopped):  // 'updating' a 'stopped' VM is 'starting'
+			return models.VirtualMachineCloudStateStarting
+		default:
+			return models.VirtualMachineCloudStateUnknown
+		}
+	case string(models.VirtualMachineCloudStateFailed):
+		return models.VirtualMachineCloudStateFailed
+	default:
+		return models.VirtualMachineCloudStateUnknown
 	}
 }
