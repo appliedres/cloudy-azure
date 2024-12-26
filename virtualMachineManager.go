@@ -2,10 +2,12 @@ package cloudyazure
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/appliedres/cloudy/logging"
@@ -175,6 +177,41 @@ func (vmm *AzureVirtualMachineManager) Update(ctx context.Context, vm *models.Vi
 }
 
 func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachine armcompute.VirtualMachine) error {
+
+	return nil
+}
+
+func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, script string) error {
+	// Define RunCommandInput
+	runCommandInput := armcompute.RunCommandInput{
+		CommandID: to.Ptr("RunPowerShellScript"),
+		Script: []*string{
+			to.Ptr(script),
+		},
+	}
+
+	// Execute the script
+	response, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to execute remote powershell script")
+	}
+
+	// Poll until the command completes
+	result, err := response.PollUntilDone(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to retrieve RunCommand result")
+	}
+
+	// Output the command's result
+	if len(result.Value) > 0 {
+		for _, output := range result.Value {
+			if output.Message != nil {
+				fmt.Printf("Command Output: %s\n", *output.Message)
+			}
+		}
+	} else {
+		fmt.Println("No output returned from the command.")
+	}
 
 	return nil
 }

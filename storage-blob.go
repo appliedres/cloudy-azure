@@ -63,16 +63,16 @@ func storageServiceUrl(accountName string, serviceUrl string, urlslug string) st
 	return rtnUrl
 }
 
-func storageSlug(regionName string) string {
-	regionNameFixed := fixRegionName(regionName)
+func storageSlug(cloudName string) string {
+	cloudNameFixed := fixCloudName(cloudName)
 
-	switch regionNameFixed {
-	// Default to the government region
+	switch cloudNameFixed {
+	// Default to the government cloud
 	case "":
 		return "core.usgovcloudapi.net"
-	case RegionUSGovernment:
+	case CloudUSGovernment:
 		return "core.usgovcloudapi.net"
-	case RegionPublic:
+	case CloudPublic:
 		return "core.windows.net"
 	default:
 		return ""
@@ -88,8 +88,8 @@ func acctStorageUrl(acct *AzureStorageAccount) string {
 	} else {
 		urlSlug := acct.UrlSlug
 		if urlSlug == "" {
-			if acct.Region != "" {
-				urlSlug = fmt.Sprintf("blob.%v", storageSlug(acct.Region))
+			if acct.Cloud != "" {
+				urlSlug = fmt.Sprintf("blob.%v", storageSlug(acct.Cloud))
 			} else {
 				urlSlug = "blob.core.usgovcloudapi.net"
 			}

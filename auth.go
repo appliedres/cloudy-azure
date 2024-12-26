@@ -15,13 +15,13 @@ const DefaultRegion = "usgovvirginia"
 
 type AzureCredentials struct {
 	Type           string // Can be any type of CredType*
-	Region         string
+	Region         string // e.g. "usgovvirginia"
 	TenantID       string
 	ClientID       string
 	ClientSecret   string
 	ResourceGroup  string
 	SubscriptionID string
-	Location       string
+	Cloud          string // e.g. azureusgovernment
 }
 
 const (
@@ -37,43 +37,43 @@ const (
 )
 
 const (
-	RegionPublic            = "public"
-	RegionUSGovernment      = "usgovernment"
-	RegionAzureUSGovernment = "azureusgoverment"
+	CloudPublic            = "public"
+	CloudUSGovernment      = "usgovernment"
+	CloudAzureUSGovernment = "azureusgovernment"
 )
 
-func fixRegionName(regionName string) string {
-	regionNameFixed := strings.ToLower(regionName)
-	regionNameFixed = strings.ReplaceAll(regionNameFixed, "-", "")
-	regionNameFixed = strings.ReplaceAll(regionNameFixed, "_", "")
-	return regionNameFixed
+func fixCloudName(cloudName string) string {
+	cloudNameFixed := strings.ToLower(cloudName)
+	cloudNameFixed = strings.ReplaceAll(cloudNameFixed, "-", "")
+	cloudNameFixed = strings.ReplaceAll(cloudNameFixed, "_", "")
+	return cloudNameFixed
 }
 
-func PolicyFromRegionString(regionName string) cloud.Configuration {
-	regionNameFixed := fixRegionName(regionName)
+func PolicyFromCloudString(cloudName string) cloud.Configuration {
+	cloudNameFixed := fixCloudName(cloudName)
 
-	switch regionNameFixed {
-	// Default to the government region
+	switch cloudNameFixed {
+	// Default to the government cloud
 	case "":
 		return cloud.AzureGovernment
-	case RegionUSGovernment:
+	case CloudUSGovernment:
 		return cloud.AzureGovernment
-	case RegionAzureUSGovernment:
+	case CloudAzureUSGovernment:
 		return cloud.AzureGovernment
-	case RegionPublic:
+	case CloudPublic:
 		return cloud.AzurePublic
 	default:
 		// Not sure WHAT to do with a custom.. Just assume it is the authority?
 		// Needs to match "https://login.microsoftonline.com/"
-		customRegion := regionName
-		if !strings.HasPrefix(customRegion, "https://") {
-			customRegion = fmt.Sprintf("https://%v", customRegion)
+		customCloud := cloudName
+		if !strings.HasPrefix(customCloud, "https://") {
+			customCloud = fmt.Sprintf("https://%v", customCloud)
 		}
-		if !strings.HasSuffix(customRegion, "/") {
-			customRegion = fmt.Sprintf("%v/", customRegion)
+		if !strings.HasSuffix(customCloud, "/") {
+			customCloud = fmt.Sprintf("%v/", customCloud)
 		}
 		return cloud.Configuration{
-			ActiveDirectoryAuthorityHost: customRegion,
+			ActiveDirectoryAuthorityHost: customCloud,
 			Services:                     map[cloud.ServiceName]cloud.ServiceConfiguration{},
 		}
 	}
@@ -111,11 +111,11 @@ func NewAzureCredentials(azcred *AzureCredentials) (azcore.TokenCredential, erro
 		return creds, err
 
 	case CredTypeSecret:
-		cloudRegion := PolicyFromRegionString(azcred.Region)
+		cloud := PolicyFromCloudString(azcred.Cloud)
 		creds, err := azidentity.NewClientSecretCredential(
 			azcred.TenantID, azcred.ClientID, azcred.ClientSecret, &azidentity.ClientSecretCredentialOptions{
 				ClientOptions: policy.ClientOptions{
-					Cloud: cloudRegion,
+					Cloud: cloud,
 				},
 			},
 		)
@@ -135,10 +135,10 @@ func NewAzureCredentials(azcred *AzureCredentials) (azcore.TokenCredential, erro
 		return creds, err
 
 	case CredTypeEnv:
-		cloudRegion := PolicyFromRegionString(azcred.Region)
+		cloud := PolicyFromCloudString(azcred.Cloud)
 		creds, err := azidentity.NewEnvironmentCredential(&azidentity.EnvironmentCredentialOptions{
 			ClientOptions: policy.ClientOptions{
-				Cloud: cloudRegion,
+				Cloud: cloud,
 			},
 		})
 		return creds, err
@@ -192,6 +192,7 @@ func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
 		ClientSecret:   env.Get("AZ_CLIENT_SECRET"),
 		ResourceGroup:  env.Get("AZ_RESOURCE_GROUP"),
 		SubscriptionID: env.Get("AZ_SUBSCRIPTION_ID"),
+		Cloud:			env.Get("AZ_CLOUD"),
 	}
 	return credentials
 }

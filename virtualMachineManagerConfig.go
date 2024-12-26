@@ -6,4 +6,12 @@ type VirtualMachineManagerConfig struct {
 	SubnetIds []string
 
 	VnetId string
+
+}
+
+type AzureVirtualDesktopConfig struct {
+	AvdUsersGroupId string
+	DomainName string
+	DomainUser string
+	DomainPass string
 }
