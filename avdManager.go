@@ -18,14 +18,11 @@ import (
 
 const (
 	// TODO: Make these an AVD config item, stored in AVD manager
-	avdRgName = ""  
-	avdRegion = "usgovvirginia"
 	prefixBase = "VULCAN-AVD"
 	hostPoolNamePrefix = prefixBase+"-HP-"
 	workspaceNamePrefix = prefixBase+"-WS-"
 	appGroupNamePrefix = prefixBase+"-DAG-"
 	desktopApplicationUserRoleID = "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63"  // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/compute#desktop-virtualization-user
-	avdUserGroupID = ""
 	uriEnv = "usgov"
 )
 

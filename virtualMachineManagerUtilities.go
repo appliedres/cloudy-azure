@@ -409,7 +409,7 @@ func mapProvisioningAndPowerState(ctx context.Context, azVM *armcompute.VirtualM
 	cloudState := mapCloudState(provState, powerState)
 
 	if cloudState == models.VirtualMachineCloudStateUnknown {
-		log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", models.VirtualMachineCloudStateUnknown, azVM.ID))
+		log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", models.VirtualMachineCloudStateUnknown, *azVM.ID))
 	}
 
 	log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 

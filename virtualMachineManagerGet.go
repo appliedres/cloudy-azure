@@ -40,7 +40,7 @@ func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string, i
 	if vm.CloudState != nil {
 		stateString = string(*vm.CloudState)
 	}
-	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s] status:[%s]", id, stateString, vm.Status))
+	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s]", id, stateString))
 
 	return vm, nil
 }

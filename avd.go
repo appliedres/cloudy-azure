@@ -144,19 +144,24 @@ func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.
 	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
 		avd.credentials.SubscriptionID, avd.credentials.ResourceGroup, desktopAppGroupName)
 
-	roleDefID := "/subscriptions/" + avd.credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + desktopApplicationUserRoleID
+	roleDefID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
+		avd.credentials.SubscriptionID, desktopApplicationUserRoleID)
+		
 	uuidWithHyphen := uuid.New().String()
 
 	res, err := avd.roleAssignmentsClient.Create(ctx, scope, uuidWithHyphen,
 		armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
 				RoleDefinitionID: to.Ptr(roleDefID),
-				PrincipalID:      to.Ptr(string(avdUserGroupID)),
+				PrincipalID:      to.Ptr(string(avd.config.AvdUsersGroupId)),
 			},
 		}, nil)
 
-	if err != nil && strings.Split(err.Error(), "ERROR CODE: RoleAssignmentExists") == nil {
+	if err != nil {
 		return cloudy.Error(ctx, "AssignRoleToGroup failure: %+v", err)
+	}
+	if res.ID == nil {
+		return cloudy.Error(ctx, "AssignRoleToGroup failure: role ID is empty")
 	}
 
 	_ = res
@@ -585,7 +590,7 @@ func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgNam
 	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
 
 	newHostPool := armdesktopvirtualization.HostPool{
-		Location: to.Ptr(string(avdRegion)),
+		Location: to.Ptr(string(avd.credentials.Region)),
 		Properties: &armdesktopvirtualization.HostPoolProperties{
 			FriendlyName: to.Ptr("Host Pool " + suffix),
 			Description:  to.Ptr("Generated via cloudy-azure"),
@@ -614,7 +619,7 @@ func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Contex
 		avd.credentials.SubscriptionID, rgName, hostPoolName)
 
 	appGroup := armdesktopvirtualization.ApplicationGroup{
-		Location: to.Ptr(string(avdRegion)),
+		Location: to.Ptr(string(avd.credentials.Region)),
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
 			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
 			FriendlyName:         to.Ptr("App Group " + suffix),
@@ -642,7 +647,7 @@ func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgNa
 	}
 
 	newWorkspace := armdesktopvirtualization.Workspace{
-		Location: to.Ptr(string(avdRegion)),
+		Location: to.Ptr(string(avd.credentials.Region)),
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,
 			FriendlyName:               to.Ptr("Workspace " + suffix),
