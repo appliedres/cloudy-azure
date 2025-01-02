@@ -1,4 +1,4 @@
-package cloudyazure
+package avd
 
 import (
 	"context"

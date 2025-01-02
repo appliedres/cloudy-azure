@@ -1,4 +1,4 @@
-package cloudyazure
+package avd
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 	"github.com/pkg/errors"
+	"github.com/appliedres/cloudy-azure"
 )
 
 const (
@@ -31,8 +32,8 @@ const (
 )
 
 type AzureVirtualDesktopManager struct {
-	credentials 	*AzureCredentials
-	config      	*AzureVirtualDesktopConfig
+	credentials 	*cloudyazure.AzureCredentials
+	config      	*cloudyazure.AzureVirtualDesktopConfig
 	
 	workspacesClient      *armdesktopvirtualization.WorkspacesClient
 	hostPoolsClient       *armdesktopvirtualization.HostPoolsClient
@@ -48,7 +49,7 @@ type AzureVirtualDesktopManager struct {
 	lockMap sync.Map  // used to block a user from having concurrent registrations in a single host pool
 }
 
-func NewAzureVirtualDesktopManager(ctx context.Context, credentials *AzureCredentials, config *AzureVirtualDesktopConfig) (*AzureVirtualDesktopManager, error) {
+func NewAzureVirtualDesktopManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, config *cloudyazure.AzureVirtualDesktopConfig) (*AzureVirtualDesktopManager, error) {
 	avd := &AzureVirtualDesktopManager{
 		credentials: credentials,
 		config:      config,
@@ -62,7 +63,7 @@ func NewAzureVirtualDesktopManager(ctx context.Context, credentials *AzureCreden
 }
 	
 func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
-	cred, err := NewAzureCredentials(avd.credentials)
+	cred, err := cloudyazure.NewAzureCredentials(avd.credentials)
 	if err != nil {
 		return err
 	}
