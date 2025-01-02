@@ -59,6 +59,18 @@ echo ""
 echo "    Release New Version and/or Update usage"
 echo ""
 
+# Ensure we are on the master branch
+currentBranch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $currentBranch != "master" ]]; then
+    echo "Warning: You are attempting to release from a branch other than 'master'. Current branch: '$currentBranch'"
+    echo "Type 'proceed' to confirm you want to proceed:"
+    read -r confirm
+    if [[ $confirm != "proceed" ]]; then
+        echo "Incorrect response. Aborting release."
+        exit 1
+    fi
+fi
+
 # Determine the version to update
 versionIndicator='none'
 upgrade="yes"
@@ -67,7 +79,7 @@ if [[ -z $1 ]]; then
     echo "Defaulting to 'patch' version upgrade"
 else
     if [[ $1 == 'update' ]]; then 
-        echo "Not releaseing"
+        echo "Not releasing"
     elif [[ $1 != 'minor' ]] && [[ $1 != 'major' ]] && [[ $1 != 'patch' ]]; then
         echo "Invalid version $1, must be either major, minor or patch"
         exit 1
@@ -97,9 +109,9 @@ current=$(git tag | sort -r --version-sort | head -n1)
 echo "Current version is $current"
 
 if [[ $versionIndicator != 'update' ]]; then
-    major=$(versions $current 0)
-    minor=$(versions $current 1)
-    patch=$(versions $current 2)
+    major=$(versions "$current" 0)
+    minor=$(versions "$current" 1)
+    patch=$(versions "$current" 2)
 
     debug "Current Segments $major $minor $patch"
 
@@ -115,16 +127,20 @@ if [[ $versionIndicator != 'update' ]]; then
     fi
     debug "Planned Segments $major $minor $patch"
 
-    mustBeNumber $major
-    mustBeNumber $minor
-    mustBeNumber $patch
+    mustBeNumber "$major"
+    mustBeNumber "$minor"
+    mustBeNumber "$patch"
     nextVersion="v$major.$minor.$patch"
 
-    echo "Next version $nextVersion"
+    echo "Next version: $nextVersion"
+    read -p "Do you want to tag this version? (y/n): " confirmTag
+    if [[ $confirmTag != "y" ]]; then
+        echo "Tagging aborted."
+        exit 1
+    fi
 
     # Tag the git repo
     git tag "$nextVersion"
-
     git push origin "$nextVersion"
 else 
     nextVersion=$current
