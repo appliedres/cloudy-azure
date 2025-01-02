@@ -366,6 +366,7 @@ func TestCosmosDBCreate100(t *testing.T) {
 func TestCosmosDBDS(t *testing.T) {
 	CreateCompleteEnvironment("", "", "")
 
+	ctx := cloudy.StartContext()
 	ds, err := datastore.CreateJsonDatastore[datastore.TestItem](ctx, "dstestitem", "ark", "id", cloudy.DefaultEnvironment)
 	if err != nil {
 		panic(err)
