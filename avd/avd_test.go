@@ -1,4 +1,4 @@
-package cloudyazure
+package avd
 
 // Import key modules.
 import (
@@ -12,6 +12,7 @@ import (
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/appliedres/cloudy-azure"
 )
 
 type Config struct {
@@ -49,14 +50,14 @@ func initAVD() error {
 	subscriptionId = env.Force("AZ_SUBSCRIPTION_ID", "")
 	vaultUrl = env.Force("AZ_VAULT_URL", "")
 
-	creds := AzureCredentials{
+	creds := cloudyazure.AzureCredentials{
 		TenantID:     tenantId,
 		ClientID:     clientId,
 		ClientSecret: clientSecret,
 		Region:       "usgovvirginia",
 	}
 
-	config := AzureVirtualDesktopConfig{
+	config := cloudyazure.AzureVirtualDesktopConfig{
 
 	}
 
@@ -65,7 +66,7 @@ func initAVD() error {
 		return err
 	}
 
-	cred, err := GetAzureClientSecretCredential(*avd.credentials)
+	cred, err := cloudyazure.GetAzureClientSecretCredential(*avd.credentials)
 	if err != nil {
 		return err
 	}
