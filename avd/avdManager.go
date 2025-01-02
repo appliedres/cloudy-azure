@@ -13,40 +13,40 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
+	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 	"github.com/pkg/errors"
-	"github.com/appliedres/cloudy-azure"
 )
 
 const (
 	// TODO: Make these an AVD config item, stored in AVD manager
-	prefixBase = "VULCAN-AVD"
-	hostPoolNamePrefix = prefixBase+"-HP-"
-	workspaceNamePrefix = prefixBase+"-WS-"
-	appGroupNamePrefix = prefixBase+"-DAG-"
-	desktopApplicationUserRoleID = "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63"  // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/compute#desktop-virtualization-user
-	uriEnv = "usgov"
-	avdUriVersion = "0"
-	useMultiMon = false
+	prefixBase                   = "VULCAN-AVD"
+	hostPoolNamePrefix           = prefixBase + "-HP-"
+	workspaceNamePrefix          = prefixBase + "-WS-"
+	appGroupNamePrefix           = prefixBase + "-DAG-"
+	desktopApplicationUserRoleID = "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63" // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/compute#desktop-virtualization-user
+	uriEnv                       = "usgov"
+	avdUriVersion                = "0"
+	useMultiMon                  = false
 )
 
 type AzureVirtualDesktopManager struct {
-	credentials 	*cloudyazure.AzureCredentials
-	config      	*cloudyazure.AzureVirtualDesktopConfig
-	
-	workspacesClient      *armdesktopvirtualization.WorkspacesClient
-	hostPoolsClient       *armdesktopvirtualization.HostPoolsClient
-	sessionHostsClient    *armdesktopvirtualization.SessionHostsClient
-	userSessionsClient    *armdesktopvirtualization.UserSessionsClient
-	appGroupsClient       *armdesktopvirtualization.ApplicationGroupsClient
-	appsClient			  *armdesktopvirtualization.ApplicationsClient
-	desktopsClient		  *armdesktopvirtualization.DesktopsClient
+	credentials *cloudyazure.AzureCredentials
+	config      *cloudyazure.AzureVirtualDesktopConfig
+
+	workspacesClient   *armdesktopvirtualization.WorkspacesClient
+	hostPoolsClient    *armdesktopvirtualization.HostPoolsClient
+	sessionHostsClient *armdesktopvirtualization.SessionHostsClient
+	userSessionsClient *armdesktopvirtualization.UserSessionsClient
+	appGroupsClient    *armdesktopvirtualization.ApplicationGroupsClient
+	appsClient         *armdesktopvirtualization.ApplicationsClient
+	desktopsClient     *armdesktopvirtualization.DesktopsClient
 
 	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
 
-	stackMutex sync.Mutex  // blocks concurrent host pool creation/deletion
-	lockMap sync.Map  // used to block a user from having concurrent registrations in a single host pool
+	stackMutex sync.Mutex // blocks concurrent host pool creation/deletion
+	lockMap    sync.Map   // used to block a user from having concurrent registrations in a single host pool
 }
 
 func NewAzureVirtualDesktopManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, config *cloudyazure.AzureVirtualDesktopConfig) (*AzureVirtualDesktopManager, error) {
@@ -61,7 +61,7 @@ func NewAzureVirtualDesktopManager(ctx context.Context, credentials *cloudyazure
 
 	return avd, nil
 }
-	
+
 func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	cred, err := cloudyazure.NewAzureCredentials(avd.credentials)
 	if err != nil {
@@ -72,17 +72,16 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
 		},
-		
 	}
 
 	avdOptions := baseOptions
-	avdOptions.APIVersion = "2023-09-05"  // Important! Latest AVD API version is not supported in Azure Govt
+	avdOptions.APIVersion = "2023-09-05" // Important! Latest AVD API version is not supported in Azure Govt
 	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.credentials.SubscriptionID, cred, &avdOptions)
 	if err != nil {
 		return err
 	}
 
-	avd.workspacesClient = 	clientFactory.NewWorkspacesClient()
+	avd.workspacesClient = clientFactory.NewWorkspacesClient()
 	avd.hostPoolsClient = clientFactory.NewHostPoolsClient()
 	avd.sessionHostsClient = clientFactory.NewSessionHostsClient()
 	avd.userSessionsClient = clientFactory.NewUserSessionsClient()
@@ -228,8 +227,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	return targetHostPool.Name, token, nil
 }
 
-
-func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {	
+func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
 	// Define the PowerShell script with placeholders
@@ -524,7 +522,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	}
 
 	// If there are empty host pools to delete, pop the last one (leaving one empty)
-	// This host pool will remain available for new connections, so we shouldn't have to worry 
+	// This host pool will remain available for new connections, so we shouldn't have to worry
 	// about users joining a host pool that is being deleted.
 	// Given "-DELTA", "-CHARLIE" and "-BRAVO" empty host pools, this will not delete "-BRAVO"
 	if len(deleteHostPoolNames) > 1 {
@@ -535,7 +533,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	log.InfoContext(ctx, "Deleting empty host pools", "hostPoolsToDelete", deleteHostPoolNames)
 	for _, hostPoolNameToDelete := range deleteHostPoolNames {
 		log.InfoContext(ctx, "Deleting host pool and its associated resources", "hostPoolName", hostPoolNameToDelete)
-		err := avd.deleteHostPoolWithAssociatedResources(ctx, rgName, hostPoolNameToDelete)
+		err := avd.deleteStack(ctx, rgName, hostPoolNameToDelete)
 		if err != nil {
 			return fmt.Errorf("error deleting host pool %s and its associated resources: %w", hostPoolNameToDelete, err)
 		}
@@ -548,7 +546,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 
 // createAvdStack creates a new AVD stack including the host pool, application group, and workspace.
 func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffix string) (
-		*armdesktopvirtualization.HostPool, *armdesktopvirtualization.ApplicationGroup, *armdesktopvirtualization.Workspace, error) {
+	*armdesktopvirtualization.HostPool, *armdesktopvirtualization.ApplicationGroup, *armdesktopvirtualization.Workspace, error) {
 	rgName := avd.credentials.ResourceGroup
 
 	// Create host pool
