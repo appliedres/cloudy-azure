@@ -16,7 +16,7 @@ import (
 
 
 // CreateApplicationGroup creates an application group for the given host pool.
-func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string) (*armdesktopvirtualization.ApplicationGroup, error) {
+func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
 	appGroupName := appGroupNamePrefix + suffix
 	hostPoolName := hostPoolNamePrefix + suffix
 
@@ -25,6 +25,7 @@ func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Contex
 
 	appGroup := armdesktopvirtualization.ApplicationGroup{
 		Location: to.Ptr(string(avd.credentials.Region)),
+		Tags: tags,
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
 			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
 			FriendlyName:         to.Ptr("App Group " + suffix),

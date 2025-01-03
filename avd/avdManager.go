@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	cloudyazure "github.com/appliedres/cloudy-azure"
@@ -549,21 +550,26 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 	*armdesktopvirtualization.HostPool, *armdesktopvirtualization.ApplicationGroup, *armdesktopvirtualization.Workspace, error) {
 	rgName := avd.credentials.ResourceGroup
 
+	tags := map[string]*string{
+		"stack_group_suffix": to.Ptr(suffix),
+		"arkloud_created_by": to.Ptr("cloudy-azure"),
+	}
+
 	// Create host pool
-	hostPool, err := avd.CreateHostPool(ctx, rgName, suffix)
+	hostPool, err := avd.CreateHostPool(ctx, rgName, suffix, tags)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create host pool: %w", err)
 	}
 
 	// Create application group linked to the new host pool
-	desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, suffix)
+	desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, suffix, tags)
 	if err != nil {
 		// TODO: delete resources during failed stack creation
 		return nil, nil, nil, fmt.Errorf("failed to create application group: %w", err)
 	}
 
 	// Create workspace linked to the desktop application group
-	workspace, err := avd.CreateWorkspace(ctx, rgName, suffix, *desktopAppGroup.Name)
+	workspace, err := avd.CreateWorkspace(ctx, rgName, suffix, *desktopAppGroup.Name, tags)
 	if err != nil {
 		// TODO: delete resources during failed stack creation
 		return nil, nil, nil, fmt.Errorf("failed to create workspace: %w", err)
