@@ -17,29 +17,23 @@ import (
 )
 
 const (
-	// TODO: Make these an AVD config item, stored in AVD manager
-	avdRgName = ""  
-	avdRegion = "usgovvirginia"
-	prefixBase = "VULCAN-AVD"
-	hostPoolNamePrefix = prefixBase+"-HP-"
-	workspaceNamePrefix = prefixBase+"-WS-"
-	appGroupNamePrefix = prefixBase+"-DAG-"
-	desktopApplicationUserRoleID = "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63"  // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/compute#desktop-virtualization-user
-	avdUserGroupID = ""
-	uriEnv = "usgov"
+	prefixBase          = "VULCAN-AVD"
+	hostPoolNamePrefix  = prefixBase + "-HP-"
+	workspaceNamePrefix = prefixBase + "-WS-"
+	appGroupNamePrefix  = prefixBase + "-DAG-"
 )
 
 type AzureVirtualDesktopManager struct {
-	credentials 	*AzureCredentials
-	config      	*AzureVirtualDesktopConfig
-	
-	workspacesClient      *armdesktopvirtualization.WorkspacesClient
-	hostPoolsClient       *armdesktopvirtualization.HostPoolsClient
-	sessionHostsClient    *armdesktopvirtualization.SessionHostsClient
-	userSessionsClient    *armdesktopvirtualization.UserSessionsClient
-	appGroupsClient       *armdesktopvirtualization.ApplicationGroupsClient
-	appsClient			  *armdesktopvirtualization.ApplicationsClient
-	desktopsClient		  *armdesktopvirtualization.DesktopsClient
+	credentials *AzureCredentials
+	config      *AzureVirtualDesktopConfig
+
+	workspacesClient   *armdesktopvirtualization.WorkspacesClient
+	hostPoolsClient    *armdesktopvirtualization.HostPoolsClient
+	sessionHostsClient *armdesktopvirtualization.SessionHostsClient
+	userSessionsClient *armdesktopvirtualization.UserSessionsClient
+	appGroupsClient    *armdesktopvirtualization.ApplicationGroupsClient
+	appsClient         *armdesktopvirtualization.ApplicationsClient
+	desktopsClient     *armdesktopvirtualization.DesktopsClient
 
 	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
 }
@@ -56,7 +50,7 @@ func NewAzureVirtualDesktopManager(ctx context.Context, credentials *AzureCreden
 
 	return avd, nil
 }
-	
+
 func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	cred, err := NewAzureCredentials(avd.credentials)
 	if err != nil {
@@ -67,17 +61,16 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
 		},
-		
 	}
 
 	avdOptions := baseOptions
-	avdOptions.APIVersion = "2023-09-05"  // Important! Latest AVD API version is not supported in Azure Govt
+	avdOptions.APIVersion = "2023-09-05" // Important! Latest AVD API version is not supported in Azure Govt
 	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.credentials.SubscriptionID, cred, &avdOptions)
 	if err != nil {
 		return err
 	}
 
-	avd.workspacesClient = 	clientFactory.NewWorkspacesClient()
+	avd.workspacesClient = clientFactory.NewWorkspacesClient()
 	avd.hostPoolsClient = clientFactory.NewHostPoolsClient()
 	avd.sessionHostsClient = clientFactory.NewSessionHostsClient()
 	avd.userSessionsClient = clientFactory.NewUserSessionsClient()
@@ -94,14 +87,13 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	return nil
 }
 
-
 // Prior to VM registration, this process generates a token for a given host pool.
 // This token will later be used in the registration process to join the VM to the host pool
 // The user is also assigned to the related desktop application group.
 func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *models.VirtualMachine) (hostPoolName, token *string, err error) {
 	log := logging.GetLogger(ctx)
 	rgName := avd.credentials.ResourceGroup
-	
+
 	// Step 1: Check existing host pools
 	hpFilter := hostPoolNamePrefix
 	hostPools, err := avd.listHostPools(ctx, rgName, &hpFilter)
@@ -139,19 +131,19 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		log.InfoContext(ctx, "AVD: Creating new host pool, workspace, application group", "VM", vm.ID, "suffix", nameSuffix)
 
 		// Create host pool
-		targetHostPool, err = avd.CreateHostPool(ctx, rgName, nameSuffix)
+		targetHostPool, err = avd.CreateHostPool(ctx, rgName, nameSuffix, avd.config.Region)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create host pool: %w", err)
 		}
 
 		// Create application group linted to the new host pool
-		desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, nameSuffix)
+		desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, nameSuffix, avd.config.Region)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create application group: %w", err)
 		}
 
 		// Create workspace linked to the desktop application group
-		workspace, err := avd.CreateWorkspace(ctx, rgName, nameSuffix, *desktopAppGroup.Name)
+		workspace, err := avd.CreateWorkspace(ctx, rgName, nameSuffix, *desktopAppGroup.Name, avd.config.Region)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create workspace: %w", err)
 		}
@@ -159,13 +151,11 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 
 		// Assign AVD user group to the new desktop application group (DAG)
 		// FIXME: This is broken. Group is not being added as an assignment.
-		err = avd.AssignGroupToDesktopAppGroup(ctx, *desktopAppGroup.Name)
+		err = avd.AssignGroupToDesktopAppGroup(ctx, *desktopAppGroup.Name, avd.config.DesktopApplicationUserRoleID, avd.config.AvdUsersGroupId)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to assign AVD User group to Desktop Application Group [%s]", *desktopAppGroup.Name)
 		}
 	}
-
-	// TODO: handle existing host pools with expired registration keys. need to call update host pool with new exp date
 
 	// Step 3: Retrieve registration token
 	token, err = avd.RetrieveRegistrationToken(ctx, rgName, *targetHostPool.Name)
@@ -176,12 +166,12 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	return targetHostPool.Name, token, nil
 }
 
-func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {	
+func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
 	osType := vm.Template.OperatingSystem
 	if osType != "windows" {
 		return nil, errors.New("unsupported OS type; only Windows is supported for AVD registration")
 	}
-	
+
 	// Define the PowerShell script with placeholders
 	scriptTemplate := `
 # Set up logging for verbose output
@@ -303,7 +293,7 @@ Stop-Transcript
 // After registering, the user must then be assigned to the new session host
 func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *models.VirtualMachine, hpName string) (*models.VirtualMachine, error) {
 	rgName := avd.credentials.ResourceGroup
-	
+
 	sessionHost, err := avd.WaitForSessionHost(ctx, rgName, hpName, vm.ID, 10*time.Minute)
 	if err != nil {
 		return nil, errors.Wrap(err, "Waiting for session host to be ready")
@@ -315,7 +305,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 		return nil, fmt.Errorf("Could not split sessionHost.Name: %s", *sessionHost.Name)
 	}
 	sessionHostName := parts[1]
-	
+
 	err = avd.AssignSessionHost(ctx, rgName, hpName, sessionHostName, vm.UserID)
 	if err != nil {
 		return nil, err
@@ -345,11 +335,11 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	resourceID := *desktop.Properties.ObjectID
 
 	version := "0"
-	useMultiMon := false  // TODO: add support for multi monitor to endpoint
-	
+	useMultiMon := false // TODO: add support for multi monitor to endpoint
+
 	connection := &models.VirtualMachineConnection{
 		RemoteDesktopProvider: "AVD",
-		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, uriEnv, version, useMultiMon),
+		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.config.UriEnv, version, useMultiMon),
 	}
 
 	vm.Connect = connection

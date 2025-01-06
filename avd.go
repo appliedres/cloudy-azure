@@ -46,13 +46,24 @@ func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Co
 }
 
 func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rgName string, hpname string) (*string, error) {
-
-	// avd.hostpools.RetrieveRegistrationToken returns nil if registration token doesn't exist or is expired
 	tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
+	if tokenresponse.Token == nil || err != nil {
+		return nil, cloudy.Error(ctx, "RetrieveRegistrationToken avd.hostPoolsClient.RetrieveRegistrationToken failure: %+v", err)
+	}
 
-	if tokenresponse.Token == nil {
-		// no go function to create/replace a registration key in armdesktopvirtualization
-		return nil, cloudy.Error(ctx, "RetrieveRegistrationToken failure: %+v", err)
+	// token has expired
+	if tokenresponse.ExpirationTime.Before(time.Now()) {
+		hp, err := avd.UpdateHostPoolRegToken(ctx, rgName, hpname)
+		if hp == nil || err != nil {
+			return nil, cloudy.Error(ctx, "RetrieveRegistrationToken avd.UpdateHostPoolRegToken failure: %+v", err)
+		}
+
+		time.Sleep(3 * time.Second)
+
+		tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
+		if tokenresponse.Token == nil || err != nil {
+			return nil, cloudy.Error(ctx, "RetrieveRegistrationToken avd.hostPoolsClient.RetrieveRegistrationToken failure: %+v", err)
+		}
 	}
 
 	return tokenresponse.Token, err
@@ -139,7 +150,7 @@ func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgN
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.Context, desktopAppGroupName string) error {
+func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.Context, desktopAppGroupName string, desktopApplicationUserRoleID string, avdUserGroupID string) error {
 	// Source: https://learn.microsoft.com/en-us/answers/questions/2104093/azure-virtual-desktop-application-group-assignment
 	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
 		avd.credentials.SubscriptionID, avd.credentials.ResourceGroup, desktopAppGroupName)
@@ -578,11 +589,11 @@ func indexOf(word string, list []string) int {
 }
 
 // CreateHostPool creates a new host pool.
-func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgName, suffix string) (*armdesktopvirtualization.HostPool, error) {
+func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgName, suffix string, avdRegion string) (*armdesktopvirtualization.HostPool, error) {
 	hostPoolName := hostPoolNamePrefix + suffix
 
 	// Expiration time can be 1 hour to 27 days. We'll use 25 days.
-	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
+	expirationTime := time.Now().AddDate(0, 0, 1) // 25 days from now
 
 	newHostPool := armdesktopvirtualization.HostPool{
 		Location: to.Ptr(string(avdRegion)),
@@ -605,8 +616,39 @@ func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgNam
 	return &resp.HostPool, nil
 }
 
+func (avd *AzureVirtualDesktopManager) UpdateHostPoolRegToken(ctx context.Context, rgName string, hpName string) (*armdesktopvirtualization.HostPool, error) {
+	// Expiration time can be 1 hour to 27 days. We'll use 25 days.
+	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
+
+	patch := armdesktopvirtualization.HostPoolPatch{
+		Properties: &armdesktopvirtualization.HostPoolPatchProperties{
+			RegistrationInfo: &armdesktopvirtualization.RegistrationInfoPatch{
+				ExpirationTime:             &expirationTime,
+				RegistrationTokenOperation: to.Ptr(armdesktopvirtualization.RegistrationTokenOperationUpdate),
+			},
+		}}
+
+	resp, err := avd.hostPoolsClient.Update(ctx, rgName, hpName, &armdesktopvirtualization.HostPoolsClientUpdateOptions{
+		HostPool: &patch,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update host pool reg token: %w", err)
+	}
+
+	return &resp.HostPool, nil
+}
+
+func (avd *AzureVirtualDesktopManager) DeleteHostPool(ctx context.Context, rgName string, hpName string) error {
+	_, err := avd.hostPoolsClient.Delete(ctx, rgName, hpName, nil)
+	if err != nil {
+		return fmt.Errorf("failed to update host pool reg token: %w", err)
+	}
+
+	return nil
+}
+
 // CreateApplicationGroup creates an application group for the given host pool.
-func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string) (*armdesktopvirtualization.ApplicationGroup, error) {
+func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName string, suffix string, avdRegion string) (*armdesktopvirtualization.ApplicationGroup, error) {
 	appGroupName := appGroupNamePrefix + suffix
 	hostPoolName := hostPoolNamePrefix + suffix
 
@@ -631,7 +673,7 @@ func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Contex
 }
 
 // CreateWorkspace creates a new workspace for the given host pool.
-func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string) (*armdesktopvirtualization.Workspace, error) {
+func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string, avdRegion string) (*armdesktopvirtualization.Workspace, error) {
 	workspaceName := workspaceNamePrefix + suffix
 
 	appGroupPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
