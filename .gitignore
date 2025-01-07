@@ -17,6 +17,9 @@
 
 .vscode/
 
+go.work
+go.work.sum
+
 *.tfvars
 terraform.tfstate
 terraform.tfstate.backup
