@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	vmNameTagKey = "Name"
+	vmNameTagKey    = "Name"
 	vmCreatorTagKey = "CreatorID"
-	vmUserTagKey = "UserID"
+	vmUserTagKey    = "UserID"
 )
 
 func toResponseError(err error) *azcore.ResponseError {
@@ -128,7 +128,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		},
 		StorageProfile: &armcompute.StorageProfile{
 			ImageReference: &armcompute.ImageReference{
-				ID: &cloudyVM.OsBaseImageID,
+				ID: &cloudyVM.Template.OsBaseImageID,
 			},
 			OSDisk: &armcompute.OSDisk{
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
@@ -177,8 +177,8 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 
 func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachine {
 	cloudyVm := models.VirtualMachine{
-		ID:   *azVM.Name,  // Azure VM Name is cloudy ID, in UVM-<alphanumeric> format
-		Name: *azVM.Name,  // this will later get overwritten with azure VM tag stored in ['Name']
+		ID:   *azVM.Name, // Azure VM Name is cloudy ID, in UVM-<alphanumeric> format
+		Name: *azVM.Name, // this will later get overwritten with azure VM tag stored in ['Name']
 		Location: &models.VirtualMachineLocation{
 			Region: *azVM.Location,
 		},
@@ -412,7 +412,7 @@ func mapProvisioningAndPowerState(ctx context.Context, azVM *armcompute.VirtualM
 		log.WarnContext(ctx, fmt.Sprintf("Found %s VM state for VMID:[%s]", models.VirtualMachineCloudStateUnknown, *azVM.ID))
 	}
 
-	log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]", 
+	log.DebugContext(ctx, fmt.Sprintf("Azure ToCloudyVirtualMachine: VMID:[%s] provState:[%s] powerState:[%s] >> cloudy state:[%s]",
 		*azVM.Name, provState, powerState, cloudState))
 
 	return &cloudState
@@ -431,8 +431,8 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 			return models.VirtualMachineCloudStateRunning
 		case string(models.VirtualMachineCloudStateStopped):
 			return models.VirtualMachineCloudStateStopped
-		case "deallocated": 
-			return models.VirtualMachineCloudStateDeleted  // TODO: Should VM ever be left in deallocated state?
+		case "deallocated":
+			return models.VirtualMachineCloudStateDeleted // TODO: Should VM ever be left in deallocated state?
 		default:
 			return models.VirtualMachineCloudStateUnknown
 		}
@@ -446,9 +446,9 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 			return models.VirtualMachineCloudStateStopping
 		case string(models.VirtualMachineCloudStateRestarting):
 			return models.VirtualMachineCloudStateRestarting
-		case string(models.VirtualMachineCloudStateRunning):  // 'updating' a 'running' VM is 'stopping'
+		case string(models.VirtualMachineCloudStateRunning): // 'updating' a 'running' VM is 'stopping'
 			return models.VirtualMachineCloudStateStopping
-		case string(models.VirtualMachineCloudStateStopped):  // 'updating' a 'stopped' VM is 'starting'
+		case string(models.VirtualMachineCloudStateStopped): // 'updating' a 'stopped' VM is 'starting'
 			return models.VirtualMachineCloudStateStarting
 		default:
 			return models.VirtualMachineCloudStateUnknown

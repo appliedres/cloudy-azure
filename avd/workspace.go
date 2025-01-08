@@ -10,7 +10,7 @@ import (
 )
 
 // CreateWorkspace creates a new workspace for the given host pool.
-func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string) (*armdesktopvirtualization.Workspace, error) {
+func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string, tags map[string]*string) (*armdesktopvirtualization.Workspace, error) {
 	workspaceName := workspaceNamePrefix + suffix
 
 	appGroupPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
@@ -22,6 +22,7 @@ func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgNa
 
 	newWorkspace := armdesktopvirtualization.Workspace{
 		Location: to.Ptr(string(avd.config.Region)),
+		Tags:     tags,
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,
 			FriendlyName:               to.Ptr("Workspace " + suffix),
