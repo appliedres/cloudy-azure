@@ -9,7 +9,6 @@ import (
 	"github.com/appliedres/cloudy/logging"
 )
 
-
 // CreateWorkspace creates a new workspace for the given host pool.
 func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string) (*armdesktopvirtualization.Workspace, error) {
 	workspaceName := workspaceNamePrefix + suffix
@@ -22,7 +21,7 @@ func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgNa
 	}
 
 	newWorkspace := armdesktopvirtualization.Workspace{
-		Location: to.Ptr(string(avd.credentials.Region)),
+		Location: to.Ptr(string(avd.config.Region)),
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,
 			FriendlyName:               to.Ptr("Workspace " + suffix),
@@ -57,4 +56,3 @@ func (avd *AzureVirtualDesktopManager) GetWorkspaceByName(ctx context.Context, r
 
 	return nil, fmt.Errorf("workspace with name %s not found in resource group %s", workspaceName, rgName)
 }
-

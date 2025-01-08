@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,15 +21,10 @@ import (
 )
 
 const (
-	// TODO: Make these an AVD config item, stored in AVD manager
-	prefixBase                   = "VULCAN-AVD"
-	hostPoolNamePrefix           = prefixBase + "-HP-"
-	workspaceNamePrefix          = prefixBase + "-WS-"
-	appGroupNamePrefix           = prefixBase + "-DAG-"
-	desktopApplicationUserRoleID = "1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63" // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/compute#desktop-virtualization-user
-	uriEnv                       = "usgov"
-	avdUriVersion                = "0"
-	useMultiMon                  = false
+	prefixBase          = "VULCAN-AVD"
+	hostPoolNamePrefix  = prefixBase + "-HP-"
+	workspaceNamePrefix = prefixBase + "-WS-"
+	appGroupNamePrefix  = prefixBase + "-DAG-"
 )
 
 type AzureVirtualDesktopManager struct {
@@ -422,10 +418,10 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	log.DebugContext(ctx, "Retrieved desktop application resource ID", "ResourceID", resourceID)
 
 	// Generate connection URL
-	log.DebugContext(ctx, "Generating Windows client URI", "avdUriVersion", avdUriVersion, "UseMultiMon", useMultiMon)
+	log.DebugContext(ctx, "Generating Windows client URI", "avdUriVersion", avd.config.UriVersion, "UseMultiMon", avd.config.UseMulipleMonitors)
 	connection := &models.VirtualMachineConnection{
 		RemoteDesktopProvider: "AVD",
-		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, uriEnv, avdUriVersion, useMultiMon),
+		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.config.UriEnv, avd.config.UriVersion, toBool(avd.config.UseMulipleMonitors)),
 	}
 
 	vm.Connect = connection
@@ -578,4 +574,12 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 	}
 
 	return hostPool, desktopAppGroup, workspace, nil
+}
+
+func toBool(input string) bool {
+	output, err := strconv.ParseBool(input)
+	if err != nil {
+		return false
+	}
+	return output
 }
