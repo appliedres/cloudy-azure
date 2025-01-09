@@ -13,9 +13,11 @@ type AzureVirtualDesktopConfig struct {
 	DomainPass                   string
 	Region                       string
 	DesktopApplicationUserRoleID string
-	AVDUserGroupID               string
 	UriEnv                       string
 	UriVersion                   string
 	UseMulipleMonitors           string
 	PrefixBase                   string
+	HostPoolNamePrefix           string
+	WorkspaceNamePrefix          string
+	AppGroupNamePrefix           string
 }

@@ -15,8 +15,8 @@ import (
 
 // CreateApplicationGroup creates an application group for the given host pool.
 func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
-	appGroupName := appGroupNamePrefix + suffix
-	hostPoolName := hostPoolNamePrefix + suffix
+	appGroupName := avd.config.AppGroupNamePrefix + suffix
+	hostPoolName := avd.config.HostPoolNamePrefix + suffix
 
 	hostPoolArmPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/hostPools/%s",
 		avd.credentials.SubscriptionID, rgName, hostPoolName)

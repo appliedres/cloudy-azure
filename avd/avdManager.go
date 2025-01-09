@@ -21,13 +21,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	prefixBase          = "VULCAN-AVD"
-	hostPoolNamePrefix  = prefixBase + "-HP-"
-	workspaceNamePrefix = prefixBase + "-WS-"
-	appGroupNamePrefix  = prefixBase + "-DAG-"
-)
-
 type AzureVirtualDesktopManager struct {
 	credentials *cloudyazure.AzureCredentials
 	config      *cloudyazure.AzureVirtualDesktopConfig
@@ -92,6 +85,10 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	}
 	avd.roleAssignmentsClient = roleassignmentsclient
 
+	avd.config.HostPoolNamePrefix = avd.config.PrefixBase + "-HP-"
+	avd.config.WorkspaceNamePrefix = avd.config.PrefixBase + "-WS-"
+	avd.config.AppGroupNamePrefix = avd.config.PrefixBase + "-DAG-"
+
 	return nil
 }
 
@@ -141,7 +138,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	log.DebugContext(ctx, "AVD PreRegister - cleared AVD stack lock")
 
 	// Step 1: Check existing host pools
-	hpFilter := hostPoolNamePrefix
+	hpFilter := avd.config.HostPoolNamePrefix
 	log.DebugContext(ctx, "Retrieving host pools", "ResourceGroup", rgName, "Filter", hpFilter)
 
 	hostPools, err := avd.listHostPools(ctx, rgName, &hpFilter)
@@ -176,7 +173,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 			log.DebugContext(ctx, "Unable to acquire lock on host pool", "HostPool", *pool.Name, "UserID", vm.UserID)
 		}
 
-		hostPoolSuffixes = append(hostPoolSuffixes, strings.TrimPrefix(*pool.Name, hostPoolNamePrefix))
+		hostPoolSuffixes = append(hostPoolSuffixes, strings.TrimPrefix(*pool.Name, avd.config.HostPoolNamePrefix))
 	}
 
 	// TODO: tag all resources
@@ -437,7 +434,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	log := logging.GetLogger(ctx)
 	rgName := avd.credentials.ResourceGroup
 
-	hpFilter := hostPoolNamePrefix
+	hpFilter := avd.config.HostPoolNamePrefix
 	log.InfoContext(ctx, "Starting AVD Cleanup process", "vmID", vmID, "resourceGroup", rgName, "hostPoolFilter", hpFilter)
 
 	// acquire lock so we don't have concurrency issues with other threads deleting or creating host pools

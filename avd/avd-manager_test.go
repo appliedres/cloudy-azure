@@ -32,7 +32,6 @@ func initAVDManager() (*AzureVirtualDesktopManager, error) {
 		DomainPass:                   os.Getenv("AZ_AVD_DOMAIN_PASS"),
 		Region:                       os.Getenv("AZ_AVD_REGION"),
 		DesktopApplicationUserRoleID: os.Getenv("AZ_AVD_DESKTOP_APPLICATION_USER_ROLE_ID"),
-		AVDUserGroupID:               os.Getenv("AZ_AVD_AVD_USER_GROUP_ID"),
 		UriEnv:                       os.Getenv("AZ_AVD_URI_ENV"),
 	}
 
@@ -49,7 +48,7 @@ func TestValidAVDManagerHPs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, avdm)
 
-	hp, err := avdm.CreateHostPool(ctx, avdm.credentials.ResourceGroup, "BILL-TEST1")
+	hp, err := avdm.CreateHostPool(ctx, avdm.credentials.ResourceGroup, "BILL-TEST1", nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, hp)
 
