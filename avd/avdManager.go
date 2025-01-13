@@ -416,10 +416,10 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	log.DebugContext(ctx, "Retrieved desktop application resource ID", "ResourceID", resourceID)
 
 	// Generate connection URL
-	log.DebugContext(ctx, "Generating Windows client URI", "avdUriVersion", avd.config.UriVersion, "UseMultiMon", avd.config.UseMulipleMonitors)
+	log.DebugContext(ctx, "Generating Windows client URI", "avdUriVersion", avd.config.UriVersion, "UseMultiMon", avd.config.UseMultipleMonitors)
 	connection := &models.VirtualMachineConnection{
 		RemoteDesktopProvider: "AVD",
-		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.config.UriEnv, avd.config.UriVersion, toBool(avd.config.UseMulipleMonitors)),
+		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.config.UriEnv, avd.config.UriVersion, toBool(avd.config.UseMultipleMonitors)),
 	}
 
 	vm.Connect = connection
