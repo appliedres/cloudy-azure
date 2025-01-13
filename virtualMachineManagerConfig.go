@@ -15,7 +15,7 @@ type AzureVirtualDesktopConfig struct {
 	DesktopApplicationUserRoleID string
 	UriEnv                       string
 	UriVersion                   string
-	UseMulipleMonitors           string
+	UseMultipleMonitors          string
 	PrefixBase                   string
 	HostPoolNamePrefix           string
 	WorkspaceNamePrefix          string
