@@ -13,19 +13,17 @@ import (
 	"github.com/google/uuid"
 )
 
-
-
 // CreateApplicationGroup creates an application group for the given host pool.
 func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
-	appGroupName := appGroupNamePrefix + suffix
-	hostPoolName := hostPoolNamePrefix + suffix
+	appGroupName := avd.config.AppGroupNamePrefix + suffix
+	hostPoolName := avd.config.HostPoolNamePrefix + suffix
 
 	hostPoolArmPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/hostPools/%s",
 		avd.credentials.SubscriptionID, rgName, hostPoolName)
 
 	appGroup := armdesktopvirtualization.ApplicationGroup{
-		Location: to.Ptr(string(avd.credentials.Region)),
-		Tags: tags,
+		Location: to.Ptr(string(avd.config.Region)),
+		Tags:     tags,
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
 			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
 			FriendlyName:         to.Ptr("App Group " + suffix),
@@ -73,7 +71,7 @@ func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.
 		avd.credentials.SubscriptionID, avd.credentials.ResourceGroup, desktopAppGroupName)
 
 	roleDefID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
-		avd.credentials.SubscriptionID, desktopApplicationUserRoleID)
+		avd.credentials.SubscriptionID, avd.config.DesktopApplicationUserRoleID)
 
 	uuidWithHyphen := uuid.New().String()
 
@@ -95,4 +93,3 @@ func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.
 	_ = res
 	return nil
 }
-

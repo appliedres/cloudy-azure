@@ -5,12 +5,11 @@ import (
 	"strings"
 )
 
-
 func (avd *AzureVirtualDesktopManager) extractSuffixFromHostPoolName(hostPoolName string) (string, error) {
-	if strings.HasPrefix(hostPoolName, hostPoolNamePrefix) {
-		return strings.TrimPrefix(hostPoolName, hostPoolNamePrefix), nil
+	if strings.HasPrefix(hostPoolName, avd.config.HostPoolNamePrefix) {
+		return strings.TrimPrefix(hostPoolName, avd.config.HostPoolNamePrefix), nil
 	}
-	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, hostPoolNamePrefix)
+	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, avd.config.HostPoolNamePrefix)
 }
 
 func GenerateNextName(suffixes []string, maxSequences int) (string, error) {
