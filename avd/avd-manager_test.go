@@ -30,7 +30,6 @@ func initAVDManager() (*AzureVirtualDesktopManager, error) {
 		DomainName:                   os.Getenv("AZ_AVD_DOMAIN_NAME"),
 		DomainUser:                   os.Getenv("AZ_AVD_DOMAIN_USER"),
 		DomainPass:                   os.Getenv("AZ_AVD_DOMAIN_PASS"),
-		Region:                       os.Getenv("AZ_AVD_REGION"),
 		DesktopApplicationUserRoleID: os.Getenv("AZ_AVD_DESKTOP_APPLICATION_USER_ROLE_ID"),
 		UriEnv:                       os.Getenv("AZ_AVD_URI_ENV"),
 	}

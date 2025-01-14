@@ -11,7 +11,6 @@ type AzureVirtualDesktopConfig struct {
 	DomainName                   string
 	DomainUser                   string
 	DomainPass                   string
-	Region                       string
 	DesktopApplicationUserRoleID string
 	UriEnv                       string
 	UriVersion                   string
