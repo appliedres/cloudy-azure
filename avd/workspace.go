@@ -21,7 +21,7 @@ func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgNa
 	}
 
 	newWorkspace := armdesktopvirtualization.Workspace{
-		Location: to.Ptr(string(avd.config.Region)),
+		Location: to.Ptr(string(avd.credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,
