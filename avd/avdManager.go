@@ -176,8 +176,6 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		hostPoolSuffixes = append(hostPoolSuffixes, strings.TrimPrefix(*pool.Name, avd.config.HostPoolNamePrefix))
 	}
 
-	// TODO: tag all resources
-
 	// Step 2: If no suitable host pool exists, create a new one
 	if targetHostPool == nil {
 		log.InfoContext(ctx, "No suitable host pool found; creating new host pool")
@@ -204,8 +202,6 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 
 		log.InfoContext(ctx, "Successfully created new host pool", "HostPool", *targetHostPool.Name, "UserID", vm.UserID)
 	}
-
-	// TODO: handle existing host pools with expired registration keys. need to call update host pool with new exp date
 
 	// Step 3: Retrieve registration token
 	log.DebugContext(ctx, "Retrieving registration token", "HostPool", *targetHostPool.Name)
@@ -465,7 +461,6 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 			}
 
 			for _, sessionHost := range page.Value {
-				// TODO: also remove any lingering "unavailable" session hosts
 				if sessionHost.Name != nil && strings.Contains(*sessionHost.Name, vmID) {
 					// Extract sessionhostname from "hostpoolname/sessionhostname"
 					sessionHostParts := strings.Split(*sessionHost.Name, "/")
