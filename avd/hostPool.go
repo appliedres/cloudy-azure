@@ -89,7 +89,7 @@ func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgNam
 	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
 
 	newHostPool := armdesktopvirtualization.HostPool{
-		Location: to.Ptr(string(avd.config.Region)),
+		Location: to.Ptr(string(avd.credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.HostPoolProperties{
 			FriendlyName: to.Ptr("Host Pool " + suffix),
