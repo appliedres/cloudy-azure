@@ -22,7 +22,7 @@ func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Contex
 		avd.credentials.SubscriptionID, rgName, hostPoolName)
 
 	appGroup := armdesktopvirtualization.ApplicationGroup{
-		Location: to.Ptr(string(avd.config.Region)),
+		Location: to.Ptr(string(avd.credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
 			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
