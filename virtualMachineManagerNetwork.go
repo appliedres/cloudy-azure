@@ -68,7 +68,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	nicName := fmt.Sprintf("%s-nic-primary", vm.ID)
 
 	fullSubnetId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s",
-		vmm.credentials.SubscriptionID, vmm.credentials.ResourceGroup, vmm.config.VnetId, subnetId)
+		vmm.credentials.SubscriptionID, vmm.config.VnetResourceGroup, vmm.config.VnetId, subnetId)
 
 	dnsServers := []*string{}
 	if strings.EqualFold(vm.Template.OperatingSystem, "windows") {
@@ -90,7 +90,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 		tags[key] = value
 	}
 
-	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.credentials.ResourceGroup, nicName, armnetwork.Interface{
+	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.config.VnetResourceGroup, nicName, armnetwork.Interface{
 		Location: &vmm.credentials.Region,
 		Tags:     tags,
 		Properties: &armnetwork.InterfacePropertiesFormat{
@@ -126,6 +126,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 		ID:        *resp.ID,
 		Name:      *resp.Name,
 		PrivateIP: *resp.Interface.Properties.IPConfigurations[0].Properties.PrivateIPAddress,
+		// FIXME: add nic resource group to model
 	}
 
 	log.InfoContext(ctx, fmt.Sprintf("Created new NIC: %s", nic.ID))
@@ -149,7 +150,7 @@ func (vmm *AzureVirtualMachineManager) DeleteNic(ctx context.Context, nic *model
 	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, fmt.Sprintf("DeleteNic starting: %s", nic.Name))
 
-	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, nic.Name, nil)
+	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.config.VnetResourceGroup, nic.Name, nil)
 	if err != nil {
 		return errors.Wrap(err, "DeleteNic.BeginDelete")
 	}
@@ -190,7 +191,7 @@ func (vmm *AzureVirtualMachineManager) findBestSubnet(ctx context.Context) (stri
 
 func (vmm *AzureVirtualMachineManager) getSubnetAvailableIps(ctx context.Context, subnetId string) (int, error) {
 	res, err := vmm.subnetClient.Get(ctx,
-		vmm.credentials.ResourceGroup,
+		vmm.config.VnetResourceGroup,
 		vmm.config.VnetId,
 		subnetId,
 		&armnetwork.SubnetsClientGetOptions{Expand: nil})
