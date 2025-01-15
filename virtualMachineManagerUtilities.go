@@ -134,9 +134,17 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 			},
 		},
-		SecurityProfile: &armcompute.SecurityProfile{
-			SecurityType: to.Ptr(armcompute.SecurityTypesTrustedLaunch),
-		},
+	}
+
+	if cloudyVM.Template.SecurityProfile != nil {
+		azVM.Properties.SecurityProfile = &armcompute.SecurityProfile{}
+
+		switch cloudyVM.Template.SecurityProfile.SecurityTypes {
+		case models.VirtualMachineSecurityTypesConfidentialVM:
+			azVM.Properties.SecurityProfile.SecurityType = to.Ptr(armcompute.SecurityTypesConfidentialVM)
+		case models.VirtualMachineSecurityTypesTrustedLaunch:
+			azVM.Properties.SecurityProfile.SecurityType = to.Ptr(armcompute.SecurityTypesTrustedLaunch)
+		}
 	}
 
 	azVM.Properties.OSProfile = &armcompute.OSProfile{
@@ -224,6 +232,17 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 					})
 				}
 				cloudyVm.Disks = disks
+			}
+		}
+
+		if azVM.Properties.SecurityProfile != nil {
+			if azVM.Properties.SecurityProfile.SecurityType != nil {
+				switch *azVM.Properties.SecurityProfile.SecurityType {
+				case armcompute.SecurityTypesConfidentialVM:
+					cloudyVm.Template.SecurityProfile.SecurityTypes = models.VirtualMachineSecurityTypesConfidentialVM
+				case armcompute.SecurityTypesTrustedLaunch:
+					cloudyVm.Template.SecurityProfile.SecurityTypes = models.VirtualMachineSecurityTypesTrustedLaunch
+				}
 			}
 		}
 	}
