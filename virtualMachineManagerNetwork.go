@@ -199,11 +199,15 @@ func (vmm *AzureVirtualMachineManager) getSubnetAvailableIps(ctx context.Context
 		return 0, errors.Wrap(err, "getSubnetAvailableIps")
 	}
 
-	// Retrieve and parse the CIDR block
-	addressPrefix := res.Subnet.Properties.AddressPrefix
-	if addressPrefix == nil && len(res.Subnet.Properties.AddressPrefixes) > 0 {
+	var addressPrefix *string
+
+	if len(res.Subnet.Properties.AddressPrefixes) > 0 {
 		addressPrefix = res.Subnet.Properties.AddressPrefixes[0]
-	} else {
+	} else if res.Subnet.Properties.AddressPrefix != nil {
+		addressPrefix = res.Subnet.Properties.AddressPrefix
+	}
+	
+	if addressPrefix == nil {
 		return 0, fmt.Errorf("getSubnetAvailableIps - addressprefix not found")
 	}
 
