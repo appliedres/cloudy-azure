@@ -188,10 +188,6 @@ func (vmm *AzureVirtualMachineManager) Deallocate(ctx context.Context, vmName st
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) Update(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
-	return nil, nil
-}
-
 func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachine armcompute.VirtualMachine) error {
 
 	return nil
