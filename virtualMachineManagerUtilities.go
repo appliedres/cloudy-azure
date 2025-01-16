@@ -236,7 +236,10 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 		}
 
 		if azVM.Properties.SecurityProfile != nil {
+			cloudyVm.Template.SecurityProfile = &models.VirtualMachineSecurityProfileConfiguration{}
+
 			if azVM.Properties.SecurityProfile.SecurityType != nil {
+
 				switch *azVM.Properties.SecurityProfile.SecurityType {
 				case armcompute.SecurityTypesConfidentialVM:
 					cloudyVm.Template.SecurityProfile.SecurityTypes = models.VirtualMachineSecurityTypesConfidentialVM
