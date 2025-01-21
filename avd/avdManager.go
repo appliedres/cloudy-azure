@@ -220,6 +220,13 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
+    useOU := false
+    ouPath := ""
+    if avd.config.OUPath != nil {
+        useOU = true
+        ouPath = *avd.config.OUPath
+    }
+
 	// Define the PowerShell script with placeholders
 	scriptTemplate := `
 # Set up logging for verbose output
@@ -230,18 +237,28 @@ $REGISTRATIONTOKEN = "%s"
 $DOMAIN_NAME = "%s"
 $DOMAIN_USERNAME = "%s"
 $DOMAIN_PASSWORD = "%s"
+$USE_OU = "%t"
+$OU_PATH = "%s"
 
 # Check if the machine is already in the domain
 $computerDomain = (Get-WmiObject -Class Win32_ComputerSystem).Domain
 if ($computerDomain -eq $DOMAIN_NAME) {
     Write-Host "Machine is already part of the domain: $DOMAIN_NAME"
 } else {
-    # Join the domain
+    # Join the domain with or without OU
     try {
         Write-Host "Attempting to join the domain: $DOMAIN_NAME"
         $securePassword = ConvertTo-SecureString -String $DOMAIN_PASSWORD -AsPlainText -Force
         $credential = New-Object System.Management.Automation.PSCredential ($DOMAIN_USERNAME, $securePassword)
-        Add-Computer -DomainName $DOMAIN_NAME -Credential $credential -Force -Verbose
+        
+        if ($USE_OU -eq "True" -and $OU_PATH -ne "") {
+            Write-Host "Joining with OU: $OU_PATH"
+            Add-Computer -DomainName $DOMAIN_NAME -Credential $credential -OUPath $OU_PATH -Force -Verbose
+        } else {
+            Write-Host "Joining without specifying an OU"
+            Add-Computer -DomainName $DOMAIN_NAME -Credential $credential -Force -Verbose
+        }
+
         Write-Host "Successfully joined the domain."
     } catch {
         Write-Host "Error joining the domain: $_"
@@ -333,7 +350,7 @@ Stop-Transcript
 	`
 
 	// Inject the registration key and domain credentials into the script
-	script := fmt.Sprintf(scriptTemplate, registrationToken, avd.config.DomainName, avd.config.DomainUser, avd.config.DomainPass)
+	script := fmt.Sprintf(scriptTemplate, registrationToken, avd.config.DomainName, avd.config.DomainUser, avd.config.DomainPass, useOU, ouPath)
 
 	log.InfoContext(ctx, "Generated AVD registration script", "VMID", vm.ID)
 	return &script, nil
