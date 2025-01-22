@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy/logging"
 )
@@ -109,4 +110,24 @@ func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, rgN
 	}
 
 	return desktops[0], nil
+}
+
+func (avd *AzureVirtualDesktopManager) renameDesktop(ctx context.Context, rgName, appGroupName, suffix string, desktopAppNamePrefix *string) (*armdesktopvirtualization.Desktop, error) {
+	namePrefix := "vDesktop"
+	if desktopAppNamePrefix != nil {
+		namePrefix = *desktopAppNamePrefix
+	}
+	
+	res, err := avd.desktopsClient.Update(ctx, rgName, appGroupName, "SessionDesktop", &armdesktopvirtualization.DesktopsClientUpdateOptions{Desktop: &armdesktopvirtualization.DesktopPatch{
+		Properties: &armdesktopvirtualization.DesktopPatchProperties{
+			Description:  to.Ptr("virtual Desktop application - connected to AVD stack with '" + suffix + "' suffix"),
+			FriendlyName: to.Ptr(namePrefix + " - " + suffix),
+		},
+	},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to rename desktop application with suffix '%s': %w", suffix, err)
+	}
+
+	return &res.Desktop, nil
 }

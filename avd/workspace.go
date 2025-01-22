@@ -25,7 +25,7 @@ func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgNa
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,
-			FriendlyName:               to.Ptr("Workspace " + suffix),
+			FriendlyName:               to.Ptr("Workspace for AVD stack '" + suffix + "'"),
 			Description:                to.Ptr("Generated via cloudy-azure"),
 		},
 	}

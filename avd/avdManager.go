@@ -186,7 +186,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 			return nil, nil, fmt.Errorf("failed to generate new host pool name: %w", err)
 		}
 
-		log.InfoContext(ctx, "Creating new host pool stack", "Suffix", nameSuffix)
+		log.InfoContext(ctx, "Creating new AVD stack", "Suffix", nameSuffix)
 
 		targetHostPool, _, _, err = avd.createAvdStack(ctx, nameSuffix)
 		if err != nil {
@@ -200,7 +200,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 				*targetHostPool.Name, vm.UserID, err)
 		}
 
-		log.InfoContext(ctx, "Successfully created new host pool", "HostPool", *targetHostPool.Name, "UserID", vm.UserID)
+		log.InfoContext(ctx, "Successfully created new AVD stack", "suffix", nameSuffix, "UserID", vm.UserID)
 	}
 
 	// Step 3: Retrieve registration token
@@ -573,13 +573,18 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 		return nil, nil, nil, fmt.Errorf("failed to create application group: %w", err)
 	}
 
+	desktopApp, err := avd.renameDesktop(ctx, rgName, *desktopAppGroup.Name, suffix, avd.config.DesktopNamePrefix)
+	if err != nil {
+		return nil, nil, nil, errors.Wrap(err, "error renaming desktopApp during stack creation")
+	}
+	_ = desktopApp
+
 	// Create workspace linked to the desktop application group
 	workspace, err := avd.CreateWorkspace(ctx, rgName, suffix, *desktopAppGroup.Name, tags)
 	if err != nil {
 		// TODO: delete resources during failed stack creation
 		return nil, nil, nil, fmt.Errorf("failed to create workspace: %w", err)
 	}
-	_ = workspace
 
 	// Assign AVD user group to the new desktop application group (DAG)
 	err = avd.AssignGroupToDesktopAppGroup(ctx, *desktopAppGroup.Name)

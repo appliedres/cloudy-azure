@@ -92,7 +92,7 @@ func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgNam
 		Location: to.Ptr(string(avd.credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.HostPoolProperties{
-			FriendlyName: to.Ptr("Host Pool " + suffix),
+			FriendlyName: to.Ptr("Host Pool for AVD stack '" + suffix + "'"),
 			Description:  to.Ptr("Generated via cloudy-azure"),
 			HostPoolType: to.Ptr(armdesktopvirtualization.HostPoolTypePersonal),
 			RegistrationInfo: &armdesktopvirtualization.RegistrationInfo{

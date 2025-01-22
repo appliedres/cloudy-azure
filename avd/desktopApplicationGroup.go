@@ -26,7 +26,7 @@ func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Contex
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
 			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
-			FriendlyName:         to.Ptr("App Group " + suffix),
+			FriendlyName:         to.Ptr("App Group for AVD stack '" + suffix + "'"),
 			Description:          to.Ptr("Generated via cloudy-azure"),
 			HostPoolArmPath:      to.Ptr(hostPoolArmPath),
 		},

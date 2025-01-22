@@ -21,4 +21,5 @@ type AzureVirtualDesktopConfig struct {
 	HostPoolNamePrefix           string
 	WorkspaceNamePrefix          string
 	AppGroupNamePrefix           string
+	DesktopNamePrefix			 *string
 }
