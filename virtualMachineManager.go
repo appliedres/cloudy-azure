@@ -59,6 +59,22 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 		return err
 	}
 
+	// Support using a separate resource group for the VNET / NIC / Subnet
+	vnetAzCred := &AzureCredentials{
+		Type: 			vmm.credentials.Type,
+		Region:			vmm.credentials.Region,
+		TenantID:       vmm.credentials.TenantID,
+		ClientID:       vmm.credentials.ClientID,
+		ClientSecret:   vmm.credentials.ClientSecret,
+		ResourceGroup:  vmm.config.VnetResourceGroup, // only RG is changed
+		SubscriptionID: vmm.credentials.SubscriptionID,
+		Cloud:			vmm.credentials.Cloud,
+	}
+	VnetCredential, err := NewAzureCredentials(vnetAzCred)
+	if err != nil {
+		return err
+	}
+
 	options := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
@@ -74,7 +90,7 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 	}
 	vmm.vmClient = vmClient
 
-	nicClient, err := armnetwork.NewInterfacesClient(vmm.credentials.SubscriptionID, credential, options)
+	nicClient, err := armnetwork.NewInterfacesClient(vmm.credentials.SubscriptionID, VnetCredential, options)
 	if err != nil {
 		return err
 	}
@@ -86,7 +102,7 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 	}
 	vmm.diskClient = diskClient
 
-	subnetClient, err := armnetwork.NewSubnetsClient(vmm.credentials.SubscriptionID, credential, options)
+	subnetClient, err := armnetwork.NewSubnetsClient(vmm.credentials.SubscriptionID, VnetCredential, options)
 	if err != nil {
 		return err
 	}

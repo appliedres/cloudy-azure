@@ -3,6 +3,7 @@ package cloudyazure
 type VirtualMachineManagerConfig struct {
 	DomainControllers []*string
 	SubnetIds         []string
+	VnetResourceGroup string
 	VnetId            string
 }
 
@@ -11,6 +12,7 @@ type AzureVirtualDesktopConfig struct {
 	DomainName                   string
 	DomainUser                   string
 	DomainPass                   string
+	OUPath                       *string
 	DesktopApplicationUserRoleID string
 	UriEnv                       string
 	UriVersion                   string
@@ -19,4 +21,5 @@ type AzureVirtualDesktopConfig struct {
 	HostPoolNamePrefix           string
 	WorkspaceNamePrefix          string
 	AppGroupNamePrefix           string
+	DesktopNamePrefix            *string
 }
