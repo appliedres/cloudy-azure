@@ -25,7 +25,7 @@ func initAVDManager() (*AzureVirtualDesktopManager, error) {
 	}
 
 	// TODO: modify an existing config api instead of env vars
-	rdmConfig := &cloudyazure.AzureVirtualDesktopConfig{
+	rdmConfig := &AzureVirtualDesktopConfig{
 		AvdUsersGroupId:              os.Getenv("AZ_AVD_USERS_GROUP_ID"),
 		DomainName:                   os.Getenv("AZ_AVD_DOMAIN_NAME"),
 		DomainUser:                   os.Getenv("AZ_AVD_DOMAIN_USER"),
