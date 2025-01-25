@@ -42,7 +42,7 @@ const (
 	CloudAzureUSGovernment = "azureusgovernment"
 )
 
-func fixCloudName(cloudName string) string {
+func FixCloudName(cloudName string) string {
 	cloudNameFixed := strings.ToLower(cloudName)
 	cloudNameFixed = strings.ReplaceAll(cloudNameFixed, "-", "")
 	cloudNameFixed = strings.ReplaceAll(cloudNameFixed, "_", "")
@@ -50,7 +50,7 @@ func fixCloudName(cloudName string) string {
 }
 
 func PolicyFromCloudString(cloudName string) cloud.Configuration {
-	cloudNameFixed := fixCloudName(cloudName)
+	cloudNameFixed := FixCloudName(cloudName)
 
 	switch cloudNameFixed {
 	// Default to the government cloud
@@ -192,7 +192,7 @@ func GetAzureCredentialsFromEnv(env *cloudy.Environment) AzureCredentials {
 		ClientSecret:   env.Get("AZ_CLIENT_SECRET"),
 		ResourceGroup:  env.Get("AZ_RESOURCE_GROUP"),
 		SubscriptionID: env.Get("AZ_SUBSCRIPTION_ID"),
-		Cloud:			env.Get("AZ_CLOUD"),
+		Cloud:          env.Get("AZ_CLOUD"),
 	}
 	return credentials
 }

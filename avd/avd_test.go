@@ -10,9 +10,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy"
+	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/appliedres/cloudy-azure"
 )
 
 type Config struct {
@@ -57,9 +57,7 @@ func initAVD() error {
 		Region:       "usgovvirginia",
 	}
 
-	config := cloudyazure.AzureVirtualDesktopConfig{
-
-	}
+	config := AzureVirtualDesktopConfig{}
 
 	avd, err = NewAzureVirtualDesktopManager(ctx, &creds, &config)
 	if err != nil {
