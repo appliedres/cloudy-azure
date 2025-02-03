@@ -3,6 +3,7 @@ package avd
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -219,140 +220,34 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 
 func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
 	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Generating AVD registration script", "vmid", vm.ID, "domain", avd.config.DomainName)
 
-	useOU := false
+	customOU := false
 	ouPath := ""
 	if avd.config.OUPath != nil {
-		useOU = true
+		customOU = true
 		ouPath = *avd.config.OUPath
+		log.InfoContext(ctx, "Using custom OU path for AD join", "OUPath", ouPath)
 	}
 
-	// Define the PowerShell script with placeholders
-	scriptTemplate := `
-# Set up logging for verbose output
-$logFilePath = "$pwd\install_log.txt"
-Start-Transcript -Path $logFilePath -Append
-
-$REGISTRATIONTOKEN = "%s"
-$DOMAIN_NAME = "%s"
-$DOMAIN_USERNAME = "%s"
-$DOMAIN_PASSWORD = "%s"
-$USE_OU = "%t"
-$OU_PATH = "%s"
-
-# Check if the machine is already in the domain
-$computerDomain = (Get-WmiObject -Class Win32_ComputerSystem).Domain
-if ($computerDomain -eq $DOMAIN_NAME) {
-    Write-Host "Machine is already part of the domain: $DOMAIN_NAME"
-} else {
-    # Join the domain with or without OU
-    try {
-        Write-Host "Attempting to join the domain: $DOMAIN_NAME"
-        $securePassword = ConvertTo-SecureString -String $DOMAIN_PASSWORD -AsPlainText -Force
-        $credential = New-Object System.Management.Automation.PSCredential ($DOMAIN_USERNAME, $securePassword)
-        
-        if ($USE_OU -eq "True" -and $OU_PATH -ne "") {
-            Write-Host "Joining with OU: $OU_PATH"
-            Add-Computer -DomainName $DOMAIN_NAME -Credential $credential -OUPath $OU_PATH -Force -Verbose
-        } else {
-            Write-Host "Joining without specifying an OU"
-            Add-Computer -DomainName $DOMAIN_NAME -Credential $credential -Force -Verbose
-        }
-
-        Write-Host "Successfully joined the domain."
-    } catch {
-        Write-Host "Error joining the domain: $_"
-        Stop-Transcript
-        return
-    }
-}
-
-# Define URLs for the installers
-$uris = @(
-	"https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrmXv",   # RDAgent
-	"https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrxrH"    # BootLoader Agent
-)
-
-$installers = @()
-
-# Download installers
-foreach ($uri in $uris) {
-	try {
-		Write-Host "Starting download: $uri"
-		$download = Invoke-WebRequest -Uri $uri -UseBasicParsing -Verbose
-		$fileName = ($download.Headers.'Content-Disposition').Split('=')[1].Replace('"','')
-		$outputPath = "$pwd\$fileName"
-
-		if (Test-Path $outputPath) {
-			Write-Host "File $fileName already exists. Skipping download."
-		} else {
-			$output = [System.IO.FileStream]::new($outputPath, [System.IO.FileMode]::Create)
-			$output.write($download.Content, 0, $download.RawContentLength)
-			$output.close()
-			Write-Host "Downloaded: $fileName"
-		}
-
-		$installers += $outputPath
-	} catch {
-		Write-Host "Error downloading ${uri}: $_"
-		return
+	// Read the PowerShell script from the file
+	scriptPath := "../powershell/vm_post_create_script.ps1"
+	scriptContent, err := os.ReadFile(scriptPath)
+	if err != nil {
+		log.ErrorContext(ctx, "Failed to read registration script", "error", err)
+		return nil, err
 	}
-}
 
-# Unblock files after download
-foreach ($installer in $installers) {
-	if (Test-Path $installer) {
-		Write-Host "Unblocking file: $installer"
-		Unblock-File -Path $installer -Verbose
-	} else {
-		Write-Host "File $installer not found, skipping unblock."
-	}
-}
+	// Replace placeholders in the script
+	script := string(scriptContent)
+	script = strings.ReplaceAll(script, "$REGISTRATIONTOKEN", registrationToken)
+	script = strings.ReplaceAll(script, "$DOMAIN_NAME", avd.config.DomainName)
+	script = strings.ReplaceAll(script, "$DOMAIN_USERNAME", avd.config.DomainUser)
+	script = strings.ReplaceAll(script, "$DOMAIN_PASSWORD", avd.config.DomainPass)
+	script = strings.ReplaceAll(script, "$CUSTOM_OU", fmt.Sprintf("%t", customOU))
+	script = strings.ReplaceAll(script, "$OU_PATH", ouPath)
 
-# Find the RDAgent installer
-$rdaAgentInstaller = $installers | Where-Object { $_ -match "Microsoft.RDInfra.RDAgent.Installer-x64" }
-if (-not $rdaAgentInstaller) {
-	Write-Host "RDAgent installer not found."
-	return
-}
-
-# Find the BootLoader installer
-$rdaBootLoaderInstaller = $installers | Where-Object { $_ -match "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64" }
-if (-not $rdaBootLoaderInstaller) {
-	Write-Host "BootLoader Agent installer not found."
-	return
-}
-
-# Install RDAgent
-Write-Host "Installing RDAgent with registration token."
-try {
-	Start-Process msiexec -ArgumentList "/i $rdaAgentInstaller REGISTRATIONTOKEN=$REGISTRATIONTOKEN /quiet /norestart" -Wait -Verbose -Verb RunAs
-} catch {
-	Write-Host "Error installing RDAgent: $_"
-	return
-}
-
-# Install BootLoader Agent
-Write-Host "Installing BootLoader Agent."
-try {
-	Start-Process msiexec -ArgumentList "/i $rdaBootLoaderInstaller /quiet" -Wait -Verbose -Verb RunAs
-} catch {
-	Write-Host "Error installing BootLoader Agent: $_"
-	return
-}
-
-# Finalize and restart
-Write-Host "Preparing for system restart."
-Restart-Computer -Force
-
-# Stop the transcript and finalize the log
-Stop-Transcript
-	`
-
-	// Inject the registration key and domain credentials into the script
-	script := fmt.Sprintf(scriptTemplate, registrationToken, avd.config.DomainName, avd.config.DomainUser, avd.config.DomainPass, useOU, ouPath)
-
-	log.InfoContext(ctx, "Generated AVD registration script", "VMID", vm.ID)
+	log.InfoContext(ctx, "Generated AD join / AVD registration script", "vmid", vm.ID, "domain", avd.config.DomainName)
 	return &script, nil
 }
 
@@ -373,7 +268,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	sessionHost, err := avd.WaitForSessionHost(ctx, rgName, hpName, vm.ID, 10*time.Minute)
 	if err != nil {
 		log.WarnContext(ctx, "Error waiting for session host", "Error", err)
-		return nil, errors.Wrap(err, "Waiting for session host to be ready")
+		return nil, logging.LogAndWrapErr(ctx, log, err, "Waiting for session host to be ready")
 	}
 
 	log.DebugContext(ctx, "Session host ready", "SessionHostName", *sessionHost.Name)

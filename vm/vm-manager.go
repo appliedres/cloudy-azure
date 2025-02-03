@@ -199,6 +199,8 @@ func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachin
 }
 
 func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, script string) error {
+	log := logging.GetLogger(ctx)
+
 	// Define RunCommandInput
 	runCommandInput := armcompute.RunCommandInput{
 		CommandID: to.Ptr("RunPowerShellScript"),
@@ -210,24 +212,24 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 	// Execute the script
 	response, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
 	if err != nil {
-		return errors.Wrap(err, "failed to execute remote powershell script")
+		return logging.LogAndWrapErr(ctx, log, err, "failed to execute remote powershell script")
 	}
 
 	// Poll until the command completes
 	result, err := response.PollUntilDone(ctx, nil)
 	if err != nil {
-		return errors.Wrap(err, "failed to retrieve RunCommand result")
+		return logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
 	}
 
 	// Output the command's result
 	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
-				fmt.Printf("Command Output: %s\n", *output.Message)
+				log.InfoContext(ctx, fmt.Sprintf("Powershell Command Output: %s\n", *output.Message))
 			}
 		}
 	} else {
-		fmt.Println("No output returned from the command.")
+		log.WarnContext(ctx, "No output returned from the powershell execution.")
 	}
 
 	return nil
