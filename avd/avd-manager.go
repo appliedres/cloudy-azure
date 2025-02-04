@@ -3,7 +3,6 @@ package avd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	cloudyazure "github.com/appliedres/cloudy-azure"
+	"github.com/appliedres/cloudy-azure/powershell"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 	"github.com/pkg/errors"
@@ -218,37 +218,93 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	return targetHostPool.Name, token, nil
 }
 
-func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
+// getOptionalConfig retrieves the config value. If the value is nil or empty, 
+// it returns the default value (if provided) or an empty string. 
+//
+// Logs debug information about which value is being returned.
+func getOptionalConfig(ctx context.Context, configValue, fallbackValue *string) string {
 	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "Generating AVD registration script", "vmid", vm.ID, "domain", avd.config.DomainName)
 
-	customOU := false
-	ouPath := ""
-	if avd.config.OUPath != nil {
-		customOU = true
-		ouPath = *avd.config.OUPath
-		log.InfoContext(ctx, "Using custom OU path for AD join", "OUPath", ouPath)
+	// If the actual config value is present and non-empty, return it.
+	if configValue != nil && *configValue != "" {
+		log.DebugContext(ctx, fmt.Sprintf("Returning provided config value '%s'.", *configValue))
+		return *configValue
 	}
 
-	// Read the PowerShell script from the file
-	scriptPath := "../powershell/vm_post_create_script.ps1"
-	scriptContent, err := os.ReadFile(scriptPath)
-	if err != nil {
-		log.ErrorContext(ctx, "Failed to read registration script", "error", err)
-		return nil, err
+	// Otherwise, check if we have a valid fallback.
+	if fallbackValue != nil && *fallbackValue != "" {
+		log.DebugContext(ctx, fmt.Sprintf("Value not provided; using fallback '%s'.", *fallbackValue))
+		return *fallbackValue
 	}
 
-	// Replace placeholders in the script
-	script := string(scriptContent)
-	script = strings.ReplaceAll(script, "$REGISTRATIONTOKEN", registrationToken)
-	script = strings.ReplaceAll(script, "$DOMAIN_NAME", avd.config.DomainName)
-	script = strings.ReplaceAll(script, "$DOMAIN_USERNAME", avd.config.DomainUser)
-	script = strings.ReplaceAll(script, "$DOMAIN_PASSWORD", avd.config.DomainPass)
-	script = strings.ReplaceAll(script, "$CUSTOM_OU", fmt.Sprintf("%t", customOU))
-	script = strings.ReplaceAll(script, "$OU_PATH", ouPath)
+	// No actual value or fallback.
+	log.DebugContext(ctx, "Value not provided and no fallback; returning empty string.")
+	return ""
+}
 
-	log.InfoContext(ctx, "Generated AD join / AVD registration script", "vmid", vm.ID, "domain", avd.config.DomainName)
-	return &script, nil
+func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
+    log := logging.GetLogger(ctx)
+    log.DebugContext(ctx, "Generating AVD registration script", "vmid", vm.ID)
+
+    // 1. retrieve values from config
+    domainName := avd.config.DomainName
+    domainUser := avd.config.DomainUser
+    domainPass := avd.config.DomainPass
+    ouPath := getOptionalConfig(ctx, avd.config.OUPath, nil)
+    saltMaster := getOptionalConfig(ctx, avd.config.SaltMaster, nil)
+
+    avdAgentURI := getOptionalConfig(ctx, avd.config.RDAgentURI, 
+		to.Ptr("https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrmXv"))
+    avdBootLoaderURI := getOptionalConfig(ctx, avd.config.BootLoaderURI, 
+		to.Ptr("https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrxrH"))
+
+    // 2. Map powershell values to config
+    variableMap := map[string]string{
+        "$REGISTRATION_TOKEN":   registrationToken,
+        "$DOMAIN_NAME":          domainName,
+        "$DOMAIN_USERNAME":      domainUser,
+        "$DOMAIN_PASSWORD":      domainPass,
+        "$OU_PATH":              ouPath,
+        "$AVD_AGENT_URI":        avdAgentURI,
+        "$AVD_BOOTLOADER_URI":   avdBootLoaderURI,
+        "$SALT_MASTER":          saltMaster,
+    }
+
+    // 3. Build log fields, redacting sensitive placeholders
+    var sensitivePlaceholders = map[string]bool{
+        "$DOMAIN_PASSWORD":     true,
+        "$REGISTRATION_TOKEN":  true,
+    }
+
+    logFields := []interface{}{"vmid", vm.ID}
+    for key, val := range variableMap {
+        if sensitivePlaceholders[key] {
+            logFields = append(logFields, key, "**REDACTED**")
+        } else {
+            logFields = append(logFields, key, val)
+        }
+    }
+
+    log.InfoContext(ctx, "Generating script with parameters (redacted)", logFields...)
+
+	// 4. Get base script with variables
+    scriptTemplate := powershell.GetPostCreateScript()
+
+	// 5. Replace placeholders with actual values
+	script := fmt.Sprintf(
+		scriptTemplate,
+		registrationToken,
+		domainName,
+		domainUser,
+		domainPass,
+		ouPath,
+		avdAgentURI,
+		avdBootLoaderURI,
+		saltMaster,
+	)
+
+    log.InfoContext(ctx, "Successfully generated AVD registration script", "vmid", vm.ID)
+    return &script, nil
 }
 
 // After registering, the user must then be assigned to the new session host
