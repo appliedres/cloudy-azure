@@ -2,7 +2,6 @@ package vm
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -201,6 +200,8 @@ func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachin
 func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, script string) error {
 	log := logging.GetLogger(ctx)
 
+	log.DebugContext(ctx, "Initializing PowerShell execution on VM")
+
 	// Define RunCommandInput
 	runCommandInput := armcompute.RunCommandInput{
 		CommandID: to.Ptr("RunPowerShellScript"),
@@ -209,28 +210,38 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 		},
 	}
 
+	log.DebugContext(ctx, "Constructed RunCommandInput for PowerShell execution")
+
 	// Execute the script
+	log.InfoContext(ctx, "Executing remote PowerShell script")
 	response, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
 	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err, "failed to execute remote powershell script")
+		log.ErrorContext(ctx, "Failed to execute remote PowerShell script", "error", err)
+		return logging.LogAndWrapErr(ctx, log, err, "failed to execute remote PowerShell script")
 	}
+
+	log.DebugContext(ctx, "PowerShell command execution started successfully, polling for result")
 
 	// Poll until the command completes
 	result, err := response.PollUntilDone(ctx, nil)
 	if err != nil {
+		log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
 		return logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
 	}
+
+	log.InfoContext(ctx, "PowerShell script execution completed")
 
 	// Output the command's result
 	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
-				log.InfoContext(ctx, fmt.Sprintf("Powershell Command Output: %s\n", *output.Message))
+				log.InfoContext(ctx, "PowerShell Command Output", "output", *output.Message)
 			}
 		}
 	} else {
-		log.WarnContext(ctx, "No output returned from the powershell execution.")
+		log.WarnContext(ctx, "No output returned from the PowerShell execution")
 	}
 
+	log.DebugContext(ctx, "RunPowershell function completed successfully")
 	return nil
 }

@@ -20,7 +20,7 @@ const (
 )
 
 func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) armcompute.VirtualMachine {
-	log := logging.GetLogger(ctx)
+	// log := logging.GetLogger(ctx)
 
 	azVM := armcompute.VirtualMachine{
 		// cloudyVM Id is saved as ID and Name
@@ -93,7 +93,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		AdminUsername: &cloudyVM.Template.LocalAdministratorID,
 		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),
 	}
-	log.InfoContext(ctx, fmt.Sprintf("%+v", azVM.Properties.OSProfile))
+	// log.InfoContext(ctx, fmt.Sprintf("%+v", azVM.Properties.OSProfile))
 
 	// OS-specific items
 	switch cloudyVM.Template.OperatingSystem {

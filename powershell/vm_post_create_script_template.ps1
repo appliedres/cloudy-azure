@@ -2,47 +2,57 @@
 #
 # This script will:
 # 1. Join the machine to an Active Directory domain
-# 2. Download and install the AVD Agents
-# 3. Download and install the Salt Minion (optionally connect to a master)
-#
+# 2. Download all files from a private Azure storage container
+# 3. Install the AVD Agents (from the downloaded files)
+# 4. Install the Salt Minion (using the downloaded bootstrap-salt.ps1)
+# 5. Restart the machine
+
 # Note: All values are inserted by the Go code at runtime via string replacement.
 # These are replaced in a specific order, so be careful when editing this file.
-$REGISTRATION_TOKEN  = "%s" # The registration token for the AVD Agent. Sourced from the target host pool.
-$DOMAIN_NAME         = "%s" # The domain name to join
-$DOMAIN_USERNAME     = "%s" # The username to use to join the domain
-$DOMAIN_PASSWORD     = "%s" # The password to use to join the domain
-$OU_PATH             = "%s" # The OU path to join the machine to (optional)
-$AVD_AGENT_URI       = "%s" # The URI for the AVD Agent
-$AVD_BOOTLOADER_URI  = "%s" # The URI for the AVD Agent BootLoader
-$SALT_MASTER         = "%s" # The master to connect the Salt Minion to (optional)
+$1_REGISTRATION_TOKEN                = "%s" # The registration token for the AVD Agent. Sourced from the target host pool.
+$2_DOMAIN_NAME                       = "%s" # The domain name to join
+$3_DOMAIN_USERNAME                   = "%s" # The username to use to join the domain
+$4_DOMAIN_PASSWORD                   = "%s" # The password to use to join the domain
+$5_OU_PATH                           = "%s" # The OU path to join the machine to (optional)
+$6_SALT_MASTER                       = "%s" # The master to connect the Salt Minion to (optional)
+$7_AZURE_CONTAINER_URI               = "%s" # e.g. "https://<acct>.blob.core.usgovcloudapi.net/container?sv=..."
+$8_AVD_AGENT_INSTALLER_FILENAME      = "%s" # e.g. "Microsoft.RDInfra.RDAgent.Installer-x64.msi"
+$9_AVD_BOOTLOADER_INSTALLER_FILENAME = "%s" # e.g. "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64.msi"
+$10_SALT_MINION_INSTALLER_FILENAME   = "%s" # e.g. "Salt-Minion-3006.7-Py3-AMD64-Setup.msi"
 
-# Set up logging for verbose output
-$logFilePath = "$pwd\install_log.txt"
+# --------------------------------------------------------------------------------
+# Start Transcript
+# --------------------------------------------------------------------------------
+$logFilePath = "$PSScriptRoot\install_log.txt"
 Start-Transcript -Path $logFilePath -Append
 
 function Exit-OnFailure {
     param([string]$message)
-    Write-Host $message
+    Write-Host $message -ForegroundColor Red
     Stop-Transcript
     exit 1
 }
 
-# Step 1: Join Machine to Domain
+# --------------------------------------------------------------------------------
+# STEP 1: JOIN DOMAIN
+# --------------------------------------------------------------------------------
+Write-Host "Joining domain..."
+
 $computerDomain = (Get-WmiObject -Class Win32_ComputerSystem).Domain
-if ($computerDomain -eq "$DOMAIN_NAME") {
-    Write-Host "Machine is already part of the domain: $DOMAIN_NAME"
+if ($computerDomain -eq "$2_DOMAIN_NAME") {
+    Write-Host "Machine is already part of the domain: $2_DOMAIN_NAME"
 } else {
     try {
-        Write-Host "Attempting to join the domain: $DOMAIN_NAME"
-        $securePassword = ConvertTo-SecureString -String "$DOMAIN_PASSWORD" -AsPlainText -Force
-        $credential = New-Object System.Management.Automation.PSCredential ("$DOMAIN_USERNAME", $securePassword)
+        Write-Host "Attempting to join the domain: $2_DOMAIN_NAME"
+        $securePassword = ConvertTo-SecureString -String "$4_DOMAIN_PASSWORD" -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ("$3_DOMAIN_USERNAME", $securePassword)
 
-        if ("$OU_PATH" -ne "") {
-            Write-Host "Joining with custom OU: $OU_PATH"
-            Add-Computer -DomainName "$DOMAIN_NAME" -Credential $credential -OUPath "$OU_PATH" -Force -Verbose
+        if (-not [string]::IsNullOrWhiteSpace($5_OU_PATH)) {
+            Write-Host "Joining with custom OU: $5_OU_PATH"
+            Add-Computer -DomainName "$2_DOMAIN_NAME" -Credential $credential -OUPath "$5_OU_PATH" -Force -Verbose
         } else {
             Write-Host "Joining domain without specifying an OU"
-            Add-Computer -DomainName "$DOMAIN_NAME" -Credential $credential -Force -Verbose
+            Add-Computer -DomainName "$2_DOMAIN_NAME" -Credential $credential -Force -Verbose
         }
 
         Write-Host "Successfully joined the domain."
@@ -51,104 +61,152 @@ if ($computerDomain -eq "$DOMAIN_NAME") {
     }
 }
 
-# Step 2: Download & Install AVD Agents
-$installers = @()
-$uris = @("$AVD_AGENT_URI", "$AVD_BOOTLOADER_URI")
+# --------------------------------------------------------------------------------
+# STEP 2: DOWNLOAD FILES FROM AZURE STORAGE
+# --------------------------------------------------------------------------------
+Write-Host "Downloading files from Azure Storage..."
 
-foreach ($uri in $uris) {
-    try {
-        Write-Host "Downloading: $uri"
-        $download = Invoke-WebRequest -Uri $uri -UseBasicParsing -Verbose
-        $fileName = ($download.Headers.'Content-Disposition').Split('=')[1].Replace('"','')
-        $outputPath = "$pwd\$fileName"
+$filesToDownload = @(
+    $8_AVD_AGENT_INSTALLER_FILENAME,
+    $9_AVD_BOOTLOADER_INSTALLER_FILENAME,
+    $10_SALT_MINION_INSTALLER_FILENAME
+)
 
-        if (Test-Path $outputPath) {
-            Write-Host "File $fileName already exists. Skipping download."
-        } else {
-            $output = [System.IO.FileStream]::new($outputPath, [System.IO.FileMode]::Create)
-            $output.write($download.Content, 0, $download.RawContentLength)
-            $output.close()
-            Write-Host "Downloaded: $fileName"
-        }
-
-        $installers += $outputPath
-    } catch {
-        Exit-OnFailure "Error downloading $($uri): $($_)"
-    }
+$downloadFolder = Join-Path $env:TEMP "ArkloudDownloads"
+if (!(Test-Path $downloadFolder)) {
+    New-Item -ItemType Directory -Path $downloadFolder | Out-Null
 }
 
-# Step 3: Unblock & Install AVD Agents
-foreach ($installer in $installers) {
-    if (Test-Path $installer) {
-        Write-Host "Unblocking: $installer"
-        Unblock-File -Path $installer -Verbose
+foreach ($blobName in $filesToDownload) {
+    Write-Host "Processing blob: $blobName"
+
+    # Construct direct blob URL
+    if ($7_AZURE_CONTAINER_URI -match "\?") {
+        # If container URI already has '?', insert the blob name before the query string.
+        $blobUrl = $7_AZURE_CONTAINER_URI -replace '\?.*$', "/$blobName$&"
     } else {
-        Exit-OnFailure "File $installer not found, skipping installation."
+        # No query in base URI, just append the blob name.
+        $blobUrl = "$7_AZURE_CONTAINER_URI/$blobName"
+    }
+
+    $outputPath = Join-Path $downloadFolder $blobName
+    Write-Host "Downloading: $blobUrl -> $outputPath"
+
+    try {
+        Invoke-WebRequest -Uri $blobUrl -OutFile $outputPath -UseBasicParsing
+        Write-Host "Successfully downloaded: $blobName"
+    } catch {
+        Exit-OnFailure "Failed to download file: $blobName. Error: $_"
     }
 }
+Write-Host "All files downloaded successfully."
 
-$rdaAgentInstaller = $installers | Where-Object { $_ -match "Microsoft.RDInfra.RDAgent.Installer-x64" }
-if (-not $rdaAgentInstaller) { Exit-OnFailure "RDAgent installer not found." }
+# --------------------------------------------------------------------------------
+# STEP 3: INSTALL AVD AGENT + BOOTLOADER
+# --------------------------------------------------------------------------------
+Write-Host "AVD Agent and BootLoader installation starting..."
 
-$rdaBootLoaderInstaller = $installers | Where-Object { $_ -match "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64" }
-if (-not $rdaBootLoaderInstaller) { Exit-OnFailure "BootLoader Agent installer not found." }
+$rdaAgentInstallerPath      = Join-Path $downloadFolder $8_AVD_AGENT_INSTALLER_FILENAME
+$rdaBootLoaderInstallerPath = Join-Path $downloadFolder $9_AVD_BOOTLOADER_INSTALLER_FILENAME
 
-Write-Host "Installing RDAgent..."
+if (!(Test-Path $rdaAgentInstallerPath)) {
+    Exit-OnFailure "Could not find $8_AVD_AGENT_INSTALLER_FILENAME in $downloadFolder"
+}
+if (!(Test-Path $rdaBootLoaderInstallerPath)) {
+    Exit-OnFailure "Could not find $9_AVD_BOOTLOADER_INSTALLER_FILENAME in $downloadFolder"
+}
+
+Write-Host "Installing AVD RDAgent..."
 try {
-    $rdArgs = @("/i", "$rdaAgentInstaller", "REGISTRATIONTOKEN=$REGISTRATION_TOKEN", "/quiet", "/norestart")
-    Start-Process msiexec -ArgumentList $rdArgs -Wait -Verbose -Verb RunAs
+    Unblock-File -Path $rdaAgentInstallerPath
+    $rdArgs = @("/i", $rdaAgentInstallerPath, "REGISTRATIONTOKEN=$1_REGISTRATION_TOKEN", "/quiet", "/norestart")
+    Start-Process msiexec.exe -ArgumentList $rdArgs -Wait -Verbose -Verb RunAs
 } catch {
     Exit-OnFailure "Error installing RDAgent: $_"
 }
 
-Write-Host "Installing BootLoader Agent..."
+Write-Host "Installing AVD BootLoader Agent..."
 try {
-    $blArgs = @("/i", "$rdaBootLoaderInstaller", "/quiet")
-    Start-Process msiexec -ArgumentList $blArgs -Wait -Verbose -Verb RunAs
+    Unblock-File -Path $rdaBootLoaderInstallerPath
+    $blArgs = @("/i", $rdaBootLoaderInstallerPath, "/quiet", "/norestart")
+    Start-Process msiexec.exe -ArgumentList $blArgs -Wait -Verbose -Verb RunAs
 } catch {
     Exit-OnFailure "Error installing BootLoader Agent: $_"
 }
+Write-Host "AVD Agent and BootLoader installation completed successfully."
 
-# Step 4: Download & Install Salt Minion using bootstrap-salt.ps1
-try {
-    Write-Host "Downloading Salt Bootstrap Script..."
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]'Tls12'
-    Invoke-WebRequest -Uri https://github.com/saltstack/salt-bootstrap/releases/latest/download/bootstrap-salt.ps1 `
-                      -OutFile "$env:TEMP\bootstrap-salt.ps1" -UseBasicParsing -Verbose
-} catch {
-    Exit-OnFailure "Error downloading bootstrap-salt.ps1: $_"
+# --------------------------------------------------------------------------------
+# STEP 4: INSTALL SALT MINION (MSI) & START SERVICE
+# --------------------------------------------------------------------------------
+Write-Host "Salt Minion installation starting..."
+
+$saltInstallerPath = Join-Path $downloadFolder $10_SALT_MINION_INSTALLER_FILENAME
+if (!(Test-Path $saltInstallerPath)) {
+    Exit-OnFailure "Could not find $10_SALT_MINION_INSTALLER_FILENAME in $downloadFolder"
 }
 
-Write-Host "Running bootstrap-salt.ps1..."
+Write-Host "Installing Salt Minion (MSI) from local file: $saltInstallerPath"
+Unblock-File -Path $saltInstallerPath
+
+# Prepare MSI installation arguments
+$saltArgs = @("/i", "$saltInstallerPath", "/quiet", "/norestart")
+if (-not [string]::IsNullOrWhiteSpace($6_SALT_MASTER)) {
+    Write-Host "Master specified during salt minion install: $6_SALT_MASTER"
+    $saltArgs += "MASTER=$6_SALT_MASTER"
+}
+
+Write-Host "Launching Salt Minion installer..."
 try {
-    # If a master is specified, pass -Master <master> to the script.
-    $saltBootArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$env:TEMP\bootstrap-salt.ps1")
-    if ($SALT_MASTER) {
-        Write-Host "Using Salt Master: $SALT_MASTER"
-        $saltBootArgs += ("-Master", $SALT_MASTER)
+    $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $saltArgs -NoNewWindow -PassThru -Wait
+    if ($process.ExitCode -ne 0) {
+        Exit-OnFailure "Salt Minion MSI did not exit cleanly. Exit code: $($process.ExitCode)"
     }
-    
-    Start-Process powershell.exe -ArgumentList $saltBootArgs -Wait -Verbose
+    Write-Host "Salt Minion MSI process exited successfully with code: $($process.ExitCode)"
 } catch {
-    Exit-OnFailure "Error running bootstrap-salt.ps1: $_"
+    Exit-OnFailure "Error launching Salt Minion installer: $_"
 }
 
-# Step 5: Verify Salt Minion is up
-Write-Host "Verifying Salt Minion..."
-try {
-    $saltVersion = salt-call --version
-    if ($saltVersion) {
-        Write-Host "Salt Minion installed successfully: $saltVersion"
+# Verify and start the salt-minion service
+Write-Host "Verifying that the salt-minion service was registered..."
+$service = $null
+$tries = 0
+$maxTries = 15
+while (-not $service) {
+    $service = Get-Service salt-minion -ErrorAction SilentlyContinue
+    if ($service) { break }
+    Start-Sleep -Seconds 2
+    $tries++
+    if ($tries -ge $maxTries) {
+        Exit-OnFailure "Timeout waiting for 'salt-minion' service to be installed."
+    }
+}
+Write-Host "'salt-minion' service found successfully."
+
+# Start the salt-minion service if it's not already running
+Write-Host "Starting salt-minion service..."
+$serviceRefreshTime = 0
+$serviceStartMax = 60
+while ($service.Status -ne "Running") {
+    if ($service.Status -eq "Stopped") {
+        Start-Service -Name "salt-minion" -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+    $service.Refresh()
+    if ($service.Status -eq "Running") {
+        Write-Host "Salt-minion service started successfully."
+        break
     } else {
-        Exit-OnFailure "Salt Minion installation verification failed!"
+        $serviceRefreshTime++
+        if ($serviceRefreshTime -ge $serviceStartMax) {
+            Exit-OnFailure "Timed out waiting for salt-minion service to start."
+        }
     }
-} catch {
-    Write-Host "Could not run 'salt-call --version' in this session. The Minion service may still be running."
 }
+Write-Host "Salt Minion installation and service startup completed successfully!"
 
-Write-Host "Salt Minion installation completed successfully!"
-
-# Step 6: Restart the Computer (Optional if you want a clean reboot post-install)
+# --------------------------------------------------------------------------------
+# STEP 5: RESTART
+# --------------------------------------------------------------------------------
 Write-Host "Preparing for system restart..."
 Restart-Computer -Force
 
