@@ -223,11 +223,8 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	return targetHostPool.Name, token, nil
 }
 
-// getOptionalConfig retrieves the config value. If the value is nil or empty,
-// it returns the default value (if provided) or an empty string.
-//
-// Logs debug information about which value is being returned.
-func getOptionalConfig(ctx context.Context, configValue, fallbackValue *string) string {
+// getOptionalConfig retrieves the config value. If the value is nil or empty, it returns the fallback value.
+func getOptionalConfig(ctx context.Context, configValue *string, fallbackValue string) string {
 	log := logging.GetLogger(ctx)
 
 	// If the actual config value is present and non-empty, return it.
@@ -237,14 +234,8 @@ func getOptionalConfig(ctx context.Context, configValue, fallbackValue *string) 
 	}
 
 	// Otherwise, check if we have a valid fallback.
-	if fallbackValue != nil && *fallbackValue != "" {
-		log.DebugContext(ctx, fmt.Sprintf("Value not provided; using fallback '%s'.", *fallbackValue))
-		return *fallbackValue
-	}
-
-	// No actual value or fallback.
-	log.DebugContext(ctx, "Value not provided and no fallback; returning empty string.")
-	return ""
+	log.DebugContext(ctx, fmt.Sprintf("config value not provided; using fallback value '%s'.", fallbackValue))
+	return fallbackValue
 }
 
 type ScriptVariable struct {
@@ -260,8 +251,8 @@ func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context
 	perms := sas.ContainerPermissions{Read: true, List: true}
 	validFor := 1*time.Hour
 	
-	storageAccountName := "vdideploymentsusgt"  // FIXME: make configurable
-	containerName := "vm-create-dependencies"  // FIXME: make configurable
+	storageAccountName := avd.config.StorageAccountName  // FIXME: make configurable
+	containerName := avd.config.ContainerName  // FIXME: make configurable
 
 	sasURL, err := storage.GenerateUserDelegationSAS(ctx, avd.credentials, storageAccountName, containerName, validFor, perms)
 	if err != nil {
@@ -271,16 +262,16 @@ func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context
 
 	// Define all variables in a single slice
 	scriptVariables := []ScriptVariable{
-		{"$1_REGISTRATION_TOKEN", registrationToken, true},
-		{"$2_DOMAIN_NAME", avd.config.DomainName, false},
-		{"$3_DOMAIN_USERNAME", avd.config.DomainUser, false},
-		{"$4_DOMAIN_PASSWORD", avd.config.DomainPass, true},
-		{"$5_OU_PATH", getOptionalConfig(ctx, avd.config.OUPath, nil), false},
-		{"$6_SALT_MASTER", "redacted", false},  // FIXME: make configurable
-		{"$7_AZURE_CONTAINER_URI", sasURL, true},
-		{"$8_AVD_AGENT_INSTALLER_FILENAME", "Microsoft.RDInfra.RDAgent.Installer-x64-1.0.9103.3700.msi", false},
-		{"$9_AVD_BOOTLOADER_INSTALLER_FILENAME", "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64-1.0.8925.0.msi", false},
-		{"$10_SALT_MINION_INSTALLER_FILENAME", "Salt-Minion-3006.9-Py3-AMD64.msi", false},
+		{"$1_REGISTRATION_TOKEN",                registrationToken, true},
+		{"$2_DOMAIN_NAME",                       avd.config.DomainName, false},
+		{"$3_DOMAIN_USERNAME",                   avd.config.DomainUser, false},
+		{"$4_DOMAIN_PASSWORD",                   avd.config.DomainPass, true},
+		{"$5_OU_PATH",                           getOptionalConfig(ctx, avd.config.OUPath, ""), false},
+		{"$6_SALT_MASTER",                       avd.config.SaltMaster, false},
+		{"$7_AZURE_CONTAINER_URI",               sasURL, true},
+		{"$8_AVD_AGENT_INSTALLER_FILENAME",      getOptionalConfig(ctx, avd.config.AvdAgentInstallerFilename, "Microsoft.RDInfra.RDAgent.Installer-x64-1.0.9103.3700.msi"), false},
+		{"$9_AVD_BOOTLOADER_INSTALLER_FILENAME", getOptionalConfig(ctx, avd.config.SaltMinionInstallerFilename, "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64-1.0.8925.0.msi"), false},
+		{"$10_SALT_MINION_INSTALLER_FILENAME",   getOptionalConfig(ctx, avd.config.SaltMinionInstallerFilename, "Salt-Minion-3006.9-Py3-AMD64.msi"), false},
 	}
 
 	// Prepare log fields
