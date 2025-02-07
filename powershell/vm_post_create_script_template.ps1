@@ -28,7 +28,7 @@ Start-Transcript -Path $logFilePath -Append
 
 function Exit-OnFailure {
     param([string]$message)
-    Write-Host $message -ForegroundColor Red
+    Write-Host "ERROR: $message" -ForegroundColor Red
     Stop-Transcript
     exit 1
 }

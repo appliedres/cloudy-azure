@@ -2,10 +2,14 @@ package vm
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -223,19 +227,25 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 	log.DebugContext(ctx, "PowerShell command execution started successfully, polling for result")
 
 	// Poll until the command completes
-	result, err := response.PollUntilDone(ctx, nil)
+	// TODO: wrap this in timeout, with periodic logging to show health of the polling
+	result, err := response.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: 15 * time.Second})
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
 		return logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
 	}
 
 	log.InfoContext(ctx, "PowerShell script execution completed")
-
+	
 	// Output the command's result
 	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
-				log.InfoContext(ctx, "PowerShell Command Output", "output", *output.Message)
+				message := *output.Message
+				if strings.Contains(message, "ERROR:") {
+					err = fmt.Errorf("powershell response contains an error: %s", message)
+					return logging.LogAndWrapErr(ctx, log, err, "PowerShell script error detected")
+				}
+				log.InfoContext(ctx, "PowerShell Command Output", "output", message)
 			}
 		}
 	} else {

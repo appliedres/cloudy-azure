@@ -3,7 +3,6 @@ package avd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 
 	"github.com/pkg/errors"
 
@@ -24,7 +24,7 @@ import (
 
 	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy-azure/powershell"
-	// storage "github.com/appliedres/cloudy-azure/storage"
+	"github.com/appliedres/cloudy-azure/storage"
 )
 
 type AzureVirtualDesktopManager struct {
@@ -257,8 +257,17 @@ func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "Generating AVD registration script", "vmid", vm.ID)
 
-	// TODO: split storage account / blob name / sas token
-	// TODO: generate sas via go
+	perms := sas.ContainerPermissions{Read: true, List: true}
+	validFor := 1*time.Hour
+	
+	storageAccountName := "vdideploymentsusgt"  // FIXME: make configurable
+	containerName := "vm-create-dependencies"  // FIXME: make configurable
+
+	sasURL, err := storage.GenerateUserDelegationSAS(ctx, avd.credentials, storageAccountName, containerName, validFor, perms)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate SAS token: %w", err)
+	}
+	log.DebugContext(ctx, "Generated SAS URL", "SasURL", sasURL)
 
 	// Define all variables in a single slice
 	scriptVariables := []ScriptVariable{
@@ -267,10 +276,8 @@ func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context
 		{"$3_DOMAIN_USERNAME", avd.config.DomainUser, false},
 		{"$4_DOMAIN_PASSWORD", avd.config.DomainPass, true},
 		{"$5_OU_PATH", getOptionalConfig(ctx, avd.config.OUPath, nil), false},
-		{"$6_SALT_MASTER", "redacted", false},
-		{"$7_AZURE_CONTAINER_URI", 
-			"redacted", 
-			true},
+		{"$6_SALT_MASTER", "redacted", false},  // FIXME: make configurable
+		{"$7_AZURE_CONTAINER_URI", sasURL, true},
 		{"$8_AVD_AGENT_INSTALLER_FILENAME", "Microsoft.RDInfra.RDAgent.Installer-x64-1.0.9103.3700.msi", false},
 		{"$9_AVD_BOOTLOADER_INSTALLER_FILENAME", "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64-1.0.8925.0.msi", false},
 		{"$10_SALT_MINION_INSTALLER_FILENAME", "Salt-Minion-3006.9-Py3-AMD64.msi", false},
@@ -304,16 +311,17 @@ func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context
 	}
 	script := fmt.Sprintf(scriptTemplate, args...)
 
-	filePath := "generated_script.ps1"
-	file, err := os.Create(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-	_, err = file.WriteString(script)
-	if err != nil {
-		return nil, fmt.Errorf("failed to write script to file: %w", err)
-	}
+	// FIXME: remove saving generated powershell script to file
+	// filePath := "generated_script.ps1"
+	// file, err := os.Create(filePath)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to create file: %w", err)
+	// }
+	// defer file.Close()
+	// _, err = file.WriteString(script)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to write script to file: %w", err)
+	// }
 
 	log.InfoContext(ctx, "Successfully generated AVD registration script", "vmid", vm.ID)
 	return &script, nil

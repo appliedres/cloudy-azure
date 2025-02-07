@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	// "github.com/Azure/azure-storage-blob-go/azblob"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/appliedres/cloudy"
 	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/storage"
@@ -480,4 +480,46 @@ func (b *BlobStorage) GenDownloadURL(ctx context.Context, key string) (string, e
 	}
 
 	return url, nil
+}
+
+func GenerateUserDelegationSAS(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, validFor time.Duration, permissions sas.ContainerPermissions) (string, error) {
+	cred, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to authenticate with Azure AD: %w", err)
+	}
+
+	blobClient, err := azblob.NewClient(fmt.Sprintf("https://%s.blob.core.usgovcloudapi.net", storageAccountName), cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create service client: %w", err)
+	}
+
+	keyStart := time.Now().UTC().Add(-5 * time.Minute) // Allow some clock skew
+	keyExpiry := time.Now().UTC().Add(1 * time.Hour)  // 1-hour validity
+
+	keyInfo := service.KeyInfo{
+		Start:    to.Ptr(keyStart.Format(time.RFC3339)),
+		Expiry:   to.Ptr(keyExpiry.Format(time.RFC3339)),
+	}
+	userDelegationCred, err := blobClient.ServiceClient().GetUserDelegationCredential(ctx, keyInfo, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get user delegation credential: %w", err)
+	}
+
+	sasQueryParams, err := sas.BlobSignatureValues{
+		ContainerName: containerName,
+		Protocol:   sas.ProtocolHTTPS,
+		StartTime:  keyStart,
+		ExpiryTime: keyExpiry,
+		Permissions: permissions.String(),
+		Version:    "2022-11-02",
+	}.SignWithUserDelegation(userDelegationCred)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS token: %w", err)
+	}
+
+	sasURL := fmt.Sprintf("https://%s.blob.core.usgovcloudapi.net/%s?%s",
+		storageAccountName, containerName, sasQueryParams.Encode())
+
+	return sasURL, nil
 }
