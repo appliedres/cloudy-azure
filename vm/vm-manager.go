@@ -216,9 +216,8 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 
 	log.DebugContext(ctx, "Constructed RunCommandInput for PowerShell execution")
 
-	// Execute the script
 	log.InfoContext(ctx, "Executing remote PowerShell script")
-	response, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
+	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to execute remote PowerShell script", "error", err)
 		return logging.LogAndWrapErr(ctx, log, err, "failed to execute remote PowerShell script")
@@ -226,23 +225,71 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 
 	log.DebugContext(ctx, "PowerShell command execution started successfully, polling for result")
 
-	// Poll until the command completes
-	// TODO: wrap this in timeout, with periodic logging to show health of the polling
-	result, err := response.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: 15 * time.Second})
+	result, err := vmm.pollPowerShellExecution(ctx, poller)
 	if err != nil {
-		log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
-		return logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
+		return err
 	}
 
-	log.InfoContext(ctx, "PowerShell script execution completed")
-	
+	return vmm.processPowerShellResult(ctx, result)
+}
+
+func (vmm *AzureVirtualMachineManager) pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse]) (armcompute.RunCommandResult, error) {
+	log := logging.GetLogger(ctx)
+
+	timeout := 10 * time.Minute
+	pollInterval := 15 * time.Second
+	startTime := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	log.DebugContext(ctx, fmt.Sprintf("PowerShell execution polling initialized. Timeout: %d min %d sec", int(timeout.Minutes()), int(timeout.Seconds())%60))
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.ErrorContext(ctx, "PowerShell execution timed out", "elapsed", time.Since(startTime))
+			return armcompute.RunCommandResult{}, fmt.Errorf("PowerShell execution timed out after %v", timeout)
+		case <-ticker.C:
+			elapsed := time.Since(startTime)
+			remaining := timeout - elapsed
+			log.InfoContext(ctx, fmt.Sprintf(
+				"Polling PowerShell execution status. Elapsed: %d min %d sec, Timeout remaining: %d min %d sec",
+				int(elapsed.Minutes()), int(elapsed.Seconds())%60, int(remaining.Minutes()), int(remaining.Seconds())%60,
+			))
+			// Poll for status
+			_, err := response.Poll(ctx)
+			if err != nil {
+				log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
+				return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
+			}
+
+			// Check if polling is complete
+			if response.Done() {
+				// Retrieve the final result
+				finalResult, err := response.Result(ctx)
+				if err != nil {
+					log.ErrorContext(ctx, "Failed to retrieve final RunCommand result", "error", err)
+					return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve final RunCommand result")
+				}
+				return finalResult.RunCommandResult, nil
+			}
+		}
+	}
+}
+
+func (vmm *AzureVirtualMachineManager) processPowerShellResult(ctx context.Context, result armcompute.RunCommandResult) error {
+	log := logging.GetLogger(ctx)
+
 	// Output the command's result
 	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
 				message := *output.Message
 				if strings.Contains(message, "ERROR:") {
-					err = fmt.Errorf("powershell response contains an error: %s", message)
+					err := fmt.Errorf("powershell response contains an error: %s", message)
 					return logging.LogAndWrapErr(ctx, log, err, "PowerShell script error detected")
 				}
 				log.InfoContext(ctx, "PowerShell Command Output", "output", message)
@@ -251,7 +298,6 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 	} else {
 		log.WarnContext(ctx, "No output returned from the PowerShell execution")
 	}
-
 	log.DebugContext(ctx, "RunPowershell function completed successfully")
 	return nil
 }
