@@ -251,16 +251,19 @@ func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context
 	perms := sas.ContainerPermissions{Read: true, List: true}
 	validFor := 1*time.Hour
 	
-	storageAccountName := avd.config.StorageAccountName  // FIXME: make configurable
-	containerName := avd.config.ContainerName  // FIXME: make configurable
+	storageAccountName := avd.config.StorageAccountName
+	containerName := avd.config.ContainerName
 
 	sasURL, err := storage.GenerateUserDelegationSAS(ctx, avd.credentials, storageAccountName, containerName, validFor, perms)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate SAS token: %w", err)
 	}
-	log.DebugContext(ctx, "Generated SAS URL", "SasURL", sasURL)
+	log.DebugContext(ctx, "Generated SAS token",
+		"storageAccount", storageAccountName,
+		"container", containerName,
+		"validFor", fmt.Sprintf("%d days %d hours %d minutes", int(validFor.Hours()/24), int(validFor.Hours())%24, int(validFor.Minutes())%60),
+		"permissions", perms)
 
-	// Define all variables in a single slice
 	scriptVariables := []ScriptVariable{
 		{"$1_REGISTRATION_TOKEN",                registrationToken, true},
 		{"$2_DOMAIN_NAME",                       avd.config.DomainName, false},
