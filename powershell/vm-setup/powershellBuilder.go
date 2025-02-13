@@ -2,67 +2,67 @@ package powershell
 
 import (
 	_ "embed"
+	"fmt"
+	"reflect"
 	"strings"
 )
 
-// ScriptConfig defines the configuration for generating the PowerShell script
+// PowershellConfig defines the overall configuration with nested structs
+// Marking a section nil / not defined will remove it from the generated script 
 type PowershellConfig struct {
-	EnableADJoin    bool
-	EnableAVDInstall bool
-	EnableSaltInstall bool
-
-	// AD Join Parameters
-	DomainName              string
-	DomainUsername          string
-	DomainPassword          string
-	OrganizationalUnitPath  string
-
-    // AVD and Salt
-    AzureContainerUri         string
-
-	// AVD Install Parameters
-	AVDAgentInstallerFilename string
-	AVDBootloaderInstallerFilename string
-	RegistrationToken         string
-
-	// Salt Minion Install Parameters
-	SaltMaster string
+	ADJoin       		*ADJoinConfig
+	AVDInstall   		*AVDInstallConfig
+	SaltInstall  		*SaltInstallConfig
+	RestartVirtualMachine bool
 }
 
-// GenerateFullScript dynamically constructs the PowerShell script using a configuration struct
-func GenerateFullPowershell(config PowershellConfig) string {
+// ADJoinConfig defines the settings required for Active Directory Join
+type ADJoinConfig struct {
+	DomainName             string
+	DomainUsername         string
+	DomainPassword         string
+	OrganizationalUnitPath string
+}
+
+// AVDInstallConfig defines the settings required for AVD installation
+type AVDInstallConfig struct {
+	AzureContainerUri              string
+	AVDAgentInstallerFilename      string
+	AVDBootloaderInstallerFilename string
+	RegistrationToken              string
+}
+
+// SaltInstallConfig defines the settings required for Salt Minion installation
+type SaltInstallConfig struct {
+	AzureContainerUri	string
+	SaltMaster          string
+}
+
+// BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
+func BuildVirtualMachineSetupScript(config PowershellConfig) (string, error) {
+	// Validate required fields dynamically
+	if err := validateConfig(config); err != nil {
+		return "", err
+	}
+
 	var scriptBuilder strings.Builder
 
 	// Start script
 	scriptBuilder.WriteString(GenerateScriptStart() + "\n")
 
 	// Active Directory Join section
-	if config.EnableADJoin {
-		scriptBuilder.WriteString(GenerateJoinDomainScript(
-			config.DomainName,
-			config.DomainUsername,
-			config.DomainPassword,
-			config.OrganizationalUnitPath,
-		) + "\n")
+	if config.ADJoin != nil {
+		scriptBuilder.WriteString(GenerateJoinDomainScript(config.ADJoin) + "\n")
 	}
 
 	// AVD Installation section
-	if config.EnableAVDInstall {
-		scriptBuilder.WriteString(GenerateInstallAvdScript(
-			config.AzureContainerUri,
-			config.AVDAgentInstallerFilename,
-			config.AVDBootloaderInstallerFilename,
-			config.RegistrationToken,
-		) + "\n")
+	if config.AVDInstall != nil {
+		scriptBuilder.WriteString(GenerateInstallAvdScript(config.AVDInstall) + "\n")
 	}
 
 	// Salt Minion Installation section
-	if config.EnableSaltInstall {
-		scriptBuilder.WriteString(GenerateInstallSaltMinionScript(
-			config.AzureContainerUri,
-			config.AVDBootloaderInstallerFilename,
-			config.SaltMaster,
-		) + "\n")
+	if config.SaltInstall != nil {
+		scriptBuilder.WriteString(GenerateInstallSaltMinionScript(config.SaltInstall) + "\n")
 	}
 
 	// Restart system
@@ -71,7 +71,36 @@ func GenerateFullPowershell(config PowershellConfig) string {
 	// End script
 	scriptBuilder.WriteString(GenerateScriptEnd() + "\n")
 
-	return scriptBuilder.String()
+	return scriptBuilder.String(), nil
+}
+
+// validateConfig dynamically checks required fields for non-nil nested structs
+func validateConfig(config PowershellConfig) error {
+	configValue := reflect.ValueOf(config)
+	configType := reflect.TypeOf(config)
+
+	for i := 0; i < configValue.NumField(); i++ {
+		fieldValue := configValue.Field(i)
+		fieldType := configType.Field(i)
+
+		// Check if the field is a pointer to a struct (optional feature block)
+		if fieldValue.Kind() == reflect.Ptr && !fieldValue.IsNil() {
+			// Validate nested fields
+			nestedStruct := fieldValue.Elem()
+			nestedStructType := fieldType.Type.Elem()
+
+			for j := 0; j < nestedStruct.NumField(); j++ {
+				nestedField := nestedStruct.Field(j)
+				nestedFieldType := nestedStructType.Field(j)
+
+				if nestedField.Kind() == reflect.String && nestedField.String() == "" {
+					return fmt.Errorf("%s is required when %s is set", nestedFieldType.Name, fieldType.Name)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 //go:embed 0_scriptStart.ps1
@@ -82,14 +111,14 @@ func GenerateScriptStart() string {
 
 //go:embed 1_joinDomain.ps1
 var joinDomainTemplate string
-func GenerateJoinDomainScript(domainName, domainUsername, domainPassword, organizationalUnitPath string) string {
+func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 	script := joinDomainTemplate
 
 	replacements := map[string]string{
-		"$DOMAIN_NAME":              domainName,
-		"$DOMAIN_USERNAME":          domainUsername,
-		"$DOMAIN_PASSWORD":          domainPassword,
-		"$ORGANIZATIONAL_UNIT_PATH": organizationalUnitPath,
+		"$DOMAIN_NAME":              adConfig.DomainName,
+		"$DOMAIN_USERNAME":          adConfig.DomainUsername,
+		"$DOMAIN_PASSWORD":          adConfig.DomainPassword,
+		"$ORGANIZATIONAL_UNIT_PATH": adConfig.OrganizationalUnitPath,
 	}
 
 	for key, value := range replacements {
@@ -101,14 +130,14 @@ func GenerateJoinDomainScript(domainName, domainUsername, domainPassword, organi
 
 //go:embed 2_installAVD.ps1
 var installAvdTemplate string
-func GenerateInstallAvdScript(azureContainerUri, avdAgentInstallerFilename, avdBootloaderInstallerFilename, registrationToken string) string {
+func GenerateInstallAvdScript(avdConfig *AVDInstallConfig) string {
 	script := installAvdTemplate
 
 	replacements := map[string]string{
-		"$AZURE_CONTAINER_URI":               azureContainerUri,
-		"$AVD_AGENT_INSTALLER_FILENAME":      avdAgentInstallerFilename,
-		"$AVD_BOOTLOADER_INSTALLER_FILENAME": avdBootloaderInstallerFilename,
-		"$REGISTRATION_TOKEN":                registrationToken,
+		"$AZURE_CONTAINER_URI":               avdConfig.AzureContainerUri,
+		"$AVD_AGENT_INSTALLER_FILENAME":      avdConfig.AVDAgentInstallerFilename,
+		"$AVD_BOOTLOADER_INSTALLER_FILENAME": avdConfig.AVDBootloaderInstallerFilename,
+		"$REGISTRATION_TOKEN":                avdConfig.RegistrationToken,
 	}
 
 	for key, value := range replacements {
@@ -120,13 +149,12 @@ func GenerateInstallAvdScript(azureContainerUri, avdAgentInstallerFilename, avdB
 
 //go:embed 3_installSaltMinion.ps1
 var installSaltMinionTemplate string
-func GenerateInstallSaltMinionScript(azureContainerUri, avdBootloaderInstallerFilename, saltMaster string) string {
+func GenerateInstallSaltMinionScript(saltConfig *SaltInstallConfig) string {
 	script := installSaltMinionTemplate
 
-	// Replace placeholders with actual values
 	replacements := map[string]string{
-		"$AZURE_CONTAINER_URI":            azureContainerUri,
-		"$SALT_MASTER":                    saltMaster,
+		"$AZURE_CONTAINER_URI":            saltConfig.AzureContainerUri,
+		"$SALT_MASTER":                    saltConfig.SaltMaster,
 	}
 
 	for key, value := range replacements {

@@ -46,8 +46,6 @@ github.com/Jeffail/gabs/v2 v2.7.0 h1:Y2edYaTcE8ZpRsR2AtmPu5xQdFDIthFG0jYhu5PY8kg
 github.com/Jeffail/gabs/v2 v2.7.0/go.mod h1:dp5ocw1FvBBQYssgHsG7I1WYsiLRtkUaB1FEtSwvNUw=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/appliedres/cloudy v0.0.60 h1:kFskQNUv4X8DcwOxvIQfwtFXOwItRUR0eD2QrK03cMU=
-github.com/appliedres/cloudy v0.0.60/go.mod h1:+CNkiVT/fKppUrjkOAIldCTdr0DaC3k+vv3/m1lhkMY=
 github.com/appliedres/cloudy v0.0.61 h1:jLZ0cntXhYr/wvffDAQqsJRK8uQqyvrIR1M2iHmFYI0=
 github.com/appliedres/cloudy v0.0.61/go.mod h1:54j9gDqCPiQZ+DgZ90ke2TqhKopjRRRIVcJzFA3S3uw=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3dyBCFEj5IhUbnKptjxatkF07cF2ak3yi77so=

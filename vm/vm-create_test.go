@@ -9,7 +9,6 @@ import (
 
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/testutil"
-	"github.com/appliedres/cloudy/vm"
 	cloudyvm "github.com/appliedres/cloudy/vm"
 	"github.com/stretchr/testify/assert"
 	// "golang.org/x/crypto/ssh"
@@ -265,7 +264,7 @@ func TestVMDelete(t *testing.T) {
 	cloudy.SetDefaultEnvironment(env)
 
 	vmCreds := env.LoadCredentials("TEST")
-	VMController, err := vm.VmControllers.NewFromEnv(env.SegmentWithCreds(vmCreds, "VMC"), "DRIVER")
+	VMController, err := cloudyvm.VmControllers.NewFromEnv(env.SegmentWithCreds(vmCreds, "VMC"), "DRIVER")
 	assert.Nil(t, err)
 
 	sshPublicKey := env.Force("SALT_PUBLIC_KEY")

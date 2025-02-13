@@ -225,15 +225,15 @@ func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, 
 
 	log.DebugContext(ctx, "PowerShell command execution started successfully, polling for result")
 
-	result, err := vmm.pollPowerShellExecution(ctx, poller)
+	result, err := pollPowerShellExecution(ctx, poller)
 	if err != nil {
 		return err
 	}
 
-	return vmm.processPowerShellResult(ctx, result)
+	return processPowerShellResult(ctx, result)
 }
 
-func (vmm *AzureVirtualMachineManager) pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse]) (armcompute.RunCommandResult, error) {
+func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse]) (armcompute.RunCommandResult, error) {
 	log := logging.GetLogger(ctx)
 
 	timeout := 10 * time.Minute
@@ -280,7 +280,7 @@ func (vmm *AzureVirtualMachineManager) pollPowerShellExecution(ctx context.Conte
 	}
 }
 
-func (vmm *AzureVirtualMachineManager) processPowerShellResult(ctx context.Context, result armcompute.RunCommandResult) error {
+func processPowerShellResult(ctx context.Context, result armcompute.RunCommandResult) error {
 	log := logging.GetLogger(ctx)
 
 	// Output the command's result

@@ -15,7 +15,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 
 	"github.com/pkg/errors"
 
@@ -23,8 +22,8 @@ import (
 	"github.com/appliedres/cloudy/models"
 
 	cloudyazure "github.com/appliedres/cloudy-azure"
-	"github.com/appliedres/cloudy-azure/powershell"
-	"github.com/appliedres/cloudy-azure/storage"
+
+
 )
 
 type AzureVirtualDesktopManager struct {
@@ -218,107 +217,9 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		return nil, nil, fmt.Errorf("failed to retrieve registration token: %w", err)
 	}
 
-	log.InfoContext(ctx, "Successfully retrieved registration token", "HostPool", *targetHostPool.Name)
+	log.InfoContext(ctx, "AVD PreRegister complete, successfully retrieved registration token", "HostPool", *targetHostPool.Name)
 
 	return targetHostPool.Name, token, nil
-}
-
-// getOptionalConfig retrieves the config value. If the value is nil or empty, it returns the fallback value.
-func getOptionalConfig(ctx context.Context, configValue *string, fallbackValue string) string {
-	log := logging.GetLogger(ctx)
-
-	// If the actual config value is present and non-empty, return it.
-	if configValue != nil && *configValue != "" {
-		log.DebugContext(ctx, fmt.Sprintf("Returning provided config value '%s'.", *configValue))
-		return *configValue
-	}
-
-	// Otherwise, check if we have a valid fallback.
-	log.DebugContext(ctx, fmt.Sprintf("config value not provided; using fallback value '%s'.", fallbackValue))
-	return fallbackValue
-}
-
-type ScriptVariable struct {
-	PsVarName  string // PowerShell variable name
-	Value      string // Go value
-	Sensitive  bool
-}
-
-func (avd *AzureVirtualDesktopManager) GetRegistrationScript(ctx context.Context, vm *models.VirtualMachine, registrationToken string) (*string, error) {
-	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "Generating AVD registration script", "vmid", vm.ID)
-
-	perms := sas.ContainerPermissions{Read: true, List: true}
-	validFor := 1*time.Hour
-	
-	storageAccountName := avd.config.StorageAccountName
-	containerName := avd.config.ContainerName
-
-	sasURL, err := storage.GenerateUserDelegationSAS(ctx, avd.credentials, storageAccountName, containerName, validFor, perms)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate SAS token: %w", err)
-	}
-	log.DebugContext(ctx, "Generated SAS token",
-		"storageAccount", storageAccountName,
-		"container", containerName,
-		"validFor", fmt.Sprintf("%d days %d hours %d minutes", int(validFor.Hours()/24), int(validFor.Hours())%24, int(validFor.Minutes())%60),
-		"permissions", perms)
-
-	scriptVariables := []ScriptVariable{
-		{"$1_REGISTRATION_TOKEN",                registrationToken, true},
-		{"$2_DOMAIN_NAME",                       avd.config.DomainName, false},
-		{"$3_DOMAIN_USERNAME",                   avd.config.DomainUser, false},
-		{"$4_DOMAIN_PASSWORD",                   avd.config.DomainPass, true},
-		{"$5_OU_PATH",                           getOptionalConfig(ctx, avd.config.OUPath, ""), false},
-		{"$6_SALT_MASTER",                       avd.config.SaltMaster, false},
-		{"$7_AZURE_CONTAINER_URI",               sasURL, true},
-		{"$8_AVD_AGENT_INSTALLER_FILENAME",      getOptionalConfig(ctx, avd.config.AvdAgentInstallerFilename, "Microsoft.RDInfra.RDAgent.Installer-x64-1.0.9103.3700.msi"), false},
-		{"$9_AVD_BOOTLOADER_INSTALLER_FILENAME", getOptionalConfig(ctx, avd.config.SaltMinionInstallerFilename, "Microsoft.RDInfra.RDAgentBootLoader.Installer-x64-1.0.8925.0.msi"), false},
-		{"$10_SALT_MINION_INSTALLER_FILENAME",   getOptionalConfig(ctx, avd.config.SaltMinionInstallerFilename, "Salt-Minion-3006.9-Py3-AMD64.msi"), false},
-	}
-
-	// Prepare log fields
-	logFields := []interface{}{"vmid", vm.ID}
-	var replacementValues []string
-
-	// Process each variable
-	for _, varDef := range scriptVariables {
-		// redact sensitive fields
-		if varDef.Sensitive {
-			logFields = append(logFields, varDef.PsVarName, "**REDACTED**")
-		} else {
-			logFields = append(logFields, varDef.PsVarName, varDef.Value)
-		}
-
-		// Collect values for replacing %s placeholders
-		replacementValues = append(replacementValues, varDef.Value)
-	}
-
-	// Log with redacted values
-	log.InfoContext(ctx, "Generating script with parameters (redacted)", logFields...)
-
-	// Get base script and replace %s placeholders
-	scriptTemplate := powershell.GetPostCreateScript()
-	args := make([]interface{}, len(replacementValues))
-	for i, v := range replacementValues {
-		args[i] = v
-	}
-	script := fmt.Sprintf(scriptTemplate, args...)
-
-	// FIXME: remove saving generated powershell script to file
-	// filePath := "generated_script.ps1"
-	// file, err := os.Create(filePath)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to create file: %w", err)
-	// }
-	// defer file.Close()
-	// _, err = file.WriteString(script)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to write script to file: %w", err)
-	// }
-
-	log.InfoContext(ctx, "Successfully generated AVD registration script", "vmid", vm.ID)
-	return &script, nil
 }
 
 // After registering, the user must then be assigned to the new session host
