@@ -8,11 +8,11 @@ import (
 )
 
 // PowershellConfig defines the overall configuration with nested structs
-// Marking a section nil / not defined will remove it from the generated script 
+// Marking a section nil / not defined will remove it from the generated script
 type PowershellConfig struct {
-	ADJoin       		*ADJoinConfig
-	AVDInstall   		*AVDInstallConfig
-	SaltInstall  		*SaltInstallConfig
+	ADJoin                *ADJoinConfig
+	AVDInstall            *AVDInstallConfig
+	SaltInstall           *SaltInstallConfig
 	RestartVirtualMachine bool
 }
 
@@ -29,13 +29,13 @@ type AVDInstallConfig struct {
 	AzureContainerUri              string
 	AVDAgentInstallerFilename      string
 	AVDBootloaderInstallerFilename string
-	RegistrationToken              string
+	HostPoolRegistrationToken      string
 }
 
 // SaltInstallConfig defines the settings required for Salt Minion installation
 type SaltInstallConfig struct {
-	AzureContainerUri	string
-	SaltMaster          string
+	AzureContainerUri string
+	SaltMaster        string
 }
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
@@ -105,12 +105,14 @@ func validateConfig(config PowershellConfig) error {
 
 //go:embed 0_scriptStart.ps1
 var scriptStart string
+
 func GenerateScriptStart() string {
-    return scriptStart
+	return scriptStart
 }
 
 //go:embed 1_joinDomain.ps1
 var joinDomainTemplate string
+
 func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 	script := joinDomainTemplate
 
@@ -130,6 +132,7 @@ func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 
 //go:embed 2_installAVD.ps1
 var installAvdTemplate string
+
 func GenerateInstallAvdScript(avdConfig *AVDInstallConfig) string {
 	script := installAvdTemplate
 
@@ -137,7 +140,7 @@ func GenerateInstallAvdScript(avdConfig *AVDInstallConfig) string {
 		"$AZURE_CONTAINER_URI":               avdConfig.AzureContainerUri,
 		"$AVD_AGENT_INSTALLER_FILENAME":      avdConfig.AVDAgentInstallerFilename,
 		"$AVD_BOOTLOADER_INSTALLER_FILENAME": avdConfig.AVDBootloaderInstallerFilename,
-		"$REGISTRATION_TOKEN":                avdConfig.RegistrationToken,
+		"$REGISTRATION_TOKEN":                avdConfig.HostPoolRegistrationToken,
 	}
 
 	for key, value := range replacements {
@@ -149,12 +152,13 @@ func GenerateInstallAvdScript(avdConfig *AVDInstallConfig) string {
 
 //go:embed 3_installSaltMinion.ps1
 var installSaltMinionTemplate string
+
 func GenerateInstallSaltMinionScript(saltConfig *SaltInstallConfig) string {
 	script := installSaltMinionTemplate
 
 	replacements := map[string]string{
-		"$AZURE_CONTAINER_URI":            saltConfig.AzureContainerUri,
-		"$SALT_MASTER":                    saltConfig.SaltMaster,
+		"$AZURE_CONTAINER_URI": saltConfig.AzureContainerUri,
+		"$SALT_MASTER":         saltConfig.SaltMaster,
 	}
 
 	for key, value := range replacements {
@@ -166,6 +170,7 @@ func GenerateInstallSaltMinionScript(saltConfig *SaltInstallConfig) string {
 
 //go:embed 4_restart.ps1
 var restartScriptTemplate string
+
 const restartDelay = "5" // 5 seconds default delay, to allow script log to close
 func GenerateRestartScript() string {
 	script := strings.ReplaceAll(restartScriptTemplate, "$RESTART_DELAY", restartDelay)
@@ -174,6 +179,7 @@ func GenerateRestartScript() string {
 
 //go:embed 5_scriptEnd.ps1
 var scriptEnd string
+
 func GenerateScriptEnd() string {
 	return scriptEnd
 }

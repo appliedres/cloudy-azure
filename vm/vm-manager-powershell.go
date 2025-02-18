@@ -3,20 +3,20 @@ package vm
 import (
 	"context"
 	"fmt"
-	"cloudy-azure/models"
-	"cloudy-azure/logging"
-	"cloudy-azure/powershell"
-	"cloudy-azure/storage"
+
+	powershell "github.com/appliedres/cloudy-azure/powershell/vm-setup"
+	"github.com/appliedres/cloudy/logging"
+	"github.com/appliedres/cloudy/models"
 )
 
 func (vmm *AzureVirtualMachineManager) ExecuteSetupPowershell(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "virtualMachineSetup started")
+	log.DebugContext(ctx, "ExecuteSetupPowershell started")
 
 	// TODO: generate SAS URL
 	// perms := sas.ContainerPermissions{Read: true, List: true}
 	// validFor := 1*time.Hour
-	
+
 	// storageAccountName := avd.config.StorageAccountName
 	// containerName := avd.config.ContainerName
 
@@ -36,42 +36,48 @@ func (vmm *AzureVirtualMachineManager) ExecuteSetupPowershell(ctx context.Contex
 			DomainName: "",
 		},
 
-
 		// EnableADJoin: true,  // TODO: Handle AD join disable
 		// EnableAVDInstall: true,
 		// EnableSaltInstall: true,  // TODO: Handle salt install disable
-		RestartVirtualMachine: true,  // TODO: Handle VM restart disable
+		RestartVirtualMachine: true, // TODO: Handle VM restart disable
 	}
 
-	if AzureVirtualDesktopManager == nil {
+	if vmm.avdManager == nil {
+		log.InfoContext(ctx, "Executing powershell - AVD disabled")
 		// AVD Disabled via config
-		powershellConfig.EnableAVDInstall = false
-		script := powershell.BuildVirtualMachineSetupScript(powershellConfig)
-	
-		err := VirtualMachineManager.RunPowershell(ctx, vm.ID, script)
+		script, err := powershell.BuildVirtualMachineSetupScript(powershellConfig)
 		if err != nil {
-			return nil, cloudylogging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD disabled)")
-	
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
+		}
+
+		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script)
+		if err != nil {
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD disabled)")
+
 		}
 
 	} else {
+		log.InfoContext(ctx, "Executing powershell - AVD enabled")
 		// AVD Enabled
-		hostPoolNamePtr, hostPoolTokenPtr, err := AzureVirtualDesktopManager.PreRegister(ctx, vm)
-		powershellConfig.RegistrationToken = *hostPoolTokenPtr
+		hostPoolNamePtr, hostPoolTokenPtr, err := vmm.avdManager.PreRegister(ctx, vm)
+		powershellConfig.AVDInstall.HostPoolRegistrationToken = *hostPoolTokenPtr
 		if err != nil {
-			return nil, cloudylogging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
+			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
-		script := powershell.BuildVirtualMachineSetupScript(powershellConfig)
-	
-		err = VirtualMachineManager.RunPowershell(ctx, vm.ID, script)
+		script, err := powershell.BuildVirtualMachineSetupScript(powershellConfig)
 		if err != nil {
-			return nil, cloudylogging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
-	
-		vm, err = AzureVirtualDesktopManager.PostRegister(ctx, vm, *hostPoolNamePtr)
+
+		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script)
 		if err != nil {
-			return nil, cloudylogging.LogAndWrapErr(ctx, log, err, "AVD Post-Register VM")
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
+		}
+
+		vm, err = vmm.avdManager.PostRegister(ctx, vm, *hostPoolNamePtr)
+		if err != nil {
+			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Post-Register VM")
 		}
 	}
 

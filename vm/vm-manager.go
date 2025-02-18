@@ -13,10 +13,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+
 	cloudyazure "github.com/appliedres/cloudy-azure"
+	cloudyvm "github.com/appliedres/cloudy/vm"
+	avd "github.com/appliedres/cloudy-azure/avd"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
-	cloudyvm "github.com/appliedres/cloudy/vm"
+
 	"github.com/pkg/errors"
 )
 
@@ -39,15 +42,29 @@ type AzureVirtualMachineManager struct {
 	galleryClient *armcompute.SharedGalleryImageVersionsClient
 
 	LogBody bool
+
+	avdManager *avd.AzureVirtualDesktopManager
 }
 
-func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, config *VirtualMachineManagerConfig) (cloudyvm.VirtualMachineManager, error) {
+func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, 
+		config *VirtualMachineManagerConfig, avdConfig *avd.AzureVirtualDesktopConfig) (cloudyvm.VirtualMachineManager, error) {
+
+	var avdmanager *avd.AzureVirtualDesktopManager
+	if avdConfig != nil {
+		var err error
+		avdmanager, err = avd.NewAzureVirtualDesktopManager(ctx, credentials, avdConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	vmm := &AzureVirtualMachineManager{
 		credentials: credentials,
 		config:      config,
 
 		LogBody: false,
+
+		avdManager: avdmanager,
 	}
 	err := vmm.Configure(ctx)
 	if err != nil {
@@ -201,20 +218,17 @@ func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachin
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) RunPowershell(ctx context.Context, vmID, script string) error {
+func (vmm *AzureVirtualMachineManager) ExecuteRemotePowershell(ctx context.Context, vmID, script string) error {
 	log := logging.GetLogger(ctx)
 
-	log.DebugContext(ctx, "Initializing PowerShell execution on VM")
-
-	// Define RunCommandInput
+	log.DebugContext(ctx, "Constructing RunCommandInput for PowerShell execution")
 	runCommandInput := armcompute.RunCommandInput{
 		CommandID: to.Ptr("RunPowerShellScript"),
 		Script: []*string{
 			to.Ptr(script),
 		},
 	}
-
-	log.DebugContext(ctx, "Constructed RunCommandInput for PowerShell execution")
+	log.DebugContext(ctx, "Finished constructing RunCommandInput for PowerShell execution")
 
 	log.InfoContext(ctx, "Executing remote PowerShell script")
 	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
@@ -282,6 +296,7 @@ func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armco
 
 func processPowerShellResult(ctx context.Context, result armcompute.RunCommandResult) error {
 	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Powershell execution completed, processing result")
 
 	// Output the command's result
 	if len(result.Value) > 0 {
