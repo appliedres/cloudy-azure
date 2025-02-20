@@ -2,99 +2,210 @@ package vm
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
+	"reflect"
+	"strings"
+	"time"
 
-	powershell "github.com/appliedres/cloudy-azure/powershell/vm-setup"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
+	"github.com/appliedres/cloudy-azure/storage"
 	"github.com/appliedres/cloudy/logging"
-	"github.com/appliedres/cloudy/models"
 )
 
-func (vmm *AzureVirtualMachineManager) ExecuteSetupPowershell(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+// BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
+func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config PowershellConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "ExecuteSetupPowershell started")
 
-	// TODO: generate SAS URL
-	// perms := sas.ContainerPermissions{Read: true, List: true}
-	// validFor := 1*time.Hour
-
-	// storageAccountName := avd.config.StorageAccountName
-	// containerName := avd.config.ContainerName
-
-	// sasURL, err := storage.GenerateUserDelegationSAS(ctx, avd.credentials, storageAccountName, containerName, validFor, perms)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to generate SAS token: %w", err)
-	// }
-	// log.DebugContext(ctx, "Generated SAS token",
-	// 	"storageAccount", storageAccountName,
-	// 	"container", containerName,
-	// 	"validFor", fmt.Sprintf("%d days %d hours %d minutes", int(validFor.Hours()/24), int(validFor.Hours())%24, int(validFor.Minutes())%60),
-	// 	"permissions", perms)
-
-	// VM create complete, begin VM setup
-	powershellConfig := powershell.PowershellConfig{
-		ADJoin: &powershell.ADJoinConfig{
-			DomainName: "",
-		},
-
-		// EnableADJoin: true,  // TODO: Handle AD join disable
-		// EnableAVDInstall: true,
-		// EnableSaltInstall: true,  // TODO: Handle salt install disable
-		RestartVirtualMachine: true, // TODO: Handle VM restart disable
+	// Validate required fields dynamically
+	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
+		return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
 	}
 
-	if vmm.avdManager == nil {
-		log.InfoContext(ctx, "Executing powershell - AVD disabled")
-		// AVD Disabled via config
-		script, err := powershell.BuildVirtualMachineSetupScript(powershellConfig)
-		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
-		}
-
-		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script)
-		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD disabled)")
-
-		}
-
-	} else {
-		log.InfoContext(ctx, "Executing powershell - AVD enabled")
-		// AVD Enabled
-		hostPoolNamePtr, hostPoolTokenPtr, err := vmm.avdManager.PreRegister(ctx, vm)
-		powershellConfig.AVDInstall.HostPoolRegistrationToken = *hostPoolTokenPtr
-		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
-		}
-
-		script, err := powershell.BuildVirtualMachineSetupScript(powershellConfig)
-		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
-		}
-
-		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script)
-		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
-		}
-
-		vm, err = vmm.avdManager.PostRegister(ctx, vm, *hostPoolNamePtr)
-		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Post-Register VM")
-		}
+	containerUrl, err := vmm.generateSASToken(ctx, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer)
+	if err != nil {
+		return nil, logging.LogAndWrapErr(ctx, log, err, "Generating SAS token for use in powershell script")
 	}
 
-	return vm, nil
+	var scriptBuilder strings.Builder
+
+	// Start script
+	scriptBuilder.WriteString(GenerateScriptStart() + "\n")
+
+	// Active Directory Join section
+	if config.ADJoin != nil {
+		scriptBuilder.WriteString(GenerateJoinDomainScript(config.ADJoin) + "\n")
+	}
+
+	// AVD Installation section
+	if config.AVDInstall != nil {
+		scriptBuilder.WriteString(GenerateInstallAvdScript(config.AVDInstall, containerUrl, *hostPoolRegistrationToken) + "\n")
+	}
+
+	// Salt Minion Installation section
+	if config.SaltMinionInstallConfig != nil {
+		scriptBuilder.WriteString(GenerateInstallSaltMinionScript(config.SaltMinionInstallConfig, containerUrl) + "\n")
+	}
+
+	// Restart system
+	scriptBuilder.WriteString(GenerateRestartScript() + "\n")
+
+	// End script
+	scriptBuilder.WriteString(GenerateScriptEnd() + "\n")
+
+	script := scriptBuilder.String()
+	return &script, nil
 }
 
-// getOptionalConfig retrieves the config value. If the value is nil or empty, it returns the fallback value.
-func getOptionalConfig(ctx context.Context, configValue *string, fallbackValue string) string {
-	log := logging.GetLogger(ctx)
+// validateConfig dynamically checks required fields for non-nil nested structs
+func validateConfig(config PowershellConfig, hostPoolToken *string) error {
+	configValue := reflect.ValueOf(config)
+	configType := reflect.TypeOf(config)
 
-	// If the actual config value is present and non-empty, return it.
-	if configValue != nil && *configValue != "" {
-		log.DebugContext(ctx, fmt.Sprintf("Returning provided config value '%s'.", *configValue))
-		return *configValue
+	for i := 0; i < configValue.NumField(); i++ {
+		fieldValue := configValue.Field(i)
+		fieldType := configType.Field(i)
+
+		// Check if the field is a pointer to a struct (optional feature block)
+		if fieldValue.Kind() == reflect.Ptr && !fieldValue.IsNil() {
+			// Validate nested fields
+			nestedStruct := fieldValue.Elem()
+			nestedStructType := fieldType.Type.Elem()
+
+			for j := 0; j < nestedStruct.NumField(); j++ {
+				nestedField := nestedStruct.Field(j)
+				nestedFieldType := nestedStructType.Field(j)
+
+				// Skip validation for fields that are nil (they are optional)
+				if nestedField.Kind() == reflect.Ptr && nestedField.IsNil() {
+					continue
+				}
+
+				// Ensure required string fields are not empty
+				if nestedField.Kind() == reflect.String && nestedField.String() == "" {
+					return fmt.Errorf("%s is required when %s is set", nestedFieldType.Name, fieldType.Name)
+				}
+			}
+		}
 	}
 
-	// Otherwise, check if we have a valid fallback.
-	log.DebugContext(ctx, fmt.Sprintf("config value not provided; using fallback value '%s'.", fallbackValue))
-	return fallbackValue
+	// Validate hostPoolToken only if AVDInstall is enabled
+	if config.AVDInstall != nil && hostPoolToken == nil {
+		return fmt.Errorf("hostPoolToken is required when AVDInstallConfig is set")
+	}
+
+	// Validate BinaryStorage if AVDInstall or SaltMinionInstallConfig are enabled
+	if (config.AVDInstall != nil || config.SaltMinionInstallConfig != nil) && config.BinaryStorage == nil {
+		if config.BinaryStorage.BlobStorageAccount == "" || config.BinaryStorage.BlobContainer == "" {
+			return fmt.Errorf("BlobStorageAccount and BlobContainer are required when AVDInstallConfig or SaltMinionInstallConfig is set")
+		}
+	}
+
+	return nil
+}
+
+//go:embed vm-setup-powershell/0_scriptStart.ps1
+var scriptStart string
+
+func GenerateScriptStart() string {
+	return scriptStart
+}
+
+//go:embed vm-setup-powershell/1_joinDomain.ps1
+var joinDomainTemplate string
+
+func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
+	script := joinDomainTemplate
+
+	ouPath := ""  // powershell will handle the empty string appropriately
+	if adConfig.OrganizationalUnitPath != nil {
+		ouPath = *adConfig.OrganizationalUnitPath
+	}
+
+	replacements := map[string]string{
+		"$DOMAIN_NAME":              adConfig.DomainName,
+		"$DOMAIN_USERNAME":          adConfig.DomainUsername,
+		"$DOMAIN_PASSWORD":          adConfig.DomainPassword,
+		"$ORGANIZATIONAL_UNIT_PATH": ouPath,
+	}
+
+	for key, value := range replacements {
+		script = strings.ReplaceAll(script, key, value)
+	}
+
+	return script
+}
+
+//go:embed vm-setup-powershell/2_installAVD.ps1
+var installAvdTemplate string
+
+func GenerateInstallAvdScript(avdConfig *AVDInstallConfig, containerUrl, hostPoolToken string) string {
+	script := installAvdTemplate
+
+	replacements := map[string]string{
+		"$AZURE_CONTAINER_URI":               containerUrl,
+		"$AVD_AGENT_INSTALLER_FILENAME":      avdConfig.AVDAgentInstallerFilename,
+		"$AVD_BOOTLOADER_INSTALLER_FILENAME": avdConfig.AVDBootloaderInstallerFilename,
+		"$REGISTRATION_TOKEN":                hostPoolToken,
+	}
+
+	for key, value := range replacements {
+		script = strings.ReplaceAll(script, key, value)
+	}
+
+	return script
+}
+
+//go:embed vm-setup-powershell/3_installSaltMinion.ps1
+var installSaltMinionTemplate string
+
+func GenerateInstallSaltMinionScript(saltConfig *SaltMinionInstallConfig, containerUrl string) string {
+	script := installSaltMinionTemplate
+
+	replacements := map[string]string{
+		"$AZURE_CONTAINER_URI":            containerUrl,
+		"$SALT_MINION_INSTALLER_FILENAME": saltConfig.SaltMinionInstallerFilename,
+		"$SALT_MASTER":                    saltConfig.SaltMaster,
+	}
+
+	for key, value := range replacements {
+		script = strings.ReplaceAll(script, key, value)
+	}
+
+	return script
+}
+
+//go:embed vm-setup-powershell/4_restart.ps1
+var restartScriptTemplate string
+
+const restartDelay = "5" // 5 seconds default delay, to allow script log to close
+func GenerateRestartScript() string {
+	script := strings.ReplaceAll(restartScriptTemplate, "$RESTART_DELAY", restartDelay)
+	return script
+}
+
+//go:embed vm-setup-powershell/5_scriptEnd.ps1
+var scriptEnd string
+
+func GenerateScriptEnd() string {
+	return scriptEnd
+}
+
+func (vmm *AzureVirtualMachineManager) generateSASToken(ctx context.Context, storageAccount, container string) (string, error) {
+	log := logging.GetLogger(ctx)
+
+	perms := sas.ContainerPermissions{Read: true, List: true}
+	validFor := 1 * time.Hour
+
+	sasURL, err := storage.GenerateUserDelegationSAS(ctx, vmm.credentials, storageAccount, container, validFor, perms)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS token: %w", err)
+	}
+	log.DebugContext(ctx, "Generated SAS token",
+		"storageAccount", storageAccount,
+		"container", container,
+		"validFor", fmt.Sprintf("%d days %d hours %d minutes", int(validFor.Hours()/24), int(validFor.Hours())%24, int(validFor.Minutes())%60),
+		"permissions", perms)
+
+	return sasURL, nil
 }

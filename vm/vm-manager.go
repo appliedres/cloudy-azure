@@ -47,16 +47,7 @@ type AzureVirtualMachineManager struct {
 }
 
 func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, 
-		config *VirtualMachineManagerConfig, avdConfig *avd.AzureVirtualDesktopConfig) (cloudyvm.VirtualMachineManager, error) {
-
-	var avdmanager *avd.AzureVirtualDesktopManager
-	if avdConfig != nil {
-		var err error
-		avdmanager, err = avd.NewAzureVirtualDesktopManager(ctx, credentials, avdConfig)
-		if err != nil {
-			return nil, err
-		}
-	}
+		config *VirtualMachineManagerConfig, avdManager *avd.AzureVirtualDesktopManager) (cloudyvm.VirtualMachineManager, error) {
 
 	vmm := &AzureVirtualMachineManager{
 		credentials: credentials,
@@ -64,7 +55,7 @@ func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure
 
 		LogBody: false,
 
-		avdManager: avdmanager,
+		avdManager: avdManager,
 	}
 	err := vmm.Configure(ctx)
 	if err != nil {
@@ -218,14 +209,16 @@ func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachin
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) ExecuteRemotePowershell(ctx context.Context, vmID, script string) error {
+// ExecuteRemotePowershell executes a PowerShell script on a remote Azure virtual machine.
+// It constructs a RunCommandInput for PowerShell execution, starts the execution, and polls for the result.
+func (vmm *AzureVirtualMachineManager) ExecuteRemotePowershell(ctx context.Context, vmID string, script *string, timeout, pollInterval time.Duration) error {
 	log := logging.GetLogger(ctx)
 
 	log.DebugContext(ctx, "Constructing RunCommandInput for PowerShell execution")
 	runCommandInput := armcompute.RunCommandInput{
 		CommandID: to.Ptr("RunPowerShellScript"),
 		Script: []*string{
-			to.Ptr(script),
+			script,
 		},
 	}
 	log.DebugContext(ctx, "Finished constructing RunCommandInput for PowerShell execution")
@@ -239,7 +232,7 @@ func (vmm *AzureVirtualMachineManager) ExecuteRemotePowershell(ctx context.Conte
 
 	log.DebugContext(ctx, "PowerShell command execution started successfully, polling for result")
 
-	result, err := pollPowerShellExecution(ctx, poller)
+	result, err := pollPowerShellExecution(ctx, poller, timeout, pollInterval)
 	if err != nil {
 		return err
 	}
@@ -247,11 +240,10 @@ func (vmm *AzureVirtualMachineManager) ExecuteRemotePowershell(ctx context.Conte
 	return processPowerShellResult(ctx, result)
 }
 
-func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse]) (armcompute.RunCommandResult, error) {
+// pollPowerShellExecution polls the status of a PowerShell execution command until it completes or times out.
+func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse], timeout time.Duration, pollInterval time.Duration) (armcompute.RunCommandResult, error) {
 	log := logging.GetLogger(ctx)
 
-	timeout := 10 * time.Minute
-	pollInterval := 15 * time.Second
 	startTime := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

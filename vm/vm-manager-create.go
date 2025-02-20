@@ -14,7 +14,7 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 	log := logging.GetLogger(ctx)
 
 	if vm.ID == "" {
-		return nil, fmt.Errorf("Cannot create a VM without an ID")
+		return nil, fmt.Errorf("cannot create a VM without an ID")
 	}
 
 	log.InfoContext(ctx, "VM Create starting")

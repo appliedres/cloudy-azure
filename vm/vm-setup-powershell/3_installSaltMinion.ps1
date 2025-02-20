@@ -4,7 +4,7 @@
 Write-Host "Downloading Salt Minion installer from Azure Storage..."
 
 $filesToDownload = @(
-    $AVD_BOOTLOADER_INSTALLER_FILENAME,
+    $SALT_MINION_INSTALLER_FILENAME,
 )
 
 $downloadFolder = Join-Path $env:TEMP "ArkloudDownloads"

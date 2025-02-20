@@ -65,5 +65,12 @@ func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) 
 		log.InfoContext(ctx, "No Nics found")
 	}
 
+	if vmm.avdManager != nil {
+		err = vmm.avdManager.Cleanup(ctx, vmId)
+		if err != nil {
+			return logging.LogAndWrapErr(ctx, log, err, "VM Delete")
+		}
+	}
+
 	return nil
 }

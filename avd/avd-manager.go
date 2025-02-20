@@ -22,8 +22,6 @@ import (
 	"github.com/appliedres/cloudy/models"
 
 	cloudyazure "github.com/appliedres/cloudy-azure"
-
-
 )
 
 type AzureVirtualDesktopManager struct {
