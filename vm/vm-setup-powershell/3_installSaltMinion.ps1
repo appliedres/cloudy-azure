@@ -1,59 +1,43 @@
 # --------------------------------------------------------------------------------
-# DOWNLOAD SALT MINION INSTALLER FROM AZURE BLOB STORAGE
+# DOWNLOAD SALT MINION INSTALLER FROM AZURE STORAGE
 # --------------------------------------------------------------------------------
 Write-Host "Downloading Salt Minion installer from Azure Storage..."
-
-$filesToDownload = @(
-    $SALT_MINION_INSTALLER_FILENAME,
-)
 
 $downloadFolder = Join-Path $env:TEMP "ArkloudDownloads"
 if (!(Test-Path $downloadFolder)) {
     New-Item -ItemType Directory -Path $downloadFolder | Out-Null
 }
 
-foreach ($blobName in $filesToDownload) {
-    Write-Host "Processing blob: $blobName"
+# Define the Salt Minion installer path
+$saltInstallerPath = Join-Path $downloadFolder "salt-minion.msi"
 
-    # Construct direct blob URL
-    if ($AZURE_CONTAINER_URI -match "\?") {
-        # If container URI already has '?', insert the blob name before the query string.
-        $blobUrl = $AZURE_CONTAINER_URI -replace '\?.*$', "/$blobName$&"
-    } else {
-        # No query in base URI, just append the blob name.
-        $blobUrl = "$AZURE_CONTAINER_URI/$blobName"
-    }
-
-    $outputPath = Join-Path $downloadFolder $blobName
-    Write-Host "Downloading: $blobUrl -> $outputPath"
-
-    try {
-        Invoke-WebRequest -Uri $blobUrl -OutFile $outputPath -UseBasicParsing
-        Write-Host "Successfully downloaded: $blobName"
-    } catch {
-        Exit-OnFailure "Failed to download file: $blobName. Error: $_"
-    }
+# Download Salt Minion installer
+Write-Host "Downloading Salt Minion installer..."
+try {
+    Invoke-WebRequest -Uri "$AZURE_SALT_MINION_URL" -OutFile $saltInstallerPath -UseBasicParsing
+    Write-Host "Successfully downloaded Salt Minion installer to $saltInstallerPath"
+} catch {
+    Exit-OnFailure "Failed to download Salt Minion installer. Error: $_"
 }
-Write-Host "Salt Minion installer downloaded successfully."
 
+Write-Host "Salt Minion installer downloaded successfully."
 
 # --------------------------------------------------------------------------------
 # INSTALL SALT MINION (MSI) & START SERVICE
 # --------------------------------------------------------------------------------
 Write-Host "Salt Minion installation starting..."
 
-$saltInstallerPath = Join-Path $downloadFolder $SALT_MINION_INSTALLER_FILENAME
 if (!(Test-Path $saltInstallerPath)) {
-    Exit-OnFailure "Could not find $SALT_MINION_INSTALLER_FILENAME in $downloadFolder"
+    Exit-OnFailure "Could not find Salt Minion installer in $downloadFolder"
 }
 
-Write-Host "Installing Salt Minion (MSI) from local file: $saltInstallerPath"
+Write-Host "Installing Salt Minion (MSI) from local file..."
 Unblock-File -Path $saltInstallerPath
 
 # Prepare MSI installation arguments
 $saltArgs = @("/i", "$saltInstallerPath", "/quiet", "/norestart")
-if (-not [string]::IsNullOrWhiteSpace($SALT_MASTER)) {
-    Write-Host "Master specified during Salt Minion install: $SALT_MASTER"
+if (-not [string]::IsNullOrWhiteSpace("$SALT_MASTER")) {
+    Write-Host "Master specified during Salt Minion install."
     $saltArgs += "MASTER=$SALT_MASTER"
 }
 
@@ -63,7 +47,7 @@ try {
     if ($process.ExitCode -ne 0) {
         Exit-OnFailure "Salt Minion MSI did not exit cleanly. Exit code: $($process.ExitCode)"
     }
-    Write-Host "Salt Minion MSI process exited successfully with code: $($process.ExitCode)"
+    Write-Host "Salt Minion MSI process exited successfully."
 } catch {
     Exit-OnFailure "Error launching Salt Minion installer: $_"
 }

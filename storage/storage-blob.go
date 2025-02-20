@@ -482,36 +482,49 @@ func (b *BlobStorage) GenDownloadURL(ctx context.Context, key string) (string, e
 	return url, nil
 }
 
-func GenerateUserDelegationSAS(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, validFor time.Duration, permissions sas.ContainerPermissions) (string, error) {
+
+// common function to get User Delegation Credentials
+func getUserDelegationCredential(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName string, validFor time.Duration) (*service.UserDelegationCredential, time.Time, time.Time, error) {
 	cred, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to authenticate with Azure AD: %w", err)
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("failed to authenticate with Azure AD: %w", err)
 	}
 
 	blobClient, err := azblob.NewClient(fmt.Sprintf("https://%s.blob.core.usgovcloudapi.net", storageAccountName), cred, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create service client: %w", err)
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("failed to create service client: %w", err)
 	}
 
 	keyStart := time.Now().UTC().Add(-5 * time.Minute) // Allow some clock skew
-	keyExpiry := time.Now().UTC().Add(1 * time.Hour)  // 1-hour validity
+	keyExpiry := time.Now().UTC().Add(validFor)        // Custom validity
 
 	keyInfo := service.KeyInfo{
-		Start:    to.Ptr(keyStart.Format(time.RFC3339)),
-		Expiry:   to.Ptr(keyExpiry.Format(time.RFC3339)),
+		Start:  to.Ptr(keyStart.Format(time.RFC3339)),
+		Expiry: to.Ptr(keyExpiry.Format(time.RFC3339)),
 	}
+
 	userDelegationCred, err := blobClient.ServiceClient().GetUserDelegationCredential(ctx, keyInfo, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to get user delegation credential: %w", err)
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("failed to get user delegation credential: %w", err)
+	}
+
+	return userDelegationCred, keyStart, keyExpiry, nil
+}
+
+// generate SAS for a container
+func GenerateContainerSAS(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, validFor time.Duration, permissions sas.ContainerPermissions) (string, error) {
+	userDelegationCred, keyStart, keyExpiry, err := getUserDelegationCredential(ctx, creds, storageAccountName, validFor)
+	if err != nil {
+		return "", err
 	}
 
 	sasQueryParams, err := sas.BlobSignatureValues{
 		ContainerName: containerName,
-		Protocol:   sas.ProtocolHTTPS,
-		StartTime:  keyStart,
-		ExpiryTime: keyExpiry,
-		Permissions: permissions.String(),
-		Version:    "2022-11-02",
+		Protocol:      sas.ProtocolHTTPS,
+		StartTime:     keyStart,
+		ExpiryTime:    keyExpiry,
+		Permissions:   permissions.String(),
+		Version:       "2022-11-02",
 	}.SignWithUserDelegation(userDelegationCred)
 
 	if err != nil {
@@ -520,6 +533,33 @@ func GenerateUserDelegationSAS(ctx context.Context, creds *cloudyazure.AzureCred
 
 	sasURL := fmt.Sprintf("https://%s.blob.core.usgovcloudapi.net/%s?%s",
 		storageAccountName, containerName, sasQueryParams.Encode())
+
+	return sasURL, nil
+}
+
+// generate SAS for a single Blob
+func GenerateBlobSAS(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName, blobName string, validFor time.Duration, permissions sas.BlobPermissions) (string, error) {
+	userDelegationCred, keyStart, keyExpiry, err := getUserDelegationCredential(ctx, creds, storageAccountName, validFor)
+	if err != nil {
+		return "", err
+	}
+
+	sasQueryParams, err := sas.BlobSignatureValues{
+		ContainerName: containerName,
+		BlobName:      blobName,
+		Protocol:      sas.ProtocolHTTPS,
+		StartTime:     keyStart,
+		ExpiryTime:    keyExpiry,
+		Permissions:   permissions.String(),
+		Version:       "2022-11-02",
+	}.SignWithUserDelegation(userDelegationCred)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS token: %w", err)
+	}
+
+	sasURL := fmt.Sprintf("https://%s.blob.core.usgovcloudapi.net/%s/%s?%s",
+		storageAccountName, containerName, blobName, sasQueryParams.Encode())
 
 	return sasURL, nil
 }

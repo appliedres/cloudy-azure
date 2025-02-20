@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
+	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy-azure/storage"
 	"github.com/appliedres/cloudy/logging"
 )
@@ -17,14 +18,8 @@ import (
 func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config PowershellConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
-	// Validate required fields dynamically
 	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
-	}
-
-	containerUrl, err := vmm.generateSASToken(ctx, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer)
-	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Generating SAS token for use in powershell script")
 	}
 
 	var scriptBuilder strings.Builder
@@ -39,12 +34,21 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx contex
 
 	// AVD Installation section
 	if config.AVDInstall != nil {
-		scriptBuilder.WriteString(GenerateInstallAvdScript(config.AVDInstall, containerUrl, *hostPoolRegistrationToken) + "\n")
+		avdScript, err := GenerateInstallAvdScript(ctx, vmm.credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, 
+			config.AVDInstall, *hostPoolRegistrationToken)
+		if err != nil {
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating AVD Install script component")
+		}
+		scriptBuilder.WriteString(avdScript + "\n")
 	}
 
 	// Salt Minion Installation section
 	if config.SaltMinionInstallConfig != nil {
-		scriptBuilder.WriteString(GenerateInstallSaltMinionScript(config.SaltMinionInstallConfig, containerUrl) + "\n")
+		saltScript, err := GenerateInstallSaltMinionScript(ctx, vmm.credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.SaltMinionInstallConfig)
+		if err != nil {
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script component")
+		}
+		scriptBuilder.WriteString(saltScript + "\n")
 	}
 
 	// Restart system
@@ -106,14 +110,12 @@ func validateConfig(config PowershellConfig, hostPoolToken *string) error {
 
 //go:embed vm-setup-powershell/0_scriptStart.ps1
 var scriptStart string
-
 func GenerateScriptStart() string {
 	return scriptStart
 }
 
 //go:embed vm-setup-powershell/1_joinDomain.ps1
 var joinDomainTemplate string
-
 func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 	script := joinDomainTemplate
 
@@ -138,46 +140,60 @@ func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 
 //go:embed vm-setup-powershell/2_installAVD.ps1
 var installAvdTemplate string
+func GenerateInstallAvdScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, avdConfig *AVDInstallConfig, hostPoolToken string) (string, error) {
+	validFor := 1 * time.Hour
+	
+	avdAgentURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, avdConfig.AVDAgentInstallerFilename, validFor, sas.BlobPermissions{Read: true})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS for AVD Agent: %w", err)
+	}
 
-func GenerateInstallAvdScript(avdConfig *AVDInstallConfig, containerUrl, hostPoolToken string) string {
+	avdBootloaderURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, avdConfig.AVDBootloaderInstallerFilename, validFor, sas.BlobPermissions{Read: true})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS for AVD Bootloader: %w", err)
+	}
+
 	script := installAvdTemplate
 
 	replacements := map[string]string{
-		"$AZURE_CONTAINER_URI":               containerUrl,
-		"$AVD_AGENT_INSTALLER_FILENAME":      avdConfig.AVDAgentInstallerFilename,
-		"$AVD_BOOTLOADER_INSTALLER_FILENAME": avdConfig.AVDBootloaderInstallerFilename,
-		"$REGISTRATION_TOKEN":                hostPoolToken,
+		"$AZURE_AVD_AGENT_URL":      avdAgentURL,
+		"$AZURE_AVD_BOOTLOADER_URL": avdBootloaderURL,
+		"$REGISTRATION_TOKEN":       hostPoolToken,
 	}
 
 	for key, value := range replacements {
 		script = strings.ReplaceAll(script, key, value)
 	}
 
-	return script
+	return script, nil
 }
 
 //go:embed vm-setup-powershell/3_installSaltMinion.ps1
 var installSaltMinionTemplate string
+func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, saltConfig *SaltMinionInstallConfig) (string, error) {
+	validFor := 1 * time.Hour
+	
+	saltInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, saltConfig.SaltMinionInstallerFilename, validFor, sas.BlobPermissions{Read: true})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS for Salt Minion Installer: %w", err)
+	}
 
-func GenerateInstallSaltMinionScript(saltConfig *SaltMinionInstallConfig, containerUrl string) string {
 	script := installSaltMinionTemplate
 
 	replacements := map[string]string{
-		"$AZURE_CONTAINER_URI":            containerUrl,
-		"$SALT_MINION_INSTALLER_FILENAME": saltConfig.SaltMinionInstallerFilename,
-		"$SALT_MASTER":                    saltConfig.SaltMaster,
+		"$AZURE_SALT_MINION_URL": saltInstallerURL,
+		"$SALT_MASTER":           saltConfig.SaltMaster,
 	}
 
 	for key, value := range replacements {
 		script = strings.ReplaceAll(script, key, value)
 	}
 
-	return script
+	return script, nil
 }
 
 //go:embed vm-setup-powershell/4_restart.ps1
 var restartScriptTemplate string
-
 const restartDelay = "5" // 5 seconds default delay, to allow script log to close
 func GenerateRestartScript() string {
 	script := strings.ReplaceAll(restartScriptTemplate, "$RESTART_DELAY", restartDelay)
@@ -186,26 +202,6 @@ func GenerateRestartScript() string {
 
 //go:embed vm-setup-powershell/5_scriptEnd.ps1
 var scriptEnd string
-
 func GenerateScriptEnd() string {
 	return scriptEnd
-}
-
-func (vmm *AzureVirtualMachineManager) generateSASToken(ctx context.Context, storageAccount, container string) (string, error) {
-	log := logging.GetLogger(ctx)
-
-	perms := sas.ContainerPermissions{Read: true, List: true}
-	validFor := 1 * time.Hour
-
-	sasURL, err := storage.GenerateUserDelegationSAS(ctx, vmm.credentials, storageAccount, container, validFor, perms)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate SAS token: %w", err)
-	}
-	log.DebugContext(ctx, "Generated SAS token",
-		"storageAccount", storageAccount,
-		"container", container,
-		"validFor", fmt.Sprintf("%d days %d hours %d minutes", int(validFor.Hours()/24), int(validFor.Hours())%24, int(validFor.Minutes())%60),
-		"permissions", perms)
-
-	return sasURL, nil
 }

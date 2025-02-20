@@ -12,7 +12,7 @@ if ($computerDomain -eq "$DOMAIN_NAME") {
         $securePassword = ConvertTo-SecureString -String "$DOMAIN_PASSWORD" -AsPlainText -Force
         $credential = New-Object System.Management.Automation.PSCredential ("$DOMAIN_USERNAME", $securePassword)
 
-        if (-not [string]::IsNullOrWhiteSpace($ORGANIZATIONAL_UNIT_PATH)) {
+        if (-not [string]::IsNullOrWhiteSpace("$ORGANIZATIONAL_UNIT_PATH")) {
             Write-Host "Joining with custom OU: $ORGANIZATIONAL_UNIT_PATH"
             Add-Computer -DomainName "$DOMAIN_NAME" -Credential $credential -OUPath "$ORGANIZATIONAL_UNIT_PATH" -Force -Verbose
         } else {
