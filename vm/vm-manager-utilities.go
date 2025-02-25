@@ -29,7 +29,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		Name:     &cloudyVM.ID,
 		Location: &cloudyVM.Location.Region,
 		Identity: &armcompute.VirtualMachineIdentity{
-			Type: to.Ptr(armcompute.ResourceIdentityTypeNone),
+			Type: to.Ptr(armcompute.ResourceIdentityTypeSystemAssigned),
 		},
 	}
 
