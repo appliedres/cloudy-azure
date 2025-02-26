@@ -171,6 +171,8 @@ func GenerateInstallAvdScript(ctx context.Context, creds *cloudyazure.AzureCrede
 //go:embed vm-setup-powershell/3_installSaltMinion.ps1
 var installSaltMinionTemplate string
 func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, saltConfig *SaltMinionInstallConfig) (string, error) {
+	log := logging.GetLogger(ctx)
+
 	validFor := 1 * time.Hour
 	
 	saltInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, saltConfig.SaltMinionInstallerFilename, validFor, sas.BlobPermissions{Read: true})
@@ -180,6 +182,7 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 
 	script := installSaltMinionTemplate
 
+	log.DebugContext(ctx, "Generated salt minion install script using Salt Master IP/hostname '%s'", saltConfig.SaltMaster)
 	replacements := map[string]string{
 		"$AZURE_SALT_MINION_URL": saltInstallerURL,
 		"$SALT_MASTER":           saltConfig.SaltMaster,
@@ -189,6 +192,7 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 		script = strings.ReplaceAll(script, key, value)
 	}
 
+	log.DebugContext(ctx, "Generated Salt Minion install script using Salt Master IP/hostname '%s'", saltConfig.SaltMaster)
 	return script, nil
 }
 
