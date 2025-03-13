@@ -1,8 +1,6 @@
 # --------------------------------------------------------------------------------
 # DOWNLOAD INSTALLERS FROM AZURE STORAGE
 # --------------------------------------------------------------------------------
-Write-Host "Downloading AVD Agent and BootLoader from Azure Storage..."
-
 $downloadFolder = Join-Path $env:TEMP "ArkloudDownloads"
 if (!(Test-Path $downloadFolder)) {
     New-Item -ItemType Directory -Path $downloadFolder | Out-Null
@@ -17,6 +15,7 @@ try {
 } catch {
     Exit-OnFailure "Failed to download AVD Agent. Error: $_"
 }
+Write-Host "AVD Agent installer downloaded successfully."
 
 # Download AVD BootLoader
 $avdBootLoaderInstallerPath = Join-Path $downloadFolder "avd-bootloader.msi"
@@ -27,13 +26,11 @@ try {
 } catch {
     Exit-OnFailure "Failed to download AVD BootLoader. Error: $_"
 }
-
-Write-Host "All files downloaded successfully."
+Write-Host "AVD Bootloader installer downloaded successfully."
 
 # --------------------------------------------------------------------------------
 # INSTALL AVD AGENT + BOOTLOADER
 # --------------------------------------------------------------------------------
-Write-Host "AVD Agent and BootLoader installation starting..."
 
 if (!(Test-Path $avdAgentInstallerPath)) {
     Exit-OnFailure "Could not find AVD Agent installer in $downloadFolder"
@@ -42,6 +39,7 @@ if (!(Test-Path $avdBootLoaderInstallerPath)) {
     Exit-OnFailure "Could not find AVD BootLoader installer in $downloadFolder"
 }
 
+Wait-ForInstaller -timeoutSeconds $InstallTimeoutSeconds
 Write-Host "Installing AVD RDAgent..."
 try {
     Unblock-File -Path $avdAgentInstallerPath
@@ -50,7 +48,9 @@ try {
 } catch {
     Exit-OnFailure "Error installing RDAgent: $_"
 }
+Write-Host "AVD Agent installation completed successfully."
 
+Wait-ForInstaller -timeoutSeconds $InstallTimeoutSeconds
 Write-Host "Installing AVD BootLoader Agent..."
 try {
     Unblock-File -Path $avdBootLoaderInstallerPath
@@ -59,4 +59,4 @@ try {
 } catch {
     Exit-OnFailure "Error installing BootLoader Agent: $_"
 }
-Write-Host "AVD Agent and BootLoader installation completed successfully."
+Write-Host "AVD BootLoader installation completed successfully."

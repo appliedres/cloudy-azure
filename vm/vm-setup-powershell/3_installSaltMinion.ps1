@@ -19,12 +19,12 @@ try {
 } catch {
     Exit-OnFailure "Failed to download Salt Minion installer. Error: $_"
 }
-
 Write-Host "Salt Minion installer downloaded successfully."
 
 # --------------------------------------------------------------------------------
 # INSTALL SALT MINION (MSI) & START SERVICE
 # --------------------------------------------------------------------------------
+Wait-ForInstaller -timeoutSeconds $InstallTimeoutSeconds
 Write-Host "Salt Minion installation starting..."
 
 if (!(Test-Path $saltInstallerPath)) {

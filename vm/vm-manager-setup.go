@@ -27,7 +27,7 @@ func (vmm *AzureVirtualMachineManager) InitialVirtualMachineSetup(ctx context.Co
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
 
-		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script, 10*time.Minute, 15*time.Second)
+		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script, 20*time.Minute, 15*time.Second)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
 		}

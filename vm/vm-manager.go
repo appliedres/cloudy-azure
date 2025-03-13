@@ -255,9 +255,21 @@ func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armco
 
 	for {
 		select {
-		case <-ctx.Done():
-			log.ErrorContext(ctx, "PowerShell execution timed out", "elapsed", time.Since(startTime))
+		case <-ctx.Done(): // Execution timeout reached
+			log.WarnContext(ctx, "PowerShell execution timed out", "elapsed", time.Since(startTime))
+
+			// Attempt to retrieve partial output before exiting
+			if response.Done() {
+				finalResult, err := response.Result(ctx)
+				if err != nil {
+					log.ErrorContext(ctx, "Failed to retrieve partial RunCommand result", "error", err)
+					return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve partial RunCommand result")
+				}
+				return finalResult.RunCommandResult, nil
+			}
+
 			return armcompute.RunCommandResult{}, fmt.Errorf("PowerShell execution timed out after %v", timeout)
+
 		case <-ticker.C:
 			elapsed := time.Since(startTime)
 			remaining := timeout - elapsed
@@ -265,46 +277,60 @@ func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armco
 				"Polling PowerShell execution status. Elapsed: %d min %d sec, Timeout remaining: %d min %d sec",
 				int(elapsed.Minutes()), int(elapsed.Seconds())%60, int(remaining.Minutes()), int(remaining.Seconds())%60,
 			))
-			// Poll for status
+
 			_, err := response.Poll(ctx)
 			if err != nil {
 				log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
 				return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
 			}
 
-			// Check if polling is complete
 			if response.Done() {
-				// Retrieve the final result
 				finalResult, err := response.Result(ctx)
 				if err != nil {
 					log.ErrorContext(ctx, "Failed to retrieve final RunCommand result", "error", err)
 					return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve final RunCommand result")
 				}
+				log.InfoContext(ctx, "Powershell execution completed", "elapsed", time.Since(startTime))
 				return finalResult.RunCommandResult, nil
 			}
 		}
 	}
 }
 
+// processPowerShellResult processes and logs the output of a PowerShell script execution.
 func processPowerShellResult(ctx context.Context, result armcompute.RunCommandResult) error {
 	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "Powershell execution completed, processing result")
+	log.DebugContext(ctx, "PowerShell execution completed, processing result")
 
-	// Output the command's result
+	// Output the command's result line by line
 	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
 				message := *output.Message
-				if strings.Contains(message, "ERROR:") {
-					err := fmt.Errorf("powershell response contains an error: %s", message)
-					return logging.LogAndWrapErr(ctx, log, err, "PowerShell script error detected")
+				lines := strings.Split(message, "\n")
+
+				for _, line := range lines {
+					trimmedLine := strings.TrimSpace(line)
+					if trimmedLine == "" {
+						continue // Skip empty lines
+					}
+
+					safeLogContent := fmt.Sprintf("[PowerShell Output]: %s", trimmedLine)
+
+					if strings.Contains(trimmedLine, "ERROR") {
+						err := fmt.Errorf("PowerShell response contains an error: %s", trimmedLine)
+						log.ErrorContext(ctx, safeLogContent)
+						return logging.LogAndWrapErr(ctx, log, err, "PowerShell script error detected")
+					}
+
+					log.InfoContext(ctx, safeLogContent)
 				}
-				log.InfoContext(ctx, "PowerShell Command Output", "output", message)
 			}
 		}
 	} else {
 		log.WarnContext(ctx, "No output returned from the PowerShell execution")
 	}
-	log.DebugContext(ctx, "RunPowershell function completed successfully")
+
+	log.DebugContext(ctx, "RunPowerShell function completed successfully")
 	return nil
 }
