@@ -12,6 +12,18 @@ import (
 func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) error {
 	log := logging.GetLogger(ctx)
 
+	if vmm.vmClient == nil {
+		return errors.New("vmm.Delete: VM Client not initialized")
+	}
+
+	if vmm.credentials == nil || vmm.credentials.ResourceGroup == "" {
+		return errors.New("vmm.Delete: credentials == nil or Resource Group not set")
+	}
+
+	if vmId == "" {
+		return errors.New("vmm.Delete: VM ID not set")
+	}
+
 	log.InfoContext(ctx, "DeleteVM Starting Deallocate")
 	err := vmm.Deallocate(ctx, vmId)
 	if err != nil {
@@ -24,13 +36,21 @@ func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) 
 		if cloudyazure.Is404(err) {
 			log.InfoContext(ctx, "BeginDelete vm not found")
 		} else {
-			return errors.Wrap(err, "VM Delete")
+			return errors.Wrap(err, "VM Delete: BeginDelete")
 		}
 	} else {
 		_, err = cloudyazure.PollWrapper(ctx, poller, "VM Delete")
 		if err != nil {
-			return errors.Wrap(err, "VM Delete")
+			return errors.Wrap(err, "VM Delete: BeginDelete: polling")
 		}
+	}
+
+	status, err := vmm.GetById(ctx, vmId, true)
+	if err != nil {
+		return errors.Wrap(err, "VM Delete: Validate deleted")
+	}
+	if status != nil {
+		return errors.New("VM Delete: VM not deleted")
 	}
 
 	log.InfoContext(ctx, "GetVmOsDisk")
