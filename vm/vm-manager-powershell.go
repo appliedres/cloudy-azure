@@ -95,6 +95,7 @@ func validateConfig(config PowershellConfig, hostPoolToken *string) error {
 
 	// Validate hostPoolToken only if AVDInstall is enabled
 	if config.AVDInstall != nil && hostPoolToken == nil {
+		// TODO: this causes an error if VMM.AVDManager is nil, which is not the same as AVDInstall being nil
 		return fmt.Errorf("hostPoolToken is required when AVDInstallConfig is set")
 	}
 
@@ -192,7 +193,7 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 		script = strings.ReplaceAll(script, key, value)
 	}
 
-	log.DebugContext(ctx, "Generated Salt Minion install script using Salt Master IP/hostname '%s'", saltConfig.SaltMaster)
+	log.DebugContext(ctx, fmt.Sprintf("Generated salt minion install script using Salt Master IP/hostname '%s'", saltConfig.SaltMaster))
 	return script, nil
 }
 

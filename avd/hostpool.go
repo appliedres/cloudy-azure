@@ -8,7 +8,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
-	"github.com/appliedres/cloudy"
+	"github.com/appliedres/cloudy/logging"
 )
 
 func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Context, rgName string, upn string) (*armdesktopvirtualization.HostPool, error) {
@@ -43,26 +43,33 @@ func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Co
 }
 
 func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rgName string, hpname string) (*string, error) {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Beginning host pool token retrieval")
+	
 	tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
 	if tokenresponse.Token == nil || err != nil {
-		return nil, cloudy.Error(ctx, "RetrieveRegistrationToken avd.hostPoolsClient.RetrieveRegistrationToken failure: %+v", err)
+		return nil, logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken avd.hostPoolsClient.RetrieveRegistrationToken failure: %+v")
 	}
 
 	// token has expired
 	if tokenresponse.ExpirationTime.Before(time.Now()) {
+		log.DebugContext(ctx, "host pool token has expired. Attempting to renew..")
 		hp, err := avd.UpdateHostPoolRegToken(ctx, rgName, hpname)
 		if hp == nil || err != nil {
-			return nil, cloudy.Error(ctx, "RetrieveRegistrationToken avd.UpdateHostPoolRegToken failure: %+v", err)
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Failure while renewing host pool token: %+v")
 		}
 
 		time.Sleep(3 * time.Second)
 
 		tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
 		if tokenresponse.Token == nil || err != nil {
-			return nil, cloudy.Error(ctx, "RetrieveRegistrationToken avd.hostPoolsClient.RetrieveRegistrationToken failure: %+v", err)
+			return nil, logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after renewing token: %+v")
 		}
+
+		log.DebugContext(ctx, "host pool token has been renewed successfully.")
 	}
 
+	log.DebugContext(ctx, "Successfully retrieved host pool token")
 	return tokenresponse.Token, err
 }
 

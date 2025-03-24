@@ -86,6 +86,9 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	if vm.UserID != "" {
 		tags[vmUserTagKey] = &vm.UserID
 	}
+	if vm.TeamID != "" {
+		tags[vmTeamTagKey] = &vm.TeamID
+	}
 	for key, value := range vm.Tags {
 		tags[key] = value
 	}
