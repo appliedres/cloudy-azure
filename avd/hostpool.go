@@ -42,35 +42,78 @@ func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Co
 	return nil, nil
 }
 
-func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rgName string, hpname string) (*string, error) {
-	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "Beginning host pool token retrieval")
-	
-	tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
-	if tokenresponse.Token == nil || err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken avd.hostPoolsClient.RetrieveRegistrationToken failure: %+v")
-	}
+func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rgName, hpName string) (*string, error) {
+    log := logging.GetLogger(ctx)
+    log.DebugContext(ctx, "Beginning host pool token retrieval")
 
-	// token has expired
-	if tokenresponse.ExpirationTime.Before(time.Now()) {
-		log.DebugContext(ctx, "host pool token has expired. Attempting to renew..")
-		hp, err := avd.UpdateHostPoolRegToken(ctx, rgName, hpname)
-		if hp == nil || err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Failure while renewing host pool token: %+v")
-		}
+    const maxRetries = 3
+    var lastErr error
 
-		time.Sleep(3 * time.Second)
+    for attempt := 1; attempt <= maxRetries; attempt++ {
+        // Try to retrieve the token
+        tokenResponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpName, nil)
+        if err != nil || tokenResponse.Token == nil {
+            log.DebugContext(ctx, fmt.Sprintf("Attempt %d/%d: No valid token found or error retrieving token. Creating/renewing now.",
+                attempt, maxRetries,
+            ))
 
-		tokenresponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpname, nil)
-		if tokenresponse.Token == nil || err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after renewing token: %+v")
-		}
+            // Attempt to create/renew
+            hp, updateErr := avd.UpdateHostPoolRegToken(ctx, rgName, hpName)
+            if updateErr != nil || hp == nil {
+                lastErr = logging.LogAndWrapErr(ctx, log, updateErr, "Failure while creating/renewing host pool token")
+                // Let the loop continue and try again
+                time.Sleep(3 * time.Second)
+                continue
+            }
 
-		log.DebugContext(ctx, "host pool token has been renewed successfully.")
-	}
+            // Wait briefly, then retrieve again
+            time.Sleep(3 * time.Second)
+            tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpName, nil)
+            if err != nil || tokenResponse.Token == nil {
+                lastErr = logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after creating/renewing token")
+                time.Sleep(3 * time.Second)
+                continue
+            }
 
-	log.DebugContext(ctx, "Successfully retrieved host pool token")
-	return tokenresponse.Token, err
+            log.DebugContext(ctx, "Host pool token has been created/renewed successfully.")
+        }
+
+        // Now we have a valid token; check if it expires within 24 hours
+        if tokenResponse.ExpirationTime.Before(time.Now().Add(24 * time.Hour)) {
+            log.DebugContext(ctx, fmt.Sprintf(
+                "Attempt %d/%d: Host pool token will expire within 24 hours. Renewing...",
+                attempt, maxRetries,
+            ))
+
+            hp, updateErr := avd.UpdateHostPoolRegToken(ctx, rgName, hpName)
+            if updateErr != nil || hp == nil {
+                lastErr = logging.LogAndWrapErr(ctx, log, updateErr, "Failure while renewing host pool token")
+                time.Sleep(3 * time.Second)
+                continue
+            }
+
+            // Wait briefly, then retrieve again
+            time.Sleep(3 * time.Second)
+            tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpName, nil)
+            if err != nil || tokenResponse.Token == nil {
+                lastErr = logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after renewing token")
+                time.Sleep(3 * time.Second)
+                continue
+            }
+
+            log.DebugContext(ctx, "Host pool token has been renewed successfully and is valid for at least 24 more hours.")
+        }
+
+        // If we reach here, we've successfully retrieved a token that doesn't expire within 24 hours
+        log.DebugContext(ctx, "Successfully retrieved host pool token")
+        return tokenResponse.Token, nil
+    }
+
+    // If we exit the loop, we've used up all retries without success
+    if lastErr == nil {
+        lastErr = fmt.Errorf("unable to retrieve a valid token after %d attempts", maxRetries)
+    }
+    return nil, lastErr
 }
 
 // Helper to check if a host pool is empty
