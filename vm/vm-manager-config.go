@@ -5,13 +5,13 @@ type VirtualMachineManagerConfig struct {
 	SubnetIds          []string
 	VnetResourceGroup  string
 	VnetId             string
-	InitialSetupConfig *PowershellConfig
+	InitialSetupConfig *SetupScriptConfig
 }
 
-// PowershellConfig defines the overall configuration for the powershell script used in
+// SetupScriptConfig defines the overall configuration for the powershell script used in
 // the initial setup process on the Virtual Machine.
 // Marking a section nil / not defined will remove it from the setup process.
-type PowershellConfig struct {
+type SetupScriptConfig struct {
 	ADJoin                  *ADJoinConfig
 	AVDInstall              *AVDInstallConfig
 	SaltMinionInstallConfig *SaltMinionInstallConfig
@@ -24,7 +24,7 @@ type ADJoinConfig struct {
 	DomainName             string
 	DomainUsername         string
 	DomainPassword         string
-	OrganizationalUnitPath *string  // optional, nil is not specified
+	OrganizationalUnitPath *string // optional, nil is not specified
 }
 
 // AVDInstallConfig defines the settings required for AVD installation
@@ -35,8 +35,19 @@ type AVDInstallConfig struct {
 
 // SaltMinionInstallConfig defines the settings required for Salt Minion installation
 type SaltMinionInstallConfig struct {
-	SaltMaster                  string // ip or hostname of Salt Master, to be used for registering the Salt Minion
-	SaltMinionInstallerFilename string
+	SaltMaster              string // ip or hostname of Salt Master, to be used for registering the Salt Minion
+	
+	SaltMinionMsiFilename   string // For windows installs
+	
+	SaltMinionRpmFilename   string // For RHEL
+	SaltCommonRpmFilename   string
+
+	SaltMinionDebFilename   string // For debian based, e.g. Ubuntu	
+	SaltCommonDebFilename   string
+	BsdmainutilsDebFilename string
+	DctrlToolsDebFilename   string
+	NcalDebFilename		    string
+
 }
 
 // InstallerBinaryStorageConfig defines the settings required for storing installer binaries

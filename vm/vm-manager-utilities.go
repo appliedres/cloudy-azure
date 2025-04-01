@@ -93,7 +93,6 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		AdminUsername: &cloudyVM.Template.LocalAdministratorID,
 		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),
 	}
-	// log.InfoContext(ctx, fmt.Sprintf("%+v", azVM.Properties.OSProfile))
 
 	// OS-specific items
 	switch cloudyVM.Template.OperatingSystem {
@@ -103,8 +102,17 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 	case "linux":
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
 		azVM.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
-			DisablePasswordAuthentication: to.Ptr(true),
-			ProvisionVMAgent:              to.Ptr(true),
+			DisablePasswordAuthentication: to.Ptr(false),
+			// TODO: linux SSH key management
+			// SSH: &armcompute.SSHConfiguration{
+			// 	PublicKeys: []*armcompute.SSHPublicKey{
+			// 		{
+			// 			Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", cloudyVM.Template.LocalAdministratorID)),
+			// 			KeyData: to.Ptr(),
+			// 		},
+			// 	},
+			// },
+			ProvisionVMAgent: to.Ptr(true),
 		}
 		azVM.Properties.OSProfile.AllowExtensionOperations = to.Ptr(true)
 	}
