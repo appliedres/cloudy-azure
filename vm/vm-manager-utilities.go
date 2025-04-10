@@ -17,6 +17,7 @@ const (
 	vmNameTagKey    = "Name"
 	vmCreatorTagKey = "CreatorID"
 	vmUserTagKey    = "UserID"
+	vmTeamTagKey    = "TeamID"
 )
 
 func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) armcompute.VirtualMachine {
@@ -41,12 +42,15 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 
 	azVM.Tags[vmNameTagKey] = &cloudyVM.Name
 
-	// Add CreatorID and UserID as tags
+	// Add creator, user, and team tags
 	if cloudyVM.CreatorID != "" {
 		azVM.Tags[vmCreatorTagKey] = &cloudyVM.CreatorID
 	}
 	if cloudyVM.UserID != "" {
 		azVM.Tags[vmUserTagKey] = &cloudyVM.UserID
+	}
+	if cloudyVM.TeamID != "" {
+		azVM.Tags[vmTeamTagKey] = &cloudyVM.TeamID
 	}
 
 	if cloudyVM.Template == nil {
