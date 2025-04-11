@@ -68,12 +68,13 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	nicName := fmt.Sprintf("%s-nic-primary", vm.ID)
 
 	fullSubnetId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s",
-		vmm.credentials.SubscriptionID, vmm.config.VnetResourceGroup, vmm.config.VnetId, subnetId)
+		vmm.Credentials.SubscriptionID, vmm.Config.VnetResourceGroup, vmm.Config.VnetId, subnetId)
 
 	dnsServers := []*string{}
 	if strings.EqualFold(vm.Template.OperatingSystem, "windows") {
-		dnsServers = vmm.config.DomainControllers
+		dnsServers = vmm.Config.DomainControllers
 	}
+	// TODO: linux dns servers
 
 	// apply VM info as tags to NIC
 	tags := map[string]*string{}
@@ -93,8 +94,8 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 		tags[key] = value
 	}
 
-	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.config.VnetResourceGroup, nicName, armnetwork.Interface{
-		Location: &vmm.credentials.Region,
+	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.Config.VnetResourceGroup, nicName, armnetwork.Interface{
+		Location: &vmm.Credentials.Region,
 		Tags:     tags,
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			EnableAcceleratedNetworking: vm.Template.AcceleratedNetworking,
@@ -153,7 +154,7 @@ func (vmm *AzureVirtualMachineManager) DeleteNic(ctx context.Context, nic *model
 	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, fmt.Sprintf("DeleteNic starting: %s", nic.Name))
 
-	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.config.VnetResourceGroup, nic.Name, nil)
+	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.Config.VnetResourceGroup, nic.Name, nil)
 	if err != nil {
 		return errors.Wrap(err, "DeleteNic.BeginDelete")
 	}
@@ -172,7 +173,7 @@ func (vmm *AzureVirtualMachineManager) findBestSubnet(ctx context.Context) (stri
 	bestSubnetId := ""
 	bestSubnetCount := 0
 
-	for _, subnetId := range vmm.config.SubnetIds {
+	for _, subnetId := range vmm.Config.SubnetIds {
 		subnetCount, err := vmm.getSubnetAvailableIps(ctx, subnetId)
 		if err != nil {
 			log.ErrorContext(ctx, fmt.Sprintf("error counting ips in subnet: %s", subnetId), logging.WithError(err))
@@ -194,8 +195,8 @@ func (vmm *AzureVirtualMachineManager) findBestSubnet(ctx context.Context) (stri
 
 func (vmm *AzureVirtualMachineManager) getSubnetAvailableIps(ctx context.Context, subnetId string) (int, error) {
 	res, err := vmm.subnetClient.Get(ctx,
-		vmm.config.VnetResourceGroup,
-		vmm.config.VnetId,
+		vmm.Config.VnetResourceGroup,
+		vmm.Config.VnetId,
 		subnetId,
 		&armnetwork.SubnetsClientGetOptions{Expand: nil})
 	if err != nil {

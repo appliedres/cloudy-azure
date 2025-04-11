@@ -247,6 +247,7 @@ func (vmc *AzureVMController) CreateNIC(ctx context.Context, vm *cloudyvm.Virtua
 			dnsServers = vmc.Config.DomainControllers
 		}
 	}
+	// TODO: linux dns servers
 
 	poller, err := nicClient.BeginCreateOrUpdate(ctx, rg, nicName, armnetwork.Interface{
 		Location: &region,

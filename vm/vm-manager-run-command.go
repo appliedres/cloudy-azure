@@ -11,7 +11,7 @@ import (
 
 func (vmm *AzureVirtualMachineManager) RunCommand(ctx context.Context, vmId string, script string) error {
 
-	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmId, armcompute.RunCommandInput{
+	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.Credentials.ResourceGroup, vmId, armcompute.RunCommandInput{
 		CommandID: to.Ptr("GoRunPowerShell"),
 		Script:    []*string{&script},
 	}, nil)

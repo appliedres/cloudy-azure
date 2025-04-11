@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) CreateVirtualMachine(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
 	if vm.ID == "" {
@@ -22,7 +22,7 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 	if vm.Location == nil {
 		vm.Location = &models.VirtualMachineLocation{
 			Cloud:  cloudyazure.CloudAzureUSGovernment,
-			Region: vmm.credentials.Region,
+			Region: vmm.Credentials.Region,
 		}
 	}
 
@@ -48,7 +48,7 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 	log.InfoContext(ctx, "VM Create BeginCreateOrUpdate starting")
 
 	poller, err := vmm.vmClient.BeginCreateOrUpdate(ctx,
-		vmm.credentials.ResourceGroup, vm.ID, virtualMachineParameters, nil)
+		vmm.Credentials.ResourceGroup, vm.ID, virtualMachineParameters, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "VM Create")
 	}

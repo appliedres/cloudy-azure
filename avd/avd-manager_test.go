@@ -25,7 +25,7 @@ func initAVDManager() (*AzureVirtualDesktopManager, error) {
 	}
 
 	// TODO: modify an existing config api instead of env vars
-	rdmConfig := &AzureVirtualDesktopConfig{
+	rdmConfig := &AzureVirtualDesktopManagerConfig{
 		AvdUsersGroupId:              os.Getenv("AZ_AVD_USERS_GROUP_ID"),
 		DomainName:                   os.Getenv("AZ_AVD_DOMAIN_NAME"),
 		DomainUser:                   os.Getenv("AZ_AVD_DOMAIN_USER"),
@@ -47,22 +47,22 @@ func TestValidAVDManagerHPs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, avdm)
 
-	hp, err := avdm.CreateHostPool(ctx, avdm.credentials.ResourceGroup, "BILL-TEST1", nil)
+	hp, err := avdm.CreateHostPool(ctx, avdm.Credentials.ResourceGroup, "BILL-TEST1", nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, hp)
 
 	time.Sleep(3 * time.Second)
 
-	token, err := avdm.RetrieveRegistrationToken(ctx, avdm.credentials.ResourceGroup, *hp.Name)
+	token, err := avdm.RetrieveRegistrationToken(ctx, avdm.Credentials.ResourceGroup, *hp.Name)
 	assert.NoError(t, err)
 	assert.NotNil(t, token)
 
-	hp1, err := avdm.UpdateHostPoolRegToken(ctx, avdm.credentials.ResourceGroup, *hp.Name)
+	hp1, err := avdm.UpdateHostPoolRegToken(ctx, avdm.Credentials.ResourceGroup, *hp.Name)
 	assert.NoError(t, err)
 	assert.NotNil(t, hp1)
 
 	time.Sleep(3 * time.Second)
 
-	err = avdm.DeleteHostPool(ctx, avdm.credentials.ResourceGroup, *hp.Name)
+	err = avdm.DeleteHostPool(ctx, avdm.Credentials.ResourceGroup, *hp.Name)
 	assert.NoError(t, err)
 }

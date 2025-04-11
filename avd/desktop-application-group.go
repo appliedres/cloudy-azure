@@ -15,14 +15,14 @@ import (
 
 // CreateApplicationGroup creates an application group for the given host pool.
 func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
-	appGroupName := avd.config.AppGroupNamePrefix + suffix
-	hostPoolName := avd.config.HostPoolNamePrefix + suffix
+	appGroupName := avd.Config.AppGroupNamePrefix + suffix
+	hostPoolName := avd.Config.HostPoolNamePrefix + suffix
 
 	hostPoolArmPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/hostPools/%s",
-		avd.credentials.SubscriptionID, rgName, hostPoolName)
+		avd.Credentials.SubscriptionID, rgName, hostPoolName)
 
 	appGroup := armdesktopvirtualization.ApplicationGroup{
-		Location: to.Ptr(string(avd.credentials.Region)),
+		Location: to.Ptr(string(avd.Credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
 			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
@@ -68,10 +68,10 @@ func (avd *AzureVirtualDesktopManager) GetDesktopApplicationGroupFromHostpool(ct
 func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.Context, desktopAppGroupName string) error {
 	// Source: https://learn.microsoft.com/en-us/answers/questions/2104093/azure-virtual-desktop-application-group-assignment
 	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
-		avd.credentials.SubscriptionID, avd.credentials.ResourceGroup, desktopAppGroupName)
+		avd.Credentials.SubscriptionID, avd.Credentials.ResourceGroup, desktopAppGroupName)
 
 	roleDefID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
-		avd.credentials.SubscriptionID, avd.config.DesktopApplicationUserRoleID)
+		avd.Credentials.SubscriptionID, avd.Config.DesktopApplicationUserRoleID)
 
 	uuidWithHyphen := uuid.New().String()
 
@@ -79,7 +79,7 @@ func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.
 		armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
 				RoleDefinitionID: to.Ptr(roleDefID),
-				PrincipalID:      to.Ptr(string(avd.config.AvdUsersGroupId)),
+				PrincipalID:      to.Ptr(string(avd.Config.AvdUsersGroupId)),
 			},
 		}, nil)
 

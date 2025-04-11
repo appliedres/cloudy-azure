@@ -11,17 +11,17 @@ import (
 
 // CreateWorkspace creates a new workspace for the given host pool.
 func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgName, suffix, appGroupName string, tags map[string]*string) (*armdesktopvirtualization.Workspace, error) {
-	workspaceName := avd.config.WorkspaceNamePrefix + suffix
+	workspaceName := avd.Config.WorkspaceNamePrefix + suffix
 
 	appGroupPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
-		avd.credentials.SubscriptionID, rgName, appGroupName)
+		avd.Credentials.SubscriptionID, rgName, appGroupName)
 
 	appGroups := []*string{
 		&appGroupPath,
 	}
 
 	newWorkspace := armdesktopvirtualization.Workspace{
-		Location: to.Ptr(string(avd.credentials.Region)),
+		Location: to.Ptr(string(avd.Credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,

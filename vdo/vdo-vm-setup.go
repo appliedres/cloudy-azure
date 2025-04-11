@@ -1,4 +1,4 @@
-package vm
+package vdo
 
 import (
 	"context"
@@ -14,16 +14,16 @@ import (
 	"github.com/appliedres/cloudy/models"
 )
 
-func (vmm *AzureVirtualMachineManager) InitialVirtualMachineSetup(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vdo *VirtualDesktopOrchestrator) InitialVirtualMachineSetup(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "InitialVirtualMachineSetup started")
 
 	var err error
 	switch vm.Template.OperatingSystem {
 	case "windows":
-		vm, err = vmm.virtualMachineSetupWindows(ctx, vm)
+		vm, err = vdo.virtualMachineSetupWindows(ctx, vm)
 	case "linux":
-		vm, err = vmm.virtualMachineSetupLinux(ctx, vm)
+		vm, err = vdo.virtualMachineSetupLinux(ctx, vm)
 	default:
 		err = errors.New("unsupported operating system during initial VM setup")
 	}
@@ -31,43 +31,43 @@ func (vmm *AzureVirtualMachineManager) InitialVirtualMachineSetup(ctx context.Co
 	return vm, logging.LogAndWrapErr(ctx, log, err, "initial VM setup failed")
 }
 
-func (vmm *AzureVirtualMachineManager) virtualMachineSetupWindows(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "virtualMachineSetupWindows started")
 	defer log.DebugContext(ctx, "virtualMachineSetupWindows finished")
 
-	setupScriptConfig := vmm.config.InitialSetupConfig
-	if vmm.avdManager != nil {
+	setupScriptConfig := vdo.config
+	if vdo.avdManager != nil {
 		log.InfoContext(ctx, "Initial VM setup - AVD enabled")
 
-		hostPoolNamePtr, hostPoolToken, err := vmm.avdManager.PreRegister(ctx, vm)
+		hostPoolNamePtr, hostPoolToken, err := vdo.avdManager.PreRegister(ctx, vm)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
-		script, err := vmm.buildVirtualMachineSetupScript(ctx, *setupScriptConfig, hostPoolToken)
+		script, err := vdo.buildVirtualMachineSetupScript(ctx, setupScriptConfig, hostPoolToken)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
 
-		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script, 20*time.Minute, 15*time.Second)
+		err = vdo.vmManager.ExecuteRemotePowershell(ctx, vm.ID, script, 20*time.Minute, 15*time.Second)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
 		}
 
-		vm, err = vmm.avdManager.PostRegister(ctx, vm, *hostPoolNamePtr)
+		vm, err = vdo.avdManager.PostRegister(ctx, vm, *hostPoolNamePtr)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Post-Register VM")
 		}
 
 	} else {
 		log.InfoContext(ctx, "Initial VM setup - AVD disabled")
-		script, err := vmm.buildVirtualMachineSetupScript(ctx, *setupScriptConfig, nil)
+		script, err := vdo.buildVirtualMachineSetupScript(ctx, setupScriptConfig, nil)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
 		}
 
-		err = vmm.ExecuteRemotePowershell(ctx, vm.ID, script, 10*time.Minute, 15*time.Second)
+		err = vdo.vmManager.ExecuteRemotePowershell(ctx, vm.ID, script, 10*time.Minute, 15*time.Second)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD disabled)")
 
@@ -78,17 +78,17 @@ func (vmm *AzureVirtualMachineManager) virtualMachineSetupWindows(ctx context.Co
 	return vm, nil
 }
 
-func (vmm *AzureVirtualMachineManager) virtualMachineSetupLinux(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupLinux(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "virtualMachineSetupLinux started")
 	defer log.DebugContext(ctx, "virtualMachineSetupLinux finished")
 
-	shellScript, err := vmm.buildVirtualMachineSetupScriptLinux(ctx, vm)
+	shellScript, err := vdo.buildVirtualMachineSetupScriptLinux(ctx, vm)
 	if err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build Linux setup script")
 	}
 
-	err = vmm.ExecuteRemoteShellScript(ctx, vm.ID, &shellScript, 10*time.Minute, 15*time.Second)
+	err = vdo.vmManager.ExecuteRemoteShellScript(ctx, vm.ID, &shellScript, 10*time.Minute, 15*time.Second)
 	if err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run Linux setup script")
 	}
@@ -97,19 +97,19 @@ func (vmm *AzureVirtualMachineManager) virtualMachineSetupLinux(ctx context.Cont
 	return vm, nil
 }
 
-func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScriptLinux(ctx context.Context, vm *models.VirtualMachine) (string, error) {
+func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinux(ctx context.Context, vm *models.VirtualMachine) (string, error) {
 	log := logging.GetLogger(ctx)
-	cfg := vmm.config.InitialSetupConfig
-	if cfg == nil || cfg.SaltMinionInstallConfig == nil {
+	cfg := vdo.config
+	if cfg.SaltMinionInstall == nil {
 		return "", errors.New("Salt Minion install config not provided for Linux VM setup")
 	}
 
 	saltScript, err := GenerateInstallSaltMinionScriptLinux(
 		ctx,
-		vmm.credentials,
+		&vdo.credentials,
 		cfg.BinaryStorage.BlobStorageAccount,
 		cfg.BinaryStorage.BlobContainer,
-		cfg.SaltMinionInstallConfig,
+		cfg.SaltMinionInstall,
 	)
 	if err != nil {
 		return "", logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
@@ -252,7 +252,7 @@ func GenerateInstallSaltMinionScriptLinux(
 		rpmURLCommon = u
 	}
 
-    // Generate the script with the SAS URLs
+	// Generate the script with the SAS URLs
 	script := installSaltMinionLinuxTemplate
 
 	replacements := map[string]string{

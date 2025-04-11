@@ -133,13 +133,13 @@ func (avd *AzureVirtualDesktopManager) isHostPoolEmpty(ctx context.Context, rgNa
 
 // CreateHostPool creates a new host pool.
 func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.HostPool, error) {
-	hostPoolName := avd.config.HostPoolNamePrefix + suffix
+	hostPoolName := avd.Config.HostPoolNamePrefix + suffix
 
 	// Expiration time can be 1 hour to 27 days. We'll use 25 days.
 	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
 
 	newHostPool := armdesktopvirtualization.HostPool{
-		Location: to.Ptr(string(avd.credentials.Region)),
+		Location: to.Ptr(string(avd.Credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.HostPoolProperties{
 			FriendlyName: to.Ptr("Host Pool for AVD stack '" + suffix + "'"),

@@ -1,4 +1,4 @@
-package vm
+package vdo
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 )
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
-func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config SetupScriptConfig, hostPoolRegistrationToken *string) (*string, error) {
+func (vdo VirtualDesktopOrchestrator) buildVirtualMachineSetupScript(ctx context.Context, config VirtualDesktopOrchestratorConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
 	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
@@ -28,14 +28,14 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx contex
 	scriptBuilder.WriteString(GenerateScriptStart() + "\n")
 
 	// Active Directory Join section
-	if config.ADJoin != nil {
-		scriptBuilder.WriteString(GenerateJoinDomainScript(config.ADJoin) + "\n")
+	if config.AD != nil {
+		scriptBuilder.WriteString(GenerateJoinDomainScript(config.AD) + "\n")
 	}
 
 	// AVD Installation section
-	if config.AVDInstall != nil {
-		avdScript, err := GenerateInstallAvdScript(ctx, vmm.credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer,
-			config.AVDInstall, *hostPoolRegistrationToken)
+	if config.AVD != nil {
+		avdScript, err := GenerateInstallAvdScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer,
+			&config.AVD.InstallerConfig, *hostPoolRegistrationToken)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating AVD Install script component")
 		}
@@ -43,8 +43,8 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx contex
 	}
 
 	// Salt Minion Installation section
-	if config.SaltMinionInstallConfig != nil {
-		saltScript, err := GenerateInstallSaltMinionScript(ctx, vmm.credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.SaltMinionInstallConfig)
+	if config.SaltMinionInstall != nil {
+		saltScript, err := GenerateInstallSaltMinionScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.SaltMinionInstall)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script component")
 		}
@@ -62,7 +62,7 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx contex
 }
 
 // validateConfig dynamically checks required fields for non-nil nested structs
-func validateConfig(config SetupScriptConfig, hostPoolToken *string) error {
+func validateConfig(config VirtualDesktopOrchestratorConfig, hostPoolToken *string) error {
 	configValue := reflect.ValueOf(config)
 	configType := reflect.TypeOf(config)
 
@@ -94,13 +94,13 @@ func validateConfig(config SetupScriptConfig, hostPoolToken *string) error {
 	}
 
 	// Validate hostPoolToken only if AVDInstall is enabled
-	if config.AVDInstall != nil && hostPoolToken == nil {
+	if config.AVD != nil && hostPoolToken == nil {
 		// TODO: this causes an error if VMM.AVDManager is nil, which is not the same as AVDInstall being nil
 		return fmt.Errorf("hostPoolToken is required when AVDInstallConfig is set")
 	}
 
 	// Validate BinaryStorage if AVDInstall or SaltMinionInstallConfig are enabled
-	if (config.AVDInstall != nil || config.SaltMinionInstallConfig != nil) && config.BinaryStorage == nil {
+	if (config.AVD != nil || config.SaltMinionInstall != nil) && config.BinaryStorage != nil {
 		if config.BinaryStorage.BlobStorageAccount == "" || config.BinaryStorage.BlobContainer == "" {
 			return fmt.Errorf("BlobStorageAccount and BlobContainer are required when AVDInstallConfig or SaltMinionInstallConfig is set")
 		}

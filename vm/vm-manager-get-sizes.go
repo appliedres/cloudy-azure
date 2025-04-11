@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (vmm *AzureVirtualMachineManager) GetAllSizes(ctx context.Context) (map[string]*models.VirtualMachineSize, error) {
+func (vmm *AzureVirtualMachineManager) GetAllVirtualMachineSizes(ctx context.Context) (map[string]*models.VirtualMachineSize, error) {
 
 	sizesList := map[string]*models.VirtualMachineSize{}
 
@@ -58,13 +58,13 @@ type ScoredVMSize struct {
 	Size  *models.VirtualMachineSize
 }
 
-func (vmm *AzureVirtualMachineManager) GetSizesForTemplate(ctx context.Context, template models.VirtualMachineTemplate) (
+func (vmm *AzureVirtualMachineManager) GetVirtualMachineSizesForTemplate(ctx context.Context, template models.VirtualMachineTemplate) (
 	matches map[string]*models.VirtualMachineSize,
 	worse map[string]*models.VirtualMachineSize,
 	better map[string]*models.VirtualMachineSize,
 	err error) {
 
-	sizes, err := vmm.GetSizesWithUsage(ctx)
+	sizes, err := vmm.GetVirtualMachineSizesWithUsage(ctx)
 	if err != nil {
 		return nil, nil, nil, errors.Wrap(err, "could not query all sizes")
 	}
@@ -92,16 +92,16 @@ func (vmm *AzureVirtualMachineManager) GetSizesForTemplate(ctx context.Context, 
 	return matches, worse, better, nil
 }
 
-func (vmm *AzureVirtualMachineManager) GetUsage(ctx context.Context) (map[string]models.VirtualMachineFamily, error) {
+func (vmm *AzureVirtualMachineManager) GetVirtualMachineUsage(ctx context.Context) (map[string]models.VirtualMachineFamily, error) {
 
 	usageList := map[string]models.VirtualMachineFamily{}
 
-	pager := vmm.usageClient.NewListPager(vmm.credentials.Region, &armcompute.UsageClientListOptions{})
+	pager := vmm.usageClient.NewListPager(vmm.Credentials.Region, &armcompute.UsageClientListOptions{})
 
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return usageList, errors.Wrap(err, "GetUsage.NextPage")
+			return usageList, errors.Wrap(err, "GetVirtualMachineUsage.NextPage")
 		}
 
 		for _, v := range resp.Value {
@@ -122,16 +122,16 @@ func (vmm *AzureVirtualMachineManager) GetUsage(ctx context.Context) (map[string
 	return usageList, nil
 }
 
-func (vmm *AzureVirtualMachineManager) GetSizesWithUsage(ctx context.Context) (map[string]*models.VirtualMachineSize, error) {
+func (vmm *AzureVirtualMachineManager) GetVirtualMachineSizesWithUsage(ctx context.Context) (map[string]*models.VirtualMachineSize, error) {
 
 	log := logging.GetLogger(ctx)
 
-	sizes, err := vmm.GetAllSizes(ctx)
+	sizes, err := vmm.GetAllVirtualMachineSizes(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	usage, err := vmm.GetUsage(ctx)
+	usage, err := vmm.GetVirtualMachineUsage(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (vmm *AzureVirtualMachineManager) GetLatestImageVersion(ctx context.Context
 	// set this for real if we're going to use this function
 	sourceImageGalleryName := ""
 
-	pager := vmm.galleryClient.NewListPager(vmm.credentials.Region, sourceImageGalleryName, imageName, &armcompute.SharedGalleryImageVersionsClientListOptions{})
+	pager := vmm.galleryClient.NewListPager(vmm.Credentials.Region, sourceImageGalleryName, imageName, &armcompute.SharedGalleryImageVersionsClientListOptions{})
 
 	var allVersions []*version.Version
 

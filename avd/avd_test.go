@@ -57,14 +57,14 @@ func initAVD() error {
 		Region:       "usgovvirginia",
 	}
 
-	config := AzureVirtualDesktopConfig{}
+	config := AzureVirtualDesktopManagerConfig{}
 
 	avd, err = NewAzureVirtualDesktopManager(ctx, &creds, &config)
 	if err != nil {
 		return err
 	}
 
-	cred, err := cloudyazure.GetAzureClientSecretCredential(*avd.credentials)
+	cred, err := cloudyazure.GetAzureClientSecretCredential(*avd.Credentials)
 	if err != nil {
 		return err
 	}

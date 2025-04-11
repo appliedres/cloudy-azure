@@ -12,10 +12,10 @@ import (
 )
 
 func (avd *AzureVirtualDesktopManager) extractSuffixFromHostPoolName(hostPoolName string) (string, error) {
-	if strings.HasPrefix(hostPoolName, avd.config.HostPoolNamePrefix) {
-		return strings.TrimPrefix(hostPoolName, avd.config.HostPoolNamePrefix), nil
+	if strings.HasPrefix(hostPoolName, avd.Config.HostPoolNamePrefix) {
+		return strings.TrimPrefix(hostPoolName, avd.Config.HostPoolNamePrefix), nil
 	}
-	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, avd.config.HostPoolNamePrefix)
+	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, avd.Config.HostPoolNamePrefix)
 }
 
 func GenerateNextName(suffixes []string, maxSequences int) (string, error) {
@@ -96,8 +96,8 @@ func indexOf(word string, list []string) int {
 }
 
 func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgName string, roleid string, upn string) error {
-	scope := "/subscriptions/" + avd.credentials.SubscriptionID + "/resourceGroups/" + rgName
-	roledefid := "/subscriptions/" + avd.credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleid
+	scope := "/subscriptions/" + avd.Credentials.SubscriptionID + "/resourceGroups/" + rgName
+	roledefid := "/subscriptions/" + avd.Credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleid
 	uuidWithHyphen := uuid.New().String()
 
 	res, err := avd.roleAssignmentsClient.Create(ctx, scope, uuidWithHyphen,

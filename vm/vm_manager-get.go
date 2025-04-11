@@ -17,14 +17,14 @@ import (
 //
 //	If includeState is true, this will also retrieve the state of the VM (running, stopped, etc.)
 //	If includeState is false, vm.State will be an empty string
-func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string, includeState bool) (*models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) GetVirtualMachineById(ctx context.Context, id string, includeState bool) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
 	var expandGet *armcompute.InstanceViewTypes
 	if includeState {
 		expandGet = to.Ptr(armcompute.InstanceViewTypesInstanceView)
 	}
-	resp, err := vmm.vmClient.Get(ctx, vmm.credentials.ResourceGroup, id, &armcompute.VirtualMachinesClientGetOptions{
+	resp, err := vmm.vmClient.Get(ctx, vmm.Credentials.ResourceGroup, id, &armcompute.VirtualMachinesClientGetOptions{
 		Expand: expandGet,
 	})
 	if err != nil {
@@ -51,7 +51,7 @@ func (vmm *AzureVirtualMachineManager) GetById(ctx context.Context, id string, i
 //
 //	If includeState is true, this will also retrieve the state of the VMs (running, stopped, etc.)
 //	If includeState is false, vm.State will be an empty string
-func (vmm *AzureVirtualMachineManager) GetAll(ctx context.Context, filter string, attrs []string, includeState bool) (*[]models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) GetAllVirtualMachines(ctx context.Context, filter string, attrs []string, includeState bool) (*[]models.VirtualMachine, error) {
 
 	vmList := []models.VirtualMachine{}
 

@@ -15,8 +15,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	cloudyazure "github.com/appliedres/cloudy-azure"
-	cloudyvm "github.com/appliedres/cloudy/vm"
-	avd "github.com/appliedres/cloudy-azure/avd"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 
@@ -28,8 +26,8 @@ const (
 )
 
 type AzureVirtualMachineManager struct {
-	credentials *cloudyazure.AzureCredentials
-	config      *VirtualMachineManagerConfig
+	Credentials *cloudyazure.AzureCredentials
+	Config      *VirtualMachineManagerConfig
 
 	vmClient     *armcompute.VirtualMachinesClient
 	nicClient    *armnetwork.InterfacesClient
@@ -42,20 +40,19 @@ type AzureVirtualMachineManager struct {
 	galleryClient *armcompute.SharedGalleryImageVersionsClient
 
 	LogBody bool
-
-	avdManager *avd.AzureVirtualDesktopManager
 }
 
-func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, 
-		config *VirtualMachineManagerConfig, avdManager *avd.AzureVirtualDesktopManager) (cloudyvm.VirtualMachineManager, error) {
+func NewAzureVirtualMachineManager(
+	ctx context.Context, 
+	credentials *cloudyazure.AzureCredentials,
+	config *VirtualMachineManagerConfig,
+	) (*AzureVirtualMachineManager, error) {
 
 	vmm := &AzureVirtualMachineManager{
-		credentials: credentials,
-		config:      config,
+		Credentials: credentials,
+		Config:      config,
 
 		LogBody: false,
-
-		avdManager: avdManager,
 	}
 	err := vmm.Configure(ctx)
 	if err != nil {
@@ -66,21 +63,21 @@ func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure
 }
 
 func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
-	credential, err := cloudyazure.NewAzureCredentials(vmm.credentials)
+	credential, err := cloudyazure.NewAzureCredentials(vmm.Credentials)
 	if err != nil {
 		return err
 	}
 
 	// Support using a separate resource group for the VNET / NIC / Subnet
 	vnetAzCred := &cloudyazure.AzureCredentials{
-		Type:           vmm.credentials.Type,
-		Region:         vmm.credentials.Region,
-		TenantID:       vmm.credentials.TenantID,
-		ClientID:       vmm.credentials.ClientID,
-		ClientSecret:   vmm.credentials.ClientSecret,
-		ResourceGroup:  vmm.config.VnetResourceGroup, // only RG is changed
-		SubscriptionID: vmm.credentials.SubscriptionID,
-		Cloud:          vmm.credentials.Cloud,
+		Type:           vmm.Credentials.Type,
+		Region:         vmm.Credentials.Region,
+		TenantID:       vmm.Credentials.TenantID,
+		ClientID:       vmm.Credentials.ClientID,
+		ClientSecret:   vmm.Credentials.ClientSecret,
+		ResourceGroup:  vmm.Config.VnetResourceGroup, // only RG is changed
+		SubscriptionID: vmm.Credentials.SubscriptionID,
+		Cloud:          vmm.Credentials.Cloud,
 	}
 	VnetCredential, err := cloudyazure.NewAzureCredentials(vnetAzCred)
 	if err != nil {
@@ -96,43 +93,43 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 		},
 	}
 
-	vmClient, err := armcompute.NewVirtualMachinesClient(vmm.credentials.SubscriptionID, credential, options)
+	vmClient, err := armcompute.NewVirtualMachinesClient(vmm.Credentials.SubscriptionID, credential, options)
 	if err != nil {
 		return err
 	}
 	vmm.vmClient = vmClient
 
-	nicClient, err := armnetwork.NewInterfacesClient(vmm.credentials.SubscriptionID, VnetCredential, options)
+	nicClient, err := armnetwork.NewInterfacesClient(vmm.Credentials.SubscriptionID, VnetCredential, options)
 	if err != nil {
 		return err
 	}
 	vmm.nicClient = nicClient
 
-	diskClient, err := armcompute.NewDisksClient(vmm.credentials.SubscriptionID, credential, options)
+	diskClient, err := armcompute.NewDisksClient(vmm.Credentials.SubscriptionID, credential, options)
 	if err != nil {
 		return err
 	}
 	vmm.diskClient = diskClient
 
-	subnetClient, err := armnetwork.NewSubnetsClient(vmm.credentials.SubscriptionID, VnetCredential, options)
+	subnetClient, err := armnetwork.NewSubnetsClient(vmm.Credentials.SubscriptionID, VnetCredential, options)
 	if err != nil {
 		return err
 	}
 	vmm.subnetClient = subnetClient
 
-	sizesClient, err := armcompute.NewResourceSKUsClient(vmm.credentials.SubscriptionID, credential, options)
+	sizesClient, err := armcompute.NewResourceSKUsClient(vmm.Credentials.SubscriptionID, credential, options)
 	if err != nil {
 		return err
 	}
 	vmm.sizesClient = sizesClient
 
-	galleryClient, err := armcompute.NewSharedGalleryImageVersionsClient(vmm.credentials.SubscriptionID, credential, options)
+	galleryClient, err := armcompute.NewSharedGalleryImageVersionsClient(vmm.Credentials.SubscriptionID, credential, options)
 	if err != nil {
 		return err
 	}
 	vmm.galleryClient = galleryClient
 
-	usageClient, err := armcompute.NewUsageClient(vmm.credentials.SubscriptionID, credential, options)
+	usageClient, err := armcompute.NewUsageClient(vmm.Credentials.SubscriptionID, credential, options)
 	if err != nil {
 		return err
 	}
@@ -141,10 +138,10 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) Start(ctx context.Context, vmName string) error {
+func (vmm *AzureVirtualMachineManager) StartVirtualMachine(ctx context.Context, vmName string) error {
 	log := logging.GetLogger(ctx)
 
-	poller, err := vmm.vmClient.BeginStart(ctx, vmm.credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
+	poller, err := vmm.vmClient.BeginStart(ctx, vmm.Credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
 	if err != nil {
 		return errors.Wrap(err, "VM Start")
 	}
@@ -159,10 +156,15 @@ func (vmm *AzureVirtualMachineManager) Start(ctx context.Context, vmName string)
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) Stop(ctx context.Context, vmName string) error {
+func (vmm *AzureVirtualMachineManager) StopVirtualMachine(ctx context.Context, vmName string) error {
+	return vmm.deallocateVirtualMachine(ctx, vmName)
+}
+
+// Warning: using this method will stop the VM, but not deallocate it, causing it to continue to incur costs.
+func (vmm *AzureVirtualMachineManager) powerOffVirtualMachine(ctx context.Context, vmName string) error {
 	log := logging.GetLogger(ctx)
 
-	poller, err := vmm.vmClient.BeginPowerOff(ctx, vmm.credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginPowerOffOptions{})
+	poller, err := vmm.vmClient.BeginPowerOff(ctx, vmm.Credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginPowerOffOptions{})
 	if err != nil {
 		return errors.Wrap(err, "VM Stop")
 	}
@@ -177,10 +179,10 @@ func (vmm *AzureVirtualMachineManager) Stop(ctx context.Context, vmName string) 
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) Deallocate(ctx context.Context, vmName string) error {
+func (vmm *AzureVirtualMachineManager) deallocateVirtualMachine(ctx context.Context, vmName string) error {
 	log := logging.GetLogger(ctx)
 
-	poller, err := vmm.vmClient.BeginDeallocate(ctx, vmm.credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
+	poller, err := vmm.vmClient.BeginDeallocate(ctx, vmm.Credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginDeallocateOptions{})
 	if err != nil {
 		if cloudyazure.Is404(err) {
 			log.InfoContext(ctx, "BeginDeallocate - VM not found")
@@ -200,7 +202,7 @@ func (vmm *AzureVirtualMachineManager) Deallocate(ctx context.Context, vmName st
 	return nil
 }
 
-func (vmm *AzureVirtualMachineManager) Update(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) UpdateVirtualMachine(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	return nil, nil
 }
 
@@ -244,7 +246,7 @@ func (vmm *AzureVirtualMachineManager) executeRemoteCommand(ctx context.Context,
 	log.DebugContext(ctx, fmt.Sprintf("Finished constructing RunCommandInput for %s execution", label))
 
 	log.InfoContext(ctx, fmt.Sprintf("Executing remote %s script", label))
-	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
+	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.Credentials.ResourceGroup, vmID, runCommandInput, nil)
 	if err != nil {
 		log.ErrorContext(ctx, fmt.Sprintf("Failed to execute remote %s script", label), "error", err)
 		return logging.LogAndWrapErr(ctx, log, err, fmt.Sprintf("failed to execute remote %s script", label))
