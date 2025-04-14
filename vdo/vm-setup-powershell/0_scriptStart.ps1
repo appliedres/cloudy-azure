@@ -12,80 +12,35 @@ function Exit-OnFailure {
     exit 1
 }
 
-function Get-InstallerNameFromInProgress {
-    $inProgressKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress"
-    if (Test-Path $inProgressKey) {
-        try {
-            $installerInfo = Get-ItemProperty -Path $inProgressKey
-            if ($installerInfo.ProductName) {
-                return $installerInfo.ProductName
-            }
-            elseif ($installerInfo.ProductCode) {
-                return $installerInfo.ProductCode
-            }
-        } catch {
-            # Ignore any errors, fallback if needed
-        }
-    }
-    return $null
-}
+function Install-MSIWithRetry {
+    param(
+        [Parameter(Mandatory)][string]$InstallerPath,
+        [Parameter(Mandatory)][string[]]$ArgumentList,
+        [int]$TimeoutSeconds,
+        [string]$Description = "Installer"
+    )
 
-function Wait-ForInstaller {
-    param([int]$timeoutSeconds)
-
-    Write-Host "Checking for active Windows Installer processes..."
+    Write-Host "Starting $Description installation with retry logic (timeout $TimeoutSeconds seconds)..."
     $startTime = Get-Date
-    $printedDetails = $false  # only print details once
 
     while ($true) {
         $elapsed = (Get-Date) - $startTime
-        $elapsedSec = [int]$elapsed.TotalSeconds
-
-        if ($elapsedSec -gt $timeoutSeconds) {
-            Exit-OnFailure "Wait-ForInstaller timed out after $timeoutSeconds seconds."
+        if ($elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            Exit-OnFailure "$Description install timed out after $TimeoutSeconds seconds."
         }
 
-        $installerProcesses = Get-WmiObject Win32_Process | Where-Object { $_.Name -eq "msiexec.exe" }
+        try {
+            $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $ArgumentList -NoNewWindow -PassThru -Wait
 
-        if ($installerProcesses) {
-            # First time we detect msiexec, print a detailed block
-            if (-not $printedDetails) {
-                $printedDetails = $true
-
-                $installerName = Get-InstallerNameFromInProgress
-
-                # Build a single block of process details
-                $procDetails = $installerProcesses | ForEach-Object {
-                    "  PID: $($_.ProcessId); Cmd: $($_.CommandLine)"
-                } | Out-String
-
-                Write-Host "Another installation is in progress (msiexec)."
-                Write-Host "Currently running processes:"
-                Write-Host $procDetails
-
-                if ($installerName) {
-                    Write-Host "Detected product from InProgress registry key: $installerName"
-                }
-                else {
-                    Write-Host "Unable to determine exactly what is being installed."
-                }
+            switch ($process.ExitCode) {
+                0      { Write-Host "$Description installation completed successfully."; return }
+                3010   { Write-Host "$Description installed successfully (restart required)."; return }
+                1618   { Write-Host "$Description install pending. Another installation is in progress. Retrying in 10 seconds..."; Start-Sleep -Seconds 10 }
+                default { Exit-OnFailure "$Description installer exited with code $($process.ExitCode)." }
             }
-
-            Start-Sleep -Seconds 5
-        }
-        else {
-            # No msiexec found, we're done waiting
-            break
+        } catch {
+            Write-Host "Encountered error starting $Description installer: $_. Retrying in 10 seconds..."
+            Start-Sleep -Seconds 10
         }
     }
-
-    # If we get here, no more msiexec processes are running
-    $endTime = Get-Date
-    $totalElapsed = ($endTime - $startTime).TotalSeconds
-    $remaining = $timeoutSeconds - [int]$totalElapsed
-
-    Write-Host ("Wait-ForInstaller finished after {0} seconds, with {1} seconds remaining out of the {2}-second timeout." -f 
-        [int]$totalElapsed, $remaining, $timeoutSeconds)
-
-    Write-Host "No active installations detected. Proceeding..."
 }
