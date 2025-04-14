@@ -11,14 +11,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 
 	cloudyazure "github.com/appliedres/cloudy-azure"
-	cloudyvm "github.com/appliedres/cloudy/vm"
 	avd "github.com/appliedres/cloudy-azure/avd"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
+	cloudyvm "github.com/appliedres/cloudy/vm"
 
 	"github.com/pkg/errors"
 )
@@ -46,8 +46,8 @@ type AzureVirtualMachineManager struct {
 	avdManager *avd.AzureVirtualDesktopManager
 }
 
-func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, 
-		config *VirtualMachineManagerConfig, avdManager *avd.AzureVirtualDesktopManager) (cloudyvm.VirtualMachineManager, error) {
+func NewAzureVirtualMachineManager(ctx context.Context, credentials *cloudyazure.AzureCredentials,
+	config *VirtualMachineManagerConfig, avdManager *avd.AzureVirtualDesktopManager) (cloudyvm.VirtualMachineManager, error) {
 
 	vmm := &AzureVirtualMachineManager{
 		credentials: credentials,

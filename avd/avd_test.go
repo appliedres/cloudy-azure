@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/appliedres/cloudy"
 	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/testutil"

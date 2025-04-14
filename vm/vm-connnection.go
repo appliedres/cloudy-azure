@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
 )
 
 // func NewVMClient(ctx context.Context, config *AzureVMControllerConfig) (*armcompute.VirtualMachinesClient, error) {
