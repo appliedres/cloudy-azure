@@ -25,6 +25,8 @@ import (
 )
 
 type AzureVirtualDesktopManager struct {
+	name string
+
 	Credentials *cloudyazure.AzureCredentials
 	Config      *AzureVirtualDesktopManagerConfig
 
@@ -42,8 +44,13 @@ type AzureVirtualDesktopManager struct {
 	lockMap    sync.Map   // used to block a user from having concurrent registrations in a single host pool
 }
 
-func NewAzureVirtualDesktopManager(ctx context.Context, credentials *cloudyazure.AzureCredentials, config *AzureVirtualDesktopManagerConfig) (*AzureVirtualDesktopManager, error) {
+func NewAzureVirtualDesktopManager(ctx context.Context, name string, credentials *cloudyazure.AzureCredentials, config *AzureVirtualDesktopManagerConfig) (*AzureVirtualDesktopManager, error) {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "NewAzureVirtualDesktopManager started")
+	defer log.DebugContext(ctx, "NewAzureVirtualDesktopManager complete")
+
 	avd := &AzureVirtualDesktopManager{
+		name:        name,
 		Credentials: credentials,
 		Config:      config,
 	}
@@ -52,10 +59,20 @@ func NewAzureVirtualDesktopManager(ctx context.Context, credentials *cloudyazure
 		return nil, err
 	}
 
+	err = avd.Initialize(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return avd, nil
 }
 
+// Handles the configuration of the Azure Virtual Desktop Manager
 func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "AVD Manager - Configure started")
+	defer log.DebugContext(ctx, "AVD Manager - Configure complete")
+
 	cred, err := cloudyazure.NewAzureCredentials(avd.Credentials)
 	if err != nil {
 		return err
@@ -95,6 +112,23 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	return nil
 }
 
+func (avd *AzureVirtualDesktopManager) Initialize(ctx context.Context) error {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "AVD Manager - Initialize started")
+	defer log.DebugContext(ctx, "AVD Manager - Initialize complete")
+
+	// TODO: make AVD pool settings configurable
+	// TODO: if config . linux VMs enabled
+
+	// TODO: fix conflict of pooled vs personal host pools
+	// _, _, _, err := avd.EnsurePooledStack(ctx, avd.Credentials.ResourceGroup, armdesktopvirtualization.LoadBalancerTypeBreadthFirst, 3)
+	// if err != nil {
+	// 	return logging.LogAndWrapErr(ctx, log, err, "Failed to ensure AVD pooled stack")
+	// }
+
+	return nil
+}
+
 // Lock key format: vm.UserID + hostPoolName
 func (avd *AzureVirtualDesktopManager) acquireHostPoolLockForUser(ctx context.Context, vmUserID, hostPoolName string) bool {
 	log := logging.GetLogger(ctx)
@@ -125,7 +159,6 @@ func (avd *AzureVirtualDesktopManager) releaseHostPoolLockForUser(ctx context.Co
 // The user is also assigned to the related desktop application group.
 func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *models.VirtualMachine) (hostPoolName, token *string, err error) {
 	log := logging.GetLogger(ctx)
-
 	log.InfoContext(ctx, "Starting AVD PreRegister", "VM", vm.ID)
 
 	osType := vm.Template.OperatingSystem
@@ -149,41 +182,76 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		log.ErrorContext(ctx, "Failed to retrieve host pools", "Error", err)
 		return nil, nil, fmt.Errorf("failed to retrieve host pools: %w", err)
 	}
-
 	log.DebugContext(ctx, "Retrieved host pools", "Count", len(hostPools))
 
-	// TODO: check that host pool is valid, with necessary resources (WS, DAG). It may have previously failed creation
+	avd.sortHostPoolsByPhoneticSuffix(hostPools)
+	log.DebugContext(ctx, "Sorted host pools by phonetic suffix", "Count", len(hostPools))
 
 	// Check if the user can be assigned to any existing host pool
 	var targetHostPool *armdesktopvirtualization.HostPool
-	var hostPoolSuffixes []string
 	for _, pool := range hostPools {
-		log.DebugContext(ctx, "Checking if user can be assigned to host pool", "HostPool", *pool.Name, "UserID", vm.UserID)
+		log := log.With("HostPool", *pool.Name, "UserID", vm.UserID) // shrink repetitive fields
 
+		// determine AVD stack suffix
+		suffix := strings.TrimPrefix(*pool.Name, avd.Config.HostPoolNamePrefix)
+		if suffix == "" {
+			log.WarnContext(ctx, "host pool name is empty after trimming prefix, skipping…")
+			continue
+		}
+
+		// valid desktop app group
+		appGroupName := avd.Config.AppGroupNamePrefix + suffix
+		desktopAppGroup, err := avd.GetDesktopAppGroupByName(ctx, rgName, appGroupName)
+		if err != nil {
+			log.WarnContext(ctx, "no valid desktop app group, skipping…", "AppGroupName", appGroupName, "Error", err)
+			continue
+		}
+		if desktopAppGroup == nil {
+			log.WarnContext(ctx, "desktop app group is nil, skipping…")
+			continue
+		}
+		log.DebugContext(ctx, "desktop app group OK", "AppGroupName", *desktopAppGroup.Name)
+
+		// valid workspace
+		workspaceName := avd.Config.WorkspaceNamePrefix + suffix
+		workspace, err := avd.GetWorkspaceByName(ctx, rgName, workspaceName)
+		if err != nil {
+			log.WarnContext(ctx, "no valid workspace, skipping…", "WorkspaceName", workspaceName, "Error", err)
+			continue
+		}
+		log.DebugContext(ctx, "workspace OK", "WorkspaceName", *workspace.Name)
+
+		// user can be assigned
 		canAssign, err := avd.CanAssignUserToHostPool(ctx, rgName, *pool.Name, vm.UserID)
 		if err != nil {
-			log.WarnContext(ctx, "Error checking user assignment in host pool", "HostPool", *pool.Name, "Error", err)
-			return nil, nil, fmt.Errorf("error checking assignments in host pool")
+			log.WarnContext(ctx, "error checking assignment, skipping…", "Error", err)
+			continue
+		}
+		if !canAssign {
+			log.DebugContext(ctx, "user cannot be assigned, skipping…")
+			continue
+		}
+		log.DebugContext(ctx, "user can be assigned")
+
+		// acquire lock on host pool for this user
+		if !avd.acquireHostPoolLockForUser(ctx, vm.UserID, *pool.Name) {
+			log.DebugContext(ctx, "unable to acquire lock, skipping…")
+			continue
 		}
 
-		if canAssign {
-			log.DebugContext(ctx, "Can assign user to host pool", "HostPool", *pool.Name, "UserID", vm.UserID)
-			if avd.acquireHostPoolLockForUser(ctx, vm.UserID, *pool.Name) {
-				log.InfoContext(ctx, "target host pool found", "HostPool", *pool.Name, "UserID", vm.UserID)
-				targetHostPool = pool
-				break
-			}
-			log.DebugContext(ctx, "Unable to acquire lock on host pool", "HostPool", *pool.Name, "UserID", vm.UserID)
-		}
-
-		hostPoolSuffixes = append(hostPoolSuffixes, strings.TrimPrefix(*pool.Name, avd.Config.HostPoolNamePrefix))
+		// successfully found existing host pool
+		log.DebugContext(ctx, "successfully found existing host pool for session host assignment")
+		targetHostPool = pool
+		break
 	}
 
 	// Step 2: If no suitable host pool exists, create a new one
 	if targetHostPool == nil {
 		log.InfoContext(ctx, "No suitable host pool found; creating new host pool")
 
-		nameSuffix, err := GenerateNextName(hostPoolSuffixes, 2)
+		highestHostPoolName := hostPools[len(hostPools)-1].Name
+		highestSuffix := strings.TrimPrefix(*highestHostPoolName, avd.Config.HostPoolNamePrefix)
+		nameSuffix, err := GenerateNextName(highestSuffix, 2)
 		if err != nil {
 			log.ErrorContext(ctx, "Failed to generate new host pool name", "Error", err)
 			return nil, nil, fmt.Errorf("failed to generate new host pool name: %w", err)
@@ -343,7 +411,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 
 			for _, sessionHost := range page.Value {
 				if sessionHost.Name != nil && strings.Contains(*sessionHost.Name, vmID) {
-					// Extract sessionhostname from "hostpoolname/sessionhostname"
+					// Extract sessionHostName from "hostpoolName/sessionHostName"
 					sessionHostParts := strings.Split(*sessionHost.Name, "/")
 					if len(sessionHostParts) != 2 {
 						return fmt.Errorf("found session host with VM ID in name, but its name format is invalid. sessionHost.Name=%s. err=%v", *sessionHost.Name, err)
@@ -417,6 +485,10 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 // createAvdStack creates a new AVD stack including the host pool, application group, and workspace.
 func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffix string) (
 	*armdesktopvirtualization.HostPool, *armdesktopvirtualization.ApplicationGroup, *armdesktopvirtualization.Workspace, error) {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Creating AVD stack", "Suffix", suffix)
+	defer log.DebugContext(ctx, "AVD stack creation complete")
+
 	rgName := avd.Credentials.ResourceGroup
 
 	tags := map[string]*string{
@@ -424,39 +496,54 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 		"arkloud_created_by": to.Ptr("cloudy-azure"),
 	}
 
+	log.DebugContext(ctx, "Creating host pool", "ResourceGroup", rgName, "Suffix", suffix)
 	// Create host pool
 	hostPool, err := avd.CreateHostPool(ctx, rgName, suffix, tags)
 	if err != nil {
+		log.ErrorContext(ctx, "Failed to create host pool", "Error", err)
 		return nil, nil, nil, fmt.Errorf("failed to create host pool: %w", err)
 	}
+	log.DebugContext(ctx, "Host pool created successfully", "HostPoolName", *hostPool.Name)
 
+	log.DebugContext(ctx, "Creating application group linked to the host pool", "ResourceGroup", rgName, "Suffix", suffix)
 	// Create application group linked to the new host pool
 	desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, suffix, tags)
 	if err != nil {
+		log.ErrorContext(ctx, "Failed to create application group", "Error", err)
 		// TODO: delete resources during failed stack creation
 		return nil, nil, nil, fmt.Errorf("failed to create application group: %w", err)
 	}
+	log.DebugContext(ctx, "Application group created successfully", "AppGroupName", *desktopAppGroup.Name)
 
+	log.DebugContext(ctx, "Renaming desktop application", "ResourceGroup", rgName, "AppGroupName", *desktopAppGroup.Name, "Suffix", suffix, "DesktopNamePrefix", avd.Config.DesktopNamePrefix)
 	desktopApp, err := avd.renameDesktop(ctx, rgName, *desktopAppGroup.Name, suffix, avd.Config.DesktopNamePrefix)
 	if err != nil {
+		log.ErrorContext(ctx, "Error renaming desktop application", "Error", err)
 		return nil, nil, nil, errors.Wrap(err, "error renaming desktopApp during stack creation")
 	}
-	_ = desktopApp
+	log.DebugContext(ctx, "Desktop application renamed successfully", "DesktopApp", desktopApp)
 
+	log.DebugContext(ctx, "Creating workspace linked to the desktop application group", "ResourceGroup", rgName, "Suffix", suffix, "AppGroupName", *desktopAppGroup.Name)
 	// Create workspace linked to the desktop application group
 	workspace, err := avd.CreateWorkspace(ctx, rgName, suffix, *desktopAppGroup.Name, tags)
 	if err != nil {
+		log.ErrorContext(ctx, "Failed to create workspace", "Error", err)
 		// TODO: delete resources during failed stack creation
 		return nil, nil, nil, fmt.Errorf("failed to create workspace: %w", err)
 	}
+	log.DebugContext(ctx, "Workspace created successfully", "WorkspaceName", *workspace.Name)
 
+	log.DebugContext(ctx, "Assigning AVD user group to the desktop application group", "AppGroupName", *desktopAppGroup.Name)
 	// Assign AVD user group to the new desktop application group (DAG)
-	err = avd.AssignGroupToDesktopAppGroup(ctx, *desktopAppGroup.Name)
+	err = avd.AssignRoleToAppGroup(ctx, *desktopAppGroup.Name)
 	if err != nil {
+		log.ErrorContext(ctx, "Failed to assign AVD user group to desktop application group", "AppGroupName", *desktopAppGroup.Name, "Error", err)
 		// TODO: delete resources during failed stack creation
 		return nil, nil, nil, fmt.Errorf("unable to assign AVD User group to Desktop Application Group [%s]", *desktopAppGroup.Name)
 	}
+	log.DebugContext(ctx, "AVD user group assigned successfully", "AppGroupName", *desktopAppGroup.Name)
 
+	log.InfoContext(ctx, "AVD stack created successfully", "HostPoolName", *hostPool.Name, "AppGroupName", *desktopAppGroup.Name, "WorkspaceName", *workspace.Name)
 	return hostPool, desktopAppGroup, workspace, nil
 }
 

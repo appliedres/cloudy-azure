@@ -28,7 +28,10 @@ func (vdo *VirtualDesktopOrchestrator) InitialVirtualMachineSetup(ctx context.Co
 		err = errors.New("unsupported operating system during initial VM setup")
 	}
 
-	return vm, logging.LogAndWrapErr(ctx, log, err, "initial VM setup failed")
+    if err != nil {
+	    return vm, logging.LogAndWrapErr(ctx, log, err, "initial VM setup failed")
+    }
+    return vm, nil
 }
 
 func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
@@ -36,7 +39,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 	log.DebugContext(ctx, "virtualMachineSetupWindows started")
 	defer log.DebugContext(ctx, "virtualMachineSetupWindows finished")
 
-	setupScriptConfig := vdo.config
+	vdoConfig := vdo.config
 	if vdo.avdManager != nil {
 		log.InfoContext(ctx, "Initial VM setup - AVD enabled")
 
@@ -45,7 +48,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
-		script, err := vdo.buildVirtualMachineSetupScript(ctx, setupScriptConfig, hostPoolToken)
+		script, err := vdo.buildVirtualMachineSetupScript(ctx, vdoConfig, hostPoolToken)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
@@ -62,7 +65,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 
 	} else {
 		log.InfoContext(ctx, "Initial VM setup - AVD disabled")
-		script, err := vdo.buildVirtualMachineSetupScript(ctx, setupScriptConfig, nil)
+		script, err := vdo.buildVirtualMachineSetupScript(ctx, vdoConfig, nil)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
 		}
@@ -106,7 +109,7 @@ func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinux(ctx c
 
 	saltScript, err := GenerateInstallSaltMinionScriptLinux(
 		ctx,
-		&vdo.credentials,
+		vdo.vmManager.Credentials,
 		cfg.BinaryStorage.BlobStorageAccount,
 		cfg.BinaryStorage.BlobContainer,
 		cfg.SaltMinionInstall,

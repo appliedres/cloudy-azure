@@ -34,7 +34,7 @@ func initAVDManager() (*AzureVirtualDesktopManager, error) {
 		UriEnv:                       os.Getenv("AZ_AVD_URI_ENV"),
 	}
 
-	avdm, err := NewAzureVirtualDesktopManager(ctx, credentials, rdmConfig)
+	avdm, err := NewAzureVirtualDesktopManager(ctx, "unit_test", credentials, rdmConfig)
 	if err != nil {
 		return nil, err
 	}

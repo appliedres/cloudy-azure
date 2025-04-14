@@ -18,9 +18,10 @@ import (
 func (vdo VirtualDesktopOrchestrator) buildVirtualMachineSetupScript(ctx context.Context, config VirtualDesktopOrchestratorConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
-	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
-	}
+	// TODO: validate VDO config
+	// if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
+	// 	return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
+	// }
 
 	var scriptBuilder strings.Builder
 

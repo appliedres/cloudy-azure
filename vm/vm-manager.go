@@ -26,6 +26,8 @@ const (
 )
 
 type AzureVirtualMachineManager struct {
+	name		string
+
 	Credentials *cloudyazure.AzureCredentials
 	Config      *VirtualMachineManagerConfig
 
@@ -43,12 +45,18 @@ type AzureVirtualMachineManager struct {
 }
 
 func NewAzureVirtualMachineManager(
-	ctx context.Context, 
+	ctx context.Context, name string, 
 	credentials *cloudyazure.AzureCredentials,
 	config *VirtualMachineManagerConfig,
 	) (*AzureVirtualMachineManager, error) {
 
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "NewAzureVirtualMachineManager started")
+	defer log.DebugContext(ctx, "NewAzureVirtualMachineManager complete")
+
 	vmm := &AzureVirtualMachineManager{
+		name:        name,
+
 		Credentials: credentials,
 		Config:      config,
 
@@ -63,6 +71,10 @@ func NewAzureVirtualMachineManager(
 }
 
 func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "VM Manager Configure started")
+	defer log.DebugContext(ctx, "VM Manager Configure complete")
+
 	credential, err := cloudyazure.NewAzureCredentials(vmm.Credentials)
 	if err != nil {
 		return err
@@ -140,6 +152,8 @@ func (vmm *AzureVirtualMachineManager) Configure(ctx context.Context) error {
 
 func (vmm *AzureVirtualMachineManager) StartVirtualMachine(ctx context.Context, vmName string) error {
 	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "VM Start")
+	defer log.DebugContext(ctx, "VM Start complete")
 
 	poller, err := vmm.vmClient.BeginStart(ctx, vmm.Credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientBeginStartOptions{})
 	if err != nil {

@@ -3,10 +3,12 @@ package avd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy"
 	"github.com/google/uuid"
 )
@@ -18,22 +20,15 @@ func (avd *AzureVirtualDesktopManager) extractSuffixFromHostPoolName(hostPoolNam
 	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, avd.Config.HostPoolNamePrefix)
 }
 
-func GenerateNextName(suffixes []string, maxSequences int) (string, error) {
-	if len(suffixes) == 0 {
-		newName := phoneticAlphabet[0]
-		return newName, nil
+func GenerateNextName(highestSuffix string, maxSequences int) (string, error) {
+	if maxSequences < 1 {
+		return "", fmt.Errorf("max sequences must be greater than 0")
+	}
+	if highestSuffix == "" {
+		return phoneticAlphabet[0], nil
 	}
 
-	var highestSuffix string
-	for _, suffix := range suffixes {
-		if suffix != "" {
-			suffix = strings.ToUpper(suffix)
-			if suffix > highestSuffix {
-				highestSuffix = suffix
-			}
-		}
-	}
-
+	highestSuffix = strings.ToUpper(highestSuffix)
 	nextSuffix, err := getNextPhoneticWord(highestSuffix, maxSequences)
 	if err != nil {
 		return "", err
@@ -95,15 +90,15 @@ func indexOf(word string, list []string) int {
 	return -1
 }
 
-func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgName string, roleid string, upn string) error {
+func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgName string, roleID string, upn string) error {
 	scope := "/subscriptions/" + avd.Credentials.SubscriptionID + "/resourceGroups/" + rgName
-	roledefid := "/subscriptions/" + avd.Credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleid
+	roleDefID := "/subscriptions/" + avd.Credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleID
 	uuidWithHyphen := uuid.New().String()
 
 	res, err := avd.roleAssignmentsClient.Create(ctx, scope, uuidWithHyphen,
 		armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
-				RoleDefinitionID: to.Ptr(roledefid),
+				RoleDefinitionID: to.Ptr(roleDefID),
 				PrincipalID:      to.Ptr(upn),
 			},
 		}, nil)
@@ -129,4 +124,80 @@ func generateWindowsClientURI(workspaceID, resourceID, upn, env, version string,
 		version,
 		useMultiMon,
 	)
+}
+
+// map for O(1) look‑ups
+var phoneticIndex = func() map[string]int {
+	m := make(map[string]int, len(phoneticAlphabet))
+	for i, w := range phoneticAlphabet {
+		m[w] = i
+	}
+	return m
+}()
+
+// sortHostPoolsByPhoneticSuffix sorts the slice in place so that the pools
+// are in phonetic order of the suffix:
+//
+//   ALPHA … ZULU           ← all single‑word names first
+//   ALPHA‑ALPHA … ZULU‑ZULU
+//
+func (avd *AzureVirtualDesktopManager) sortHostPoolsByPhoneticSuffix(
+	hostPools []*armdesktopvirtualization.HostPool,
+) {
+	sort.SliceStable(hostPools, func(i, j int) bool {
+		si, errI := avd.extractSuffixFromHostPoolName(*hostPools[i].Name)
+		sj, errJ := avd.extractSuffixFromHostPoolName(*hostPools[j].Name)
+
+		// If either suffix is invalid, keep original order deterministically
+		if errI != nil && errJ != nil {
+			return i < j
+		}
+		if errI != nil {
+			return false
+		}
+		if errJ != nil {
+			return true
+		}
+		return phoneticLess(si, sj)
+	})
+}
+
+// phoneticLess returns true if a < b according to the required ordering.
+//
+//  • All single‑word suffixes come before ANY multi‑word suffix.
+//  • Within each group, comparison is lexicographic according to the phonetic
+//    alphabet for every segment (unknown words sort after known ones).
+//
+func phoneticLess(a, b string) bool {
+	ta := strings.Split(strings.ToUpper(strings.TrimSpace(a)), "-")
+	tb := strings.Split(strings.ToUpper(strings.TrimSpace(b)), "-")
+
+	// Single‑segment names always sort before multi‑segment names
+	if len(ta) == 1 && len(tb) > 1 {
+		return true
+	}
+	if len(ta) > 1 && len(tb) == 1 {
+		return false
+	}
+
+	// Otherwise compare segment‑by‑segment
+	for i := 0; i < len(ta) && i < len(tb); i++ {
+		ia := idxOrMax(ta[i])
+		ib := idxOrMax(tb[i])
+		if ia != ib {
+			return ia < ib
+		}
+	}
+
+	// All shared segments equal → shorter one first
+	return len(ta) < len(tb)
+}
+
+// idxOrMax returns the index of w in the phonetic alphabet, or a large number
+// so unknown words always sort after known ones.
+func idxOrMax(w string) int {
+	if idx, ok := phoneticIndex[w]; ok {
+		return idx
+	}
+	return len(phoneticAlphabet) + 1
 }

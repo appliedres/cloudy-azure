@@ -59,7 +59,7 @@ func initAVD() error {
 
 	config := AzureVirtualDesktopManagerConfig{}
 
-	avd, err = NewAzureVirtualDesktopManager(ctx, &creds, &config)
+	avd, err = NewAzureVirtualDesktopManager(ctx, "unit_test", &creds, &config)
 	if err != nil {
 		return err
 	}
@@ -189,15 +189,15 @@ func _TestDeleteUserSession(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func _TestDisconnecteUserSession(t *testing.T) {
+func _TestDisconnectUserSession(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.DisconnecteUserSession(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.DisconnectUserSession(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
-func _TestAssignUsertoRoles(t *testing.T) {
+func _TestAssignUserToRoles(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
@@ -348,7 +348,11 @@ func TestGenerateNextName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			startTime := time.Now()
-			result, err := GenerateNextName(tc.existing, tc.maxSequences)
+			var lastExisting string
+			if len(tc.existing) > 0 {
+				lastExisting = tc.existing[len(tc.existing)-1]
+			}
+			result, err := GenerateNextName(lastExisting, tc.maxSequences)
 			elapsedTime := time.Since(startTime)
 
 			fmt.Printf("Test '%s' took %s\n", tc.name, elapsedTime)

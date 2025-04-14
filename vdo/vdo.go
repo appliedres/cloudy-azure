@@ -12,40 +12,43 @@ import (
 
 // Manages both VMs and the AVD resources that are associated with them
 type VirtualDesktopOrchestrator struct {
-	name string  // for identification when multiple orchestrators are used
+	name string // for identification when multiple orchestrators are used
 
-	credentials cloudyazure.AzureCredentials  // Use a single set of credentials for both, but overwrite resource group for AVD
-	config      VirtualDesktopOrchestratorConfig
+	config VirtualDesktopOrchestratorConfig
 
-	vmManager 	vm.AzureVirtualMachineManager
-	avdManager 	*avd.AzureVirtualDesktopManager  // optional
+	vmManager  vm.AzureVirtualMachineManager
+	avdManager *avd.AzureVirtualDesktopManager // optional
 }
 
-// TODO: how much should credentials match? Should we use a single set of creds and just overwrite the resource group?
+// TODO: how much should credentials match? Do we allow different tenant, subscription, etc?
 
 func NewVirtualDesktopOrchestrator(
-	ctx context.Context, 
-	name string, 
-	vmCredentials *cloudyazure.AzureCredentials, 
-	avdCredentials *cloudyazure.AzureCredentials, 
+	ctx context.Context,
+	name string,
+	vmCredentials *cloudyazure.AzureCredentials,
+	avdCredentials *cloudyazure.AzureCredentials,
 	config *VirtualDesktopOrchestratorConfig,
-	) (cloudyvm.VirtualDesktopOrchestrator, error) {
-    
+) (cloudyvm.VirtualDesktopOrchestrator, error) {
+
 	vmmConfig := &config.VM
-	vmMgr, err := vm.NewAzureVirtualMachineManager(ctx, vmCredentials, vmmConfig)
+	vmMgr, err := vm.NewAzureVirtualMachineManager(ctx, name, vmCredentials, vmmConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	avdMgr, err := avd.NewAzureVirtualDesktopManager(ctx, avdCredentials, &config.AVD.AVDManagerConfig)
+	avdMgr, err := avd.NewAzureVirtualDesktopManager(ctx, name, avdCredentials, &config.AVD.AVDManagerConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	vdo := &VirtualDesktopOrchestrator{
-        vmManager:  *vmMgr,
-        avdManager: avdMgr,
-    }
-	
+		name: name,
+
+		config: *config,
+
+		vmManager:  *vmMgr,
+		avdManager: avdMgr,
+	}
+
 	return vdo, nil
 }

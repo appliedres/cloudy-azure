@@ -2,8 +2,10 @@ package avd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy/logging"
@@ -40,20 +42,27 @@ func (avd *AzureVirtualDesktopManager) CreateWorkspace(ctx context.Context, rgNa
 func (avd *AzureVirtualDesktopManager) GetWorkspaceByName(ctx context.Context, rgName string, workspaceName string) (*armdesktopvirtualization.Workspace, error) {
 	log := logging.GetLogger(ctx)
 
-	// Create the pager to list workspaces
-	pager := avd.workspacesClient.NewListByResourceGroupPager(rgName, nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list workspaces: %w", err)
-		}
-		for _, workspace := range page.Value {
-			if workspace.Name != nil && *workspace.Name == workspaceName {
-				log.DebugContext(ctx, "Found object ID for Workspace", "Workspace name", *workspace.Name)
-				return workspace, nil
-			}
-		}
+	resp, err := avd.workspacesClient.Get(ctx, rgName, workspaceName, nil)
+	if err != nil {
+        // Check if it's a "Not Found" error (404):
+        var respErr *azcore.ResponseError
+        if ok := errors.As(err, &respErr); ok && respErr.StatusCode == 404 {
+            log.DebugContext(ctx, "Workspace not found", "AppGroupName", workspaceName)
+            return nil, nil
+        }
+
+		log.DebugContext(ctx, "Error getting workspace", "Workspace name", workspaceName, "Error", err)
+		return nil, fmt.Errorf("failed to get workspace: %w", err)
 	}
 
-	return nil, fmt.Errorf("workspace with name %s not found in resource group %s", workspaceName, rgName)
+	workspace := resp.Workspace
+
+	// Check if the workspace name matches the one we are looking for
+	if workspace.Name == nil || *workspace.Name != workspaceName {
+		log.DebugContext(ctx, "Workspace name does not match", "Workspace name", *workspace.Name)
+		return nil, fmt.Errorf("workspace with name %s not found in resource group %s", workspaceName, rgName)	
+	}
+
+	log.DebugContext(ctx, "Workspace found", "Workspace name", *workspace.Name)
+	return &workspace, nil
 }

@@ -92,8 +92,8 @@ func (avd *AzureVirtualDesktopManager) listSessionHosts(ctx context.Context, rgN
 }
 
 // only used if there is a pool of available VMs to assign to users
-func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, rgName string, hpname string) (*string, error) {
-	sessions, err := avd.listSessionHosts(ctx, rgName, hpname)
+func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, rgName string, hostPoolName string) (*string, error) {
+	sessions, err := avd.listSessionHosts(ctx, rgName, hostPoolName)
 	if err != nil {
 		return nil, err
 	}
@@ -134,10 +134,10 @@ func (avd *AzureVirtualDesktopManager) AssignSessionHost(ctx context.Context, rg
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, rgName string, hpname string, sessionhost string) error {
+func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, rgName string, hostPoolName string, sessionhost string) error {
 	// removes session host from host pool, does not delete VM
 
-	res, err := avd.sessionHostsClient.Delete(ctx, rgName, hpname, sessionhost, nil)
+	res, err := avd.sessionHostsClient.Delete(ctx, rgName, hostPoolName, sessionhost, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "AssignSessionHost failure: %+v", err)
 	}
