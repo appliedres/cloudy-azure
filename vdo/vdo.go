@@ -26,17 +26,18 @@ type VirtualDesktopOrchestrator struct {
 func NewVirtualDesktopOrchestrator(
 	ctx context.Context, 
 	name string, 
-	credentials *cloudyazure.AzureCredentials, 
+	vmCredentials *cloudyazure.AzureCredentials, 
+	avdCredentials *cloudyazure.AzureCredentials, 
 	config *VirtualDesktopOrchestratorConfig,
 	) (cloudyvm.VirtualDesktopOrchestrator, error) {
     
 	vmmConfig := &config.VM
-	vmMgr, err := vm.NewAzureVirtualMachineManager(ctx, credentials, vmmConfig)
+	vmMgr, err := vm.NewAzureVirtualMachineManager(ctx, vmCredentials, vmmConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	avdMgr, err := avd.NewAzureVirtualDesktopManager(ctx, credentials, &config.AVD.AVDManagerConfig)
+	avdMgr, err := avd.NewAzureVirtualDesktopManager(ctx, avdCredentials, &config.AVD.AVDManagerConfig)
 	if err != nil {
 		return nil, err
 	}
