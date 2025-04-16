@@ -43,12 +43,15 @@ func (vmm *AzureVirtualMachineManager) Create(ctx context.Context, vm *models.Vi
 
 	log.InfoContext(ctx, "VM Create converting from cloudy to azure")
 
-	virtualMachineParameters := FromCloudyVirtualMachine(ctx, vm)
+	virtualMachineParameters, err := FromCloudyVirtualMachine(ctx, vm)
+	if err != nil {
+		return nil, errors.Wrap(err, "VM Create, FromCloudyVirtualMachine failed")
+	}
 
 	log.InfoContext(ctx, "VM Create BeginCreateOrUpdate starting")
 
 	poller, err := vmm.vmClient.BeginCreateOrUpdate(ctx,
-		vmm.credentials.ResourceGroup, vm.ID, virtualMachineParameters, nil)
+		vmm.credentials.ResourceGroup, vm.ID, *virtualMachineParameters, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "VM Create")
 	}
