@@ -209,55 +209,73 @@ func UpdateCloudyVirtualMachine(vm *models.VirtualMachine, responseVirtualMachin
 	return nil
 }
 
-// ExecuteRemotePowershell executes a PowerShell script on a remote Azure virtual machine.
-// It constructs a RunCommandInput for PowerShell execution, starts the execution, and polls for the result.
+// ExecuteRemotePowerShell executes a PowerShell script on a remote Azure virtual machine.
+// It uses the RunCommand API with the "RunPowerShellScript" command.
 func (vmm *AzureVirtualMachineManager) ExecuteRemotePowershell(ctx context.Context, vmID string, script *string, timeout, pollInterval time.Duration) error {
 	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Beginning Powershell script execution")
+	defer log.DebugContext(ctx, "Powershell script execution completed")
 
-	log.DebugContext(ctx, "Constructing RunCommandInput for PowerShell execution")
+	return vmm.executeRemoteCommand(ctx, vmID, "RunPowerShellScript", "PowerShell", script, timeout, pollInterval)
+}
+
+// ExecuteRemoteShellScript executes a shell script on a remote Azure virtual machine.
+// It uses the RunCommand API with the "RunShellScript" command.
+func (vmm *AzureVirtualMachineManager) ExecuteRemoteShellScript(ctx context.Context, vmID string, script *string, timeout, pollInterval time.Duration) error {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Beginning Shell script execution")
+	defer log.DebugContext(ctx, "Shell script execution completed")
+
+	return vmm.executeRemoteCommand(ctx, vmID, "RunShellScript", "Shell Script", script, timeout, pollInterval)
+}
+
+// executeRemoteCommand encapsulates the common logic for executing a remote command.
+// The commandID and label (e.g., "PowerShell" or "Shell Script") differentiate the two types.
+func (vmm *AzureVirtualMachineManager) executeRemoteCommand(ctx context.Context, vmID, commandID, label string, script *string, timeout, pollInterval time.Duration) error {
+	log := logging.GetLogger(ctx)
+
+	log.DebugContext(ctx, fmt.Sprintf("Constructing RunCommandInput for %s execution", label))
 	runCommandInput := armcompute.RunCommandInput{
-		CommandID: to.Ptr("RunPowerShellScript"),
+		CommandID: to.Ptr(commandID),
 		Script: []*string{
 			script,
 		},
 	}
-	log.DebugContext(ctx, "Finished constructing RunCommandInput for PowerShell execution")
+	log.DebugContext(ctx, fmt.Sprintf("Finished constructing RunCommandInput for %s execution", label))
 
-	log.InfoContext(ctx, "Executing remote PowerShell script")
+	log.InfoContext(ctx, fmt.Sprintf("Executing remote %s script", label))
 	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.credentials.ResourceGroup, vmID, runCommandInput, nil)
 	if err != nil {
-		log.ErrorContext(ctx, "Failed to execute remote PowerShell script", "error", err)
-		return logging.LogAndWrapErr(ctx, log, err, "failed to execute remote PowerShell script")
+		log.ErrorContext(ctx, fmt.Sprintf("Failed to execute remote %s script", label), "error", err)
+		return logging.LogAndWrapErr(ctx, log, err, fmt.Sprintf("failed to execute remote %s script", label))
 	}
 
-	log.DebugContext(ctx, "PowerShell command execution started successfully, polling for result")
-
-	result, err := pollPowerShellExecution(ctx, poller, timeout, pollInterval)
+	log.DebugContext(ctx, fmt.Sprintf("%s command execution started successfully, polling for result", label))
+	result, err := pollCommandExecution(ctx, poller, timeout, pollInterval, label)
 	if err != nil {
 		return err
 	}
 
-	return processPowerShellResult(ctx, result)
+	return processCommandResult(ctx, result, label)
 }
 
-// pollPowerShellExecution polls the status of a PowerShell execution command until it completes or times out.
-func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse], timeout time.Duration, pollInterval time.Duration) (armcompute.RunCommandResult, error) {
+// pollCommandExecution polls the status of a remote command execution until it completes or times out.
+func pollCommandExecution(ctx context.Context, response *runtime.Poller[armcompute.VirtualMachinesClientRunCommandResponse], timeout, pollInterval time.Duration, label string) (armcompute.RunCommandResult, error) {
 	log := logging.GetLogger(ctx)
 
 	startTime := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	log.DebugContext(ctx, fmt.Sprintf("PowerShell execution polling initialized. Timeout: %d min %d sec", int(timeout.Minutes()), int(timeout.Seconds())%60))
+	log.DebugContext(ctx, fmt.Sprintf("%s execution polling initialized. Timeout: %d min %d sec", label, int(timeout.Minutes()), int(timeout.Seconds())%60))
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ctx.Done(): // Execution timeout reached
-			log.WarnContext(ctx, "PowerShell execution timed out", "elapsed", time.Since(startTime))
-
+		case <-ctx.Done():
+			log.WarnContext(ctx, fmt.Sprintf("%s execution timed out", label), "elapsed", time.Since(startTime))
 			// Attempt to retrieve partial output before exiting
 			if response.Done() {
 				finalResult, err := response.Result(ctx)
@@ -267,70 +285,61 @@ func pollPowerShellExecution(ctx context.Context, response *runtime.Poller[armco
 				}
 				return finalResult.RunCommandResult, nil
 			}
-
-			return armcompute.RunCommandResult{}, fmt.Errorf("PowerShell execution timed out after %v", timeout)
-
+			return armcompute.RunCommandResult{}, fmt.Errorf("%s execution timed out after %v", label, timeout)
 		case <-ticker.C:
 			elapsed := time.Since(startTime)
 			remaining := timeout - elapsed
 			log.InfoContext(ctx, fmt.Sprintf(
-				"Polling PowerShell execution status. Elapsed: %d min %d sec, Timeout remaining: %d min %d sec",
-				int(elapsed.Minutes()), int(elapsed.Seconds())%60, int(remaining.Minutes()), int(remaining.Seconds())%60,
+				"Polling %s execution status. Elapsed: %d min %d sec, Timeout remaining: %d min %d sec",
+				label, int(elapsed.Minutes()), int(elapsed.Seconds())%60, int(remaining.Minutes()), int(remaining.Seconds())%60,
 			))
-
 			_, err := response.Poll(ctx)
 			if err != nil {
 				log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
 				return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
 			}
-
 			if response.Done() {
 				finalResult, err := response.Result(ctx)
 				if err != nil {
 					log.ErrorContext(ctx, "Failed to retrieve final RunCommand result", "error", err)
 					return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve final RunCommand result")
 				}
-				log.InfoContext(ctx, "Powershell execution completed", "elapsed", time.Since(startTime))
+				log.InfoContext(ctx, fmt.Sprintf("%s execution completed", label), "elapsed", time.Since(startTime))
 				return finalResult.RunCommandResult, nil
 			}
 		}
 	}
 }
 
-// processPowerShellResult processes and logs the output of a PowerShell script execution.
-func processPowerShellResult(ctx context.Context, result armcompute.RunCommandResult) error {
+// processCommandResult processes and logs the output of a remote command execution.
+func processCommandResult(ctx context.Context, result armcompute.RunCommandResult, label string) error {
 	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "PowerShell execution completed, processing result")
+	log.DebugContext(ctx, fmt.Sprintf("%s execution completed, processing result", label))
 
-	// Output the command's result line by line
 	if len(result.Value) > 0 {
 		for _, output := range result.Value {
 			if output.Message != nil {
 				message := *output.Message
 				lines := strings.Split(message, "\n")
-
 				for _, line := range lines {
 					trimmedLine := strings.TrimSpace(line)
 					if trimmedLine == "" {
 						continue // Skip empty lines
 					}
-
-					safeLogContent := fmt.Sprintf("[PowerShell Output]: %s", trimmedLine)
-
-					if strings.Contains(trimmedLine, "ERROR") {
-						err := fmt.Errorf("PowerShell response contains an error: %s", trimmedLine)
+					safeLogContent := fmt.Sprintf("[%s Output]: %s", label, trimmedLine)
+					if strings.Contains(strings.ToLower(trimmedLine), "error") {
+						err := fmt.Errorf("%s response contains an error: %s", label, trimmedLine)
 						log.ErrorContext(ctx, safeLogContent)
-						return logging.LogAndWrapErr(ctx, log, err, "PowerShell script error detected")
+						return logging.LogAndWrapErr(ctx, log, err, fmt.Sprintf("%s script error detected", label))
 					}
-
 					log.InfoContext(ctx, safeLogContent)
 				}
 			}
 		}
 	} else {
-		log.WarnContext(ctx, "No output returned from the PowerShell execution")
+		log.WarnContext(ctx, fmt.Sprintf("No output returned from the %s execution", label))
 	}
 
-	log.DebugContext(ctx, "RunPowerShell function completed successfully")
+	log.DebugContext(ctx, fmt.Sprintf("Run%s function completed successfully", label))
 	return nil
 }

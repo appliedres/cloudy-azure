@@ -15,7 +15,7 @@ import (
 )
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
-func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config PowershellConfig, hostPoolRegistrationToken *string) (*string, error) {
+func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config SetupScriptConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
 	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
@@ -34,7 +34,7 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx contex
 
 	// AVD Installation section
 	if config.AVDInstall != nil {
-		avdScript, err := GenerateInstallAvdScript(ctx, vmm.credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, 
+		avdScript, err := GenerateInstallAvdScript(ctx, vmm.credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer,
 			config.AVDInstall, *hostPoolRegistrationToken)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating AVD Install script component")
@@ -62,7 +62,7 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx contex
 }
 
 // validateConfig dynamically checks required fields for non-nil nested structs
-func validateConfig(config PowershellConfig, hostPoolToken *string) error {
+func validateConfig(config SetupScriptConfig, hostPoolToken *string) error {
 	configValue := reflect.ValueOf(config)
 	configType := reflect.TypeOf(config)
 
@@ -111,16 +111,18 @@ func validateConfig(config PowershellConfig, hostPoolToken *string) error {
 
 //go:embed vm-setup-powershell/0_scriptStart.ps1
 var scriptStart string
+
 func GenerateScriptStart() string {
 	return scriptStart
 }
 
 //go:embed vm-setup-powershell/1_joinDomain.ps1
 var joinDomainTemplate string
+
 func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 	script := joinDomainTemplate
 
-	ouPath := ""  // powershell will handle the empty string appropriately
+	ouPath := "" // powershell will handle the empty string appropriately
 	if adConfig.OrganizationalUnitPath != nil {
 		ouPath = *adConfig.OrganizationalUnitPath
 	}
@@ -141,9 +143,10 @@ func GenerateJoinDomainScript(adConfig *ADJoinConfig) string {
 
 //go:embed vm-setup-powershell/2_installAVD.ps1
 var installAvdTemplate string
+
 func GenerateInstallAvdScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, avdConfig *AVDInstallConfig, hostPoolToken string) (string, error) {
 	validFor := 1 * time.Hour
-	
+
 	avdAgentURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, avdConfig.AVDAgentInstallerFilename, validFor, sas.BlobPermissions{Read: true})
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS for AVD Agent: %w", err)
@@ -171,12 +174,13 @@ func GenerateInstallAvdScript(ctx context.Context, creds *cloudyazure.AzureCrede
 
 //go:embed vm-setup-powershell/3_installSaltMinion.ps1
 var installSaltMinionTemplate string
+
 func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, saltConfig *SaltMinionInstallConfig) (string, error) {
 	log := logging.GetLogger(ctx)
 
 	validFor := 1 * time.Hour
-	
-	saltInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, saltConfig.SaltMinionInstallerFilename, validFor, sas.BlobPermissions{Read: true})
+
+	saltInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, saltConfig.SaltMinionMsiFilename, validFor, sas.BlobPermissions{Read: true})
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS for Salt Minion Installer: %w", err)
 	}
@@ -199,6 +203,7 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 
 //go:embed vm-setup-powershell/4_restart.ps1
 var restartScriptTemplate string
+
 const restartDelay = "5" // 5 seconds default delay, to allow script log to close
 func GenerateRestartScript() string {
 	script := strings.ReplaceAll(restartScriptTemplate, "$RESTART_DELAY", restartDelay)
@@ -207,6 +212,7 @@ func GenerateRestartScript() string {
 
 //go:embed vm-setup-powershell/5_scriptEnd.ps1
 var scriptEnd string
+
 func GenerateScriptEnd() string {
 	return scriptEnd
 }
