@@ -71,7 +71,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 		vmm.credentials.SubscriptionID, vmm.config.VnetResourceGroup, vmm.config.VnetId, subnetId)
 
 	dnsServers := []*string{}
-	if strings.EqualFold(vm.Template.OperatingSystem, "windows") {
+	if strings.EqualFold(vm.Template.OperatingSystem, models.VirtualMachineTemplateOperatingSystemWindows) {
 		dnsServers = vmm.config.DomainControllers
 	}
 

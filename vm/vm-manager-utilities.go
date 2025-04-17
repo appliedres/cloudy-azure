@@ -108,10 +108,10 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 
 	// OS-specific items
 	switch cloudyVM.Template.OperatingSystem {
-	case "windows":
+	case models.VirtualMachineTemplateOperatingSystemWindows:
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
 		azVM.Properties.OSProfile.WindowsConfiguration = &armcompute.WindowsConfiguration{}
-	case "linux":
+	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
 		azVM.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: to.Ptr(false),

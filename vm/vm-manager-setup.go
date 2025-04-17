@@ -17,9 +17,9 @@ func (vmm *AzureVirtualMachineManager) InitialVirtualMachineSetup(ctx context.Co
 
 	var err error
 	switch vm.Template.OperatingSystem {
-	case "windows":
+	case models.VirtualMachineTemplateOperatingSystemWindows:
 		vm, err = vmm.virtualMachineSetupWindows(ctx, vm)
-	case "linux":
+	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
 		vm, err = vmm.virtualMachineSetupLinux(ctx, vm)
 	default:
 		err = errors.New("unsupported operating system during initial VM setup")
