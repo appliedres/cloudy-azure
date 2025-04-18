@@ -76,27 +76,9 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	}
 	// TODO: linux dns servers
 
-	// apply VM info as tags to NIC
-	tags := map[string]*string{}
-	if vm.Name != "" {
-		tags[vmNameTagKey] = &vm.Name
-	}
-	if vm.CreatorID != "" {
-		tags[vmCreatorTagKey] = &vm.CreatorID
-	}
-	if vm.UserID != "" {
-		tags[vmUserTagKey] = &vm.UserID
-	}
-	if vm.TeamID != "" {
-		tags[vmTeamTagKey] = &vm.TeamID
-	}
-	for key, value := range vm.Tags {
-		tags[key] = value
-	}
-
 	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.Config.VnetResourceGroup, nicName, armnetwork.Interface{
 		Location: &vmm.Credentials.Region,
-		Tags:     tags,
+		Tags:     generateAzureTagsForVM(vm),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			EnableAcceleratedNetworking: vm.Template.AcceleratedNetworking,
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{

@@ -8,8 +8,8 @@ import (
 	"github.com/appliedres/cloudy"
 )
 
-func (avd *AzureVirtualDesktopManager) getUserSessionId(ctx context.Context, rgName string, hostPoolName string, sessionHost string, upn string) (*string, error) {
-	pager := avd.userSessionsClient.NewListPager(rgName, hostPoolName, sessionHost, nil)
+func (avd *AzureVirtualDesktopManager) getUserSessionId(ctx context.Context, hostPoolName string, sessionHost string, upn string) (*string, error) {
+	pager := avd.userSessionsClient.NewListPager(avd.Credentials.ResourceGroup, hostPoolName, sessionHost, nil)
 	var all []*armdesktopvirtualization.UserSession
 	for {
 		if !pager.More() {
@@ -34,13 +34,13 @@ func (avd *AzureVirtualDesktopManager) getUserSessionId(ctx context.Context, rgN
 	return nil, nil
 }
 
-func (avd *AzureVirtualDesktopManager) DeleteUserSession(ctx context.Context, rgName string, hostPoolName string, sessionHost string, upn string) error {
-	sessionId, err := avd.getUserSessionId(ctx, rgName, hostPoolName, sessionHost, upn)
+func (avd *AzureVirtualDesktopManager) DeleteUserSession(ctx context.Context, hostPoolName string, sessionHost string, upn string) error {
+	sessionId, err := avd.getUserSessionId(ctx, hostPoolName, sessionHost, upn)
 	if err != nil {
 		return cloudy.Error(ctx, "UnassignSessionHost failure (no user session): %+v", err)
 	}
 
-	res, err := avd.userSessionsClient.Delete(ctx, rgName, hostPoolName, sessionHost, *sessionId, nil)
+	res, err := avd.userSessionsClient.Delete(ctx, avd.Credentials.ResourceGroup, hostPoolName, sessionHost, *sessionId, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "UnassignSessionHost failure (user session delete failed): %+v", err)
 	}
@@ -49,13 +49,13 @@ func (avd *AzureVirtualDesktopManager) DeleteUserSession(ctx context.Context, rg
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) DisconnectUserSession(ctx context.Context, rgName string, hostPoolName string, sessionHost string, upn string) error {
-	sessionId, err := avd.getUserSessionId(ctx, rgName, hostPoolName, sessionHost, upn)
+func (avd *AzureVirtualDesktopManager) DisconnectUserSession(ctx context.Context, hostPoolName string, sessionHost string, upn string) error {
+	sessionId, err := avd.getUserSessionId(ctx, hostPoolName, sessionHost, upn)
 	if err != nil {
 		return cloudy.Error(ctx, "DisconnectUserSession failure (no user session): %+v", err)
 	}
 
-	res, err := avd.userSessionsClient.Disconnect(ctx, rgName, hostPoolName, sessionHost, *sessionId, nil)
+	res, err := avd.userSessionsClient.Disconnect(ctx, avd.Credentials.ResourceGroup, hostPoolName, sessionHost, *sessionId, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "UnassignSessionHost failure (user session disconnect failed ): %+v", err)
 	}

@@ -14,10 +14,10 @@ import (
 )
 
 func (avd *AzureVirtualDesktopManager) extractSuffixFromHostPoolName(hostPoolName string) (string, error) {
-	if strings.HasPrefix(hostPoolName, avd.Config.HostPoolNamePrefix) {
-		return strings.TrimPrefix(hostPoolName, avd.Config.HostPoolNamePrefix), nil
+	if strings.HasPrefix(hostPoolName, avd.Config.PersonalHostPoolNamePrefix) {
+		return strings.TrimPrefix(hostPoolName, avd.Config.PersonalHostPoolNamePrefix), nil
 	}
-	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, avd.Config.HostPoolNamePrefix)
+	return "", fmt.Errorf("host pool name %s does not have the expected prefix %s", hostPoolName, avd.Config.PersonalHostPoolNamePrefix)
 }
 
 func GenerateNextName(highestSuffix string, maxSequences int) (string, error) {
@@ -90,8 +90,8 @@ func indexOf(word string, list []string) int {
 	return -1
 }
 
-func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgName string, roleID string, upn string) error {
-	scope := "/subscriptions/" + avd.Credentials.SubscriptionID + "/resourceGroups/" + rgName
+func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, roleID string, upn string) error {
+	scope := "/subscriptions/" + avd.Credentials.SubscriptionID + "/resourceGroups/" + avd.Credentials.ResourceGroup
 	roleDefID := "/subscriptions/" + avd.Credentials.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleID
 	uuidWithHyphen := uuid.New().String()
 
@@ -110,7 +110,8 @@ func (avd *AzureVirtualDesktopManager) AssignRoleToUser(ctx context.Context, rgN
 }
 
 // GenerateWindowsClientURI generates a URI for connecting to an AVD session with the Windows client.
-func generateWindowsClientURI(workspaceID, resourceID, upn, env, version string, useMultiMon bool) string {
+// TODO: pass in workspace obj and app / desktop obj (need two different methods)
+func (avd *AzureVirtualDesktopManager) GenerateWindowsClientURI(workspaceID, resourceID, upn, env, version string, useMultiMon bool) string {
 	// https://learn.microsoft.com/en-us/azure/virtual-desktop/uri-scheme
 	base := "ms-avd:connect"
 
@@ -138,9 +139,8 @@ var phoneticIndex = func() map[string]int {
 // sortHostPoolsByPhoneticSuffix sorts the slice in place so that the pools
 // are in phonetic order of the suffix:
 //
-//   ALPHA … ZULU           ← all single‑word names first
-//   ALPHA‑ALPHA … ZULU‑ZULU
-//
+//	ALPHA … ZULU           ← all single‑word names first
+//	ALPHA‑ALPHA … ZULU‑ZULU
 func (avd *AzureVirtualDesktopManager) sortHostPoolsByPhoneticSuffix(
 	hostPools []*armdesktopvirtualization.HostPool,
 ) {
@@ -164,10 +164,9 @@ func (avd *AzureVirtualDesktopManager) sortHostPoolsByPhoneticSuffix(
 
 // phoneticLess returns true if a < b according to the required ordering.
 //
-//  • All single‑word suffixes come before ANY multi‑word suffix.
-//  • Within each group, comparison is lexicographic according to the phonetic
-//    alphabet for every segment (unknown words sort after known ones).
-//
+//   - All single‑word suffixes come before ANY multi‑word suffix.
+//   - Within each group, comparison is lexicographic according to the phonetic
+//     alphabet for every segment (unknown words sort after known ones).
 func phoneticLess(a, b string) bool {
 	ta := strings.Split(strings.ToUpper(strings.TrimSpace(a)), "-")
 	tb := strings.Split(strings.ToUpper(strings.TrimSpace(b)), "-")

@@ -15,37 +15,50 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateApplicationGroup creates an application group for the given host pool.
-func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
-	appGroupName := avd.Config.AppGroupNamePrefix + suffix
-	hostPoolName := avd.Config.HostPoolNamePrefix + suffix
-
+// CreateApplicationGroupBase creates an application group for the given host pool and app group names.
+func (avd *AzureVirtualDesktopManager) CreateApplicationGroup(ctx context.Context, appGroupName, hostPoolName string, tags map[string]*string, appGroupType armdesktopvirtualization.ApplicationGroupType) (*armdesktopvirtualization.ApplicationGroup, error) {
 	hostPoolArmPath := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DesktopVirtualization/hostPools/%s",
-		avd.Credentials.SubscriptionID, rgName, hostPoolName)
+		avd.Credentials.SubscriptionID, avd.Credentials.ResourceGroup, hostPoolName)
 
 	appGroup := armdesktopvirtualization.ApplicationGroup{
 		Location: to.Ptr(string(avd.Credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.ApplicationGroupProperties{
-			ApplicationGroupType: to.Ptr(armdesktopvirtualization.ApplicationGroupTypeDesktop),
-			FriendlyName:         to.Ptr("App Group for AVD stack '" + suffix + "'"),
+			ApplicationGroupType: to.Ptr(appGroupType),
+			FriendlyName:         to.Ptr("App Group for AVD stack '" + appGroupName + "'"),
 			Description:          to.Ptr("Generated via cloudy-azure"),
 			HostPoolArmPath:      to.Ptr(hostPoolArmPath),
 		},
 	}
 
-	resp, err := avd.appGroupsClient.CreateOrUpdate(ctx, rgName, appGroupName, appGroup, nil)
+	resp, err := avd.applicationGroupsClient.CreateOrUpdate(ctx, avd.Credentials.ResourceGroup, appGroupName, appGroup, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create application group: %w", err)
 	}
 	return &resp.ApplicationGroup, nil
 }
 
+// CreatePersonalDesktopApplicationGroup creates a personal application group for the given suffix.
+func (avd *AzureVirtualDesktopManager) CreatePersonalDesktopApplicationGroup(ctx context.Context, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
+	appGroupName := avd.Config.PersonalAppGroupNamePrefix + suffix
+	hostPoolName := avd.Config.PersonalHostPoolNamePrefix + suffix
+
+	return avd.CreateApplicationGroup(ctx, appGroupName, hostPoolName, tags, armdesktopvirtualization.ApplicationGroupTypeDesktop)
+}
+
+// CreatePooledRemoteAppApplicationGroup creates a pooled application group for the given suffix.
+func (avd *AzureVirtualDesktopManager) CreatePooledRemoteAppApplicationGroup(ctx context.Context, suffix string, tags map[string]*string) (*armdesktopvirtualization.ApplicationGroup, error) {
+	appGroupName := avd.Config.PooledAppGroupNamePrefix + suffix  // uvm ID
+	hostPoolName := avd.Config.PooledHostPoolNamePrefix + avd.Name
+
+	return avd.CreateApplicationGroup(ctx, appGroupName, hostPoolName, tags, armdesktopvirtualization.ApplicationGroupTypeRemoteApp)
+}
+
 // Given a Host Pool, finds the Desktop Application Group linked to it
-func (avd *AzureVirtualDesktopManager) GetDesktopApplicationGroupFromHostpool(ctx context.Context, rgName string, hpName string) (*armdesktopvirtualization.ApplicationGroup, error) {
+func (avd *AzureVirtualDesktopManager) GetDesktopApplicationGroupFromHostpool(ctx context.Context, hpName string) (*armdesktopvirtualization.ApplicationGroup, error) {
 	log := logging.GetLogger(ctx)
 
-	pager := avd.appGroupsClient.NewListByResourceGroupPager(rgName, nil)
+	pager := avd.applicationGroupsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -67,10 +80,10 @@ func (avd *AzureVirtualDesktopManager) GetDesktopApplicationGroupFromHostpool(ct
 	return nil, fmt.Errorf("no desktop application group found for host pool %s", hpName)
 }
 
-func (avd *AzureVirtualDesktopManager) GetDesktopAppGroupByName(ctx context.Context, rgName string, desktopAppGroup string) (*armdesktopvirtualization.ApplicationGroup, error) {
+func (avd *AzureVirtualDesktopManager) GetDesktopAppGroupByName(ctx context.Context, desktopAppGroup string) (*armdesktopvirtualization.ApplicationGroup, error) {
 	log := logging.GetLogger(ctx)
 
-	appGroup, err := avd.GetAppGroupByName(ctx, rgName, desktopAppGroup)
+	appGroup, err := avd.GetAppGroupByName(ctx, desktopAppGroup)
 	if err != nil {
 		log.DebugContext(ctx, "Error getting application group", "App Group name", desktopAppGroup, "Error", err)
 		return nil, fmt.Errorf("failed to get application group: %w", err)
@@ -98,10 +111,10 @@ func (avd *AzureVirtualDesktopManager) GetDesktopAppGroupByName(ctx context.Cont
 
 // GetAppGroupByName retrieves an application group by its name.
 // If the application group is not found, it returns nil.
-func (avd *AzureVirtualDesktopManager) GetAppGroupByName(ctx context.Context, rgName string, appGroupName string) (*armdesktopvirtualization.ApplicationGroup, error) {
+func (avd *AzureVirtualDesktopManager) GetAppGroupByName(ctx context.Context, appGroupName string) (*armdesktopvirtualization.ApplicationGroup, error) {
 	log := logging.GetLogger(ctx)
 
-	resp, err := avd.appGroupsClient.Get(ctx, rgName, appGroupName, nil)
+	resp, err := avd.applicationGroupsClient.Get(ctx, avd.Credentials.ResourceGroup, appGroupName, nil)
 	if err != nil {
 		// Check if it's a "Not Found" error (404):
 		var respErr *azcore.ResponseError
@@ -119,14 +132,24 @@ func (avd *AzureVirtualDesktopManager) GetAppGroupByName(ctx context.Context, rg
 	// Check if the application group name matches the one we are looking for
 	if appGroup.Name == nil || *appGroup.Name != appGroupName {
 		log.DebugContext(ctx, "Application group name does not match", "App Group name", *appGroup.Name)
-		return nil, fmt.Errorf("application group with name %s not found in resource group %s", appGroupName, rgName)
+		return nil, fmt.Errorf("application group with name %s not found in resource group %s", appGroupName, avd.Credentials.ResourceGroup)
 	}
 
 	log.DebugContext(ctx, "Application group found", "App Group name", *appGroup.Name)
 	return &appGroup, nil
 }
 
-func (avd *AzureVirtualDesktopManager) AssignRoleToAppGroup(ctx context.Context, appGroupName string) error {
+func (avd *AzureVirtualDesktopManager) AssignAVDUserGroupToAppGroup(ctx context.Context, appGroupName string) error {
+	err := avd.AssignPrincipalToAppGroup(ctx, appGroupName, string(avd.Config.AvdUsersGroupId))
+	if err != nil {
+		return cloudy.Error(ctx, "AssignPrincipalToAppGroup failure: %+v", err)
+	}
+
+	return nil
+}
+
+// Used for assigning a role to a user or group in an application group
+func (avd *AzureVirtualDesktopManager) AssignPrincipalToAppGroup(ctx context.Context, appGroupName string, principalID string) error {
 	// Source: https://learn.microsoft.com/en-us/answers/questions/2104093/azure-virtual-desktop-application-group-assignment
 	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
 		avd.Credentials.SubscriptionID, avd.Credentials.ResourceGroup, appGroupName)
@@ -140,7 +163,7 @@ func (avd *AzureVirtualDesktopManager) AssignRoleToAppGroup(ctx context.Context,
 		armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
 				RoleDefinitionID: to.Ptr(roleDefID),
-				PrincipalID:      to.Ptr(string(avd.Config.AvdUsersGroupId)),
+				PrincipalID:      to.Ptr(principalID),
 			},
 		}, nil)
 
@@ -151,6 +174,33 @@ func (avd *AzureVirtualDesktopManager) AssignRoleToAppGroup(ctx context.Context,
 		return cloudy.Error(ctx, "AssignRoleToGroup failure: role ID is empty")
 	}
 
-	_ = res
+	return nil
+}
+
+func (avd *AzureVirtualDesktopManager) RemovePrincipalFromAppGroup(ctx context.Context, appGroupName string, roleAssignmentName string) error {
+	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
+		avd.Credentials.SubscriptionID, avd.Credentials.ResourceGroup, appGroupName)
+
+	res, err := avd.roleAssignmentsClient.Delete(ctx, scope, roleAssignmentName, nil)
+	if err != nil {
+		return cloudy.Error(ctx, "RemovePrincipalFromAppGroup failure: %+v", err)
+	}
+	if res.ID == nil {
+		return cloudy.Error(ctx, "RemovePrincipalFromAppGroup failure: role ID is empty")
+	}
+
+	return nil
+}
+
+func (avd *AzureVirtualDesktopManager) DeleteApplicationGroup(ctx context.Context, appGroupName string) error {
+	log := logging.GetLogger(ctx)
+	
+	log.DebugContext(ctx, "Deleting application group", "AppGroupName", appGroupName)
+	resp, err := avd.applicationGroupsClient.Delete(ctx, avd.Credentials.ResourceGroup, appGroupName, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete application group: %w", err)
+	}
+	_ = resp
+	log.DebugContext(ctx, "Deleted application group", "AppGroupName", appGroupName)
 	return nil
 }

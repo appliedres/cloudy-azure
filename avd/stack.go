@@ -9,9 +9,9 @@ import (
 )
 
 // Helper to delete a host pool and its associated resources
-func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName string, targetHostPoolName string) error {
+func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, targetHostPoolName string) error {
 	log := logging.GetLogger(ctx)
-	log.InfoContext(ctx, "Starting deletion of host pool and its associated resources", "hostPoolName", targetHostPoolName, "resourceGroup", rgName)
+	log.InfoContext(ctx, "Starting deletion of host pool and its associated resources", "hostPoolName", targetHostPoolName)
 
 	if targetHostPoolName == "" {
 		return fmt.Errorf("host pool name is empty")
@@ -19,7 +19,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName s
 
 	// Check if the host pool is empty
 	log.DebugContext(ctx, "Checking if host pool is empty", "hostPoolName", targetHostPoolName)
-	isEmpty, err := avd.isHostPoolEmpty(ctx, rgName, targetHostPoolName)
+	isEmpty, err := avd.isHostPoolEmpty(ctx, targetHostPoolName)
 	if err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName s
 	// Find associated app group
 	log.DebugContext(ctx, "Finding associated application group", "suffix", suffix)
 	targetAppGroupName := ""
-	appGroupsPager := avd.appGroupsClient.NewListByResourceGroupPager(rgName, nil)
+	appGroupsPager := avd.applicationGroupsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
 	for appGroupsPager.More() {
 		page, err := appGroupsPager.NextPage(ctx)
 		if err != nil {
@@ -60,7 +60,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName s
 	// Find associated workspace
 	log.DebugContext(ctx, "Finding associated workspace", "suffix", suffix)
 	targetWorkspaceName := ""
-	workspacesPager := avd.workspacesClient.NewListByResourceGroupPager(rgName, nil)
+	workspacesPager := avd.workspacesClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
 	for workspacesPager.More() {
 		page, err := workspacesPager.NextPage(ctx)
 		if err != nil {
@@ -80,7 +80,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName s
 
 	// Delete the application group
 	log.DebugContext(ctx, "Deleting application group", "appGroupName", targetAppGroupName)
-	_, err = avd.appGroupsClient.Delete(ctx, rgName, targetAppGroupName, nil)
+	_, err = avd.applicationGroupsClient.Delete(ctx, avd.Credentials.ResourceGroup, targetAppGroupName, nil)
 	if err != nil {
 		return fmt.Errorf("error deleting application group %s: %w", targetAppGroupName, err)
 	}
@@ -88,7 +88,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName s
 
 	// Delete the workspace
 	log.DebugContext(ctx, "Deleting workspace", "workspaceName", targetWorkspaceName)
-	_, err = avd.workspacesClient.Delete(ctx, rgName, targetWorkspaceName, nil)
+	_, err = avd.workspacesClient.Delete(ctx, avd.Credentials.ResourceGroup, targetWorkspaceName, nil)
 	if err != nil {
 		return fmt.Errorf("error deleting workspace %s: %w", targetWorkspaceName, err)
 	}
@@ -96,7 +96,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, rgName s
 
 	// Delete the host pool
 	log.DebugContext(ctx, "Deleting host pool", "hostPoolName", targetHostPoolName)
-	_, err = avd.hostPoolsClient.Delete(ctx, rgName, targetHostPoolName, nil)
+	_, err = avd.hostPoolsClient.Delete(ctx, avd.Credentials.ResourceGroup, targetHostPoolName, nil)
 	if err != nil {
 		return fmt.Errorf("error deleting host pool %s: %w", targetHostPoolName, err)
 	}

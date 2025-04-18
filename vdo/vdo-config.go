@@ -54,3 +54,11 @@ type AVDInstallConfig struct {
 	AVDAgentInstallerFilename      string
 	AVDBootloaderInstallerFilename string
 }
+
+func isAVDEnabled(vdoConfig VirtualDesktopOrchestratorConfig) bool {
+	if vdoConfig.AVD == nil {
+		return false
+	}
+
+	return true
+}

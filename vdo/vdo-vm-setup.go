@@ -103,6 +103,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupLinux(ctx context.Cont
 func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinux(ctx context.Context, vm *models.VirtualMachine) (string, error) {
 	log := logging.GetLogger(ctx)
 	cfg := vdo.config
+	cfg.SaltMinionInstall = nil  // FIXME: salt minion install disabled for now
 	if cfg.SaltMinionInstall == nil {
 		return "", errors.New("Salt Minion install config not provided for Linux VM setup")
 	}

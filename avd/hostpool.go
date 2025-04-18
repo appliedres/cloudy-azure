@@ -11,16 +11,16 @@ import (
 	"github.com/appliedres/cloudy/logging"
 )
 
-func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Context, rgName string, upn string) (*armdesktopvirtualization.HostPool, error) {
+func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Context, upn string) (*armdesktopvirtualization.HostPool, error) {
 	// Get all the host pools
-	all, err := avd.listHostPools(ctx, rgName, nil)
+	all, err := avd.listHostPools(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, hostpool := range all {
 		// List all the sessions for a given host pool
-		sessions, err := avd.listSessionHosts(ctx, rgName, *hostpool.Name)
+		sessions, err := avd.ListSessionHosts(ctx, *hostpool.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +42,7 @@ func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Co
 	return nil, nil
 }
 
-func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, rgName, hpName string) (*string, error) {
+func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Context, hpName string) (*string, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "Beginning host pool token retrieval")
 
@@ -51,14 +51,14 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// Try to retrieve the token
-		tokenResponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpName, nil)
+		tokenResponse, err := avd.hostPoolsClient.RetrieveRegistrationToken(ctx, avd.Credentials.ResourceGroup, hpName, nil)
 		if err != nil || tokenResponse.Token == nil {
 			log.DebugContext(ctx, fmt.Sprintf("Attempt %d/%d: No valid token found or error retrieving token. Creating/renewing now.",
 				attempt, maxRetries,
 			))
 
 			// Attempt to create/renew
-			hp, updateErr := avd.UpdateHostPoolRegToken(ctx, rgName, hpName)
+			hp, updateErr := avd.UpdateHostPoolRegToken(ctx, hpName)
 			if updateErr != nil || hp == nil {
 				lastErr = logging.LogAndWrapErr(ctx, log, updateErr, "Failure while creating/renewing host pool token")
 				// Let the loop continue and try again
@@ -68,7 +68,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 
 			// Wait briefly, then retrieve again
 			time.Sleep(3 * time.Second)
-			tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpName, nil)
+			tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, avd.Credentials.ResourceGroup, hpName, nil)
 			if err != nil || tokenResponse.Token == nil {
 				lastErr = logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after creating/renewing token")
 				time.Sleep(3 * time.Second)
@@ -85,7 +85,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 				attempt, maxRetries,
 			))
 
-			hp, updateErr := avd.UpdateHostPoolRegToken(ctx, rgName, hpName)
+			hp, updateErr := avd.UpdateHostPoolRegToken(ctx, hpName)
 			if updateErr != nil || hp == nil {
 				lastErr = logging.LogAndWrapErr(ctx, log, updateErr, "Failure while renewing host pool token")
 				time.Sleep(3 * time.Second)
@@ -94,7 +94,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 
 			// Wait briefly, then retrieve again
 			time.Sleep(3 * time.Second)
-			tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, rgName, hpName, nil)
+			tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, avd.Credentials.ResourceGroup, hpName, nil)
 			if err != nil || tokenResponse.Token == nil {
 				lastErr = logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after renewing token")
 				time.Sleep(3 * time.Second)
@@ -117,8 +117,8 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 }
 
 // Helper to check if a host pool is empty
-func (avd *AzureVirtualDesktopManager) isHostPoolEmpty(ctx context.Context, rgName, hostPoolName string) (bool, error) {
-	sessionHostsPager := avd.sessionHostsClient.NewListPager(rgName, hostPoolName, nil)
+func (avd *AzureVirtualDesktopManager) isHostPoolEmpty(ctx context.Context, hostPoolName string) (bool, error) {
+	sessionHostsPager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, hostPoolName, nil)
 	for sessionHostsPager.More() {
 		page, err := sessionHostsPager.NextPage(ctx)
 		if err != nil {
@@ -132,8 +132,8 @@ func (avd *AzureVirtualDesktopManager) isHostPoolEmpty(ctx context.Context, rgNa
 }
 
 // CreateHostPool creates a new host pool.
-func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgName, suffix string, tags map[string]*string) (*armdesktopvirtualization.HostPool, error) {
-	hostPoolName := avd.Config.HostPoolNamePrefix + suffix
+func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, suffix string, tags map[string]*string) (*armdesktopvirtualization.HostPool, error) {
+	hostPoolName := avd.Config.PersonalHostPoolNamePrefix + suffix
 
 	// Expiration time can be 1 hour to 27 days. We'll use 25 days.
 	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
@@ -152,7 +152,7 @@ func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgNam
 		},
 	}
 
-	resp, err := avd.hostPoolsClient.CreateOrUpdate(ctx, rgName, hostPoolName, newHostPool, nil)
+	resp, err := avd.hostPoolsClient.CreateOrUpdate(ctx, avd.Credentials.ResourceGroup, hostPoolName, newHostPool, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create host pool: %w", err)
 	}
@@ -161,8 +161,8 @@ func (avd *AzureVirtualDesktopManager) CreateHostPool(ctx context.Context, rgNam
 }
 
 // CanAssignUserToHostPool checks if the specified user is already assigned to a session host in the given host pool.
-func (avd *AzureVirtualDesktopManager) CanAssignUserToHostPool(ctx context.Context, rgName, hostPoolName, userName string) (bool, error) {
-	pager := avd.sessionHostsClient.NewListPager(rgName, hostPoolName, nil)
+func (avd *AzureVirtualDesktopManager) CanAssignUserToHostPool(ctx context.Context, hostPoolName, userName string) (bool, error) {
+	pager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, hostPoolName, nil)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -182,7 +182,7 @@ func (avd *AzureVirtualDesktopManager) CanAssignUserToHostPool(ctx context.Conte
 	return true, nil // User is not assigned to any session host in the host pool
 }
 
-func (avd *AzureVirtualDesktopManager) UpdateHostPoolRegToken(ctx context.Context, rgName string, hpName string) (*armdesktopvirtualization.HostPool, error) {
+func (avd *AzureVirtualDesktopManager) UpdateHostPoolRegToken(ctx context.Context, hpName string) (*armdesktopvirtualization.HostPool, error) {
 	// Expiration time can be 1 hour to 27 days. We'll use 25 days.
 	expirationTime := time.Now().AddDate(0, 0, 25) // 25 days from now
 
@@ -194,7 +194,7 @@ func (avd *AzureVirtualDesktopManager) UpdateHostPoolRegToken(ctx context.Contex
 			},
 		}}
 
-	resp, err := avd.hostPoolsClient.Update(ctx, rgName, hpName, &armdesktopvirtualization.HostPoolsClientUpdateOptions{
+	resp, err := avd.hostPoolsClient.Update(ctx, avd.Credentials.ResourceGroup, hpName, &armdesktopvirtualization.HostPoolsClientUpdateOptions{
 		HostPool: &patch,
 	})
 	if err != nil {
@@ -204,8 +204,8 @@ func (avd *AzureVirtualDesktopManager) UpdateHostPoolRegToken(ctx context.Contex
 	return &resp.HostPool, nil
 }
 
-func (avd *AzureVirtualDesktopManager) DeleteHostPool(ctx context.Context, rgName string, hpName string) error {
-	_, err := avd.hostPoolsClient.Delete(ctx, rgName, hpName, nil)
+func (avd *AzureVirtualDesktopManager) DeleteHostPool(ctx context.Context, hpName string) error {
+	_, err := avd.hostPoolsClient.Delete(ctx, avd.Credentials.ResourceGroup, hpName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to update host pool reg token: %w", err)
 	}
@@ -213,8 +213,8 @@ func (avd *AzureVirtualDesktopManager) DeleteHostPool(ctx context.Context, rgNam
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) listHostPools(ctx context.Context, rgName string, prefixFilter *string) ([]*armdesktopvirtualization.HostPool, error) {
-	pager := avd.hostPoolsClient.NewListByResourceGroupPager(rgName, &armdesktopvirtualization.HostPoolsClientListByResourceGroupOptions{})
+func (avd *AzureVirtualDesktopManager) listHostPools(ctx context.Context, prefixFilter *string) ([]*armdesktopvirtualization.HostPool, error) {
+	pager := avd.hostPoolsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, &armdesktopvirtualization.HostPoolsClientListByResourceGroupOptions{})
 	var all []*armdesktopvirtualization.HostPool
 
 	for {

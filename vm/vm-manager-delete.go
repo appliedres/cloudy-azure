@@ -46,7 +46,7 @@ func (vmm *AzureVirtualMachineManager) DeleteVirtualMachine(ctx context.Context,
 		}
 	}
 
-	status, err := vmm.GetVirtualMachineById(ctx, vmId, true)
+	status, err := vmm.GetVirtualMachine(ctx, vmId, true)
 	if err != nil {
 		return errors.Wrap(err, "VM Delete: Validate deleted")
 	}

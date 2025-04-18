@@ -17,19 +17,19 @@ import (
 //
 //	If includeState is true, this will also retrieve the state of the VM (running, stopped, etc.)
 //	If includeState is false, vm.State will be an empty string
-func (vmm *AzureVirtualMachineManager) GetVirtualMachineById(ctx context.Context, id string, includeState bool) (*models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) GetVirtualMachine(ctx context.Context, vmName string, includeState bool) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
 	var expandGet *armcompute.InstanceViewTypes
 	if includeState {
 		expandGet = to.Ptr(armcompute.InstanceViewTypesInstanceView)
 	}
-	resp, err := vmm.vmClient.Get(ctx, vmm.Credentials.ResourceGroup, id, &armcompute.VirtualMachinesClientGetOptions{
+	resp, err := vmm.vmClient.Get(ctx, vmm.Credentials.ResourceGroup, vmName, &armcompute.VirtualMachinesClientGetOptions{
 		Expand: expandGet,
 	})
 	if err != nil {
 		if cloudyazure.Is404(err) {
-			log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById VM not found: [%s]", id))
+			log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById VM not found: [%s]", vmName))
 			return nil, nil
 		}
 
@@ -42,7 +42,7 @@ func (vmm *AzureVirtualMachineManager) GetVirtualMachineById(ctx context.Context
 	if vm.CloudState != nil {
 		stateString = string(*vm.CloudState)
 	}
-	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s]", id, stateString))
+	log.DebugContext(ctx, fmt.Sprintf("Azure vmm.GetById: vmid:[%s] state:[%s]", vmName, stateString))
 
 	return vm, nil
 }

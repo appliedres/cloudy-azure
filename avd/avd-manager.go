@@ -25,18 +25,18 @@ import (
 )
 
 type AzureVirtualDesktopManager struct {
-	name string
+	Name string
 
 	Credentials *cloudyazure.AzureCredentials
 	Config      *AzureVirtualDesktopManagerConfig
 
-	workspacesClient   *armdesktopvirtualization.WorkspacesClient
-	hostPoolsClient    *armdesktopvirtualization.HostPoolsClient
-	sessionHostsClient *armdesktopvirtualization.SessionHostsClient
-	userSessionsClient *armdesktopvirtualization.UserSessionsClient
-	appGroupsClient    *armdesktopvirtualization.ApplicationGroupsClient
-	appsClient         *armdesktopvirtualization.ApplicationsClient
-	desktopsClient     *armdesktopvirtualization.DesktopsClient
+	workspacesClient        *armdesktopvirtualization.WorkspacesClient
+	hostPoolsClient         *armdesktopvirtualization.HostPoolsClient
+	sessionHostsClient      *armdesktopvirtualization.SessionHostsClient
+	userSessionsClient      *armdesktopvirtualization.UserSessionsClient
+	applicationGroupsClient *armdesktopvirtualization.ApplicationGroupsClient
+	applicationsClient      *armdesktopvirtualization.ApplicationsClient
+	desktopsClient          *armdesktopvirtualization.DesktopsClient
 
 	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
 
@@ -50,7 +50,7 @@ func NewAzureVirtualDesktopManager(ctx context.Context, name string, credentials
 	defer log.DebugContext(ctx, "NewAzureVirtualDesktopManager complete")
 
 	avd := &AzureVirtualDesktopManager{
-		name:        name,
+		Name:        name,
 		Credentials: credentials,
 		Config:      config,
 	}
@@ -95,8 +95,8 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	avd.hostPoolsClient = clientFactory.NewHostPoolsClient()
 	avd.sessionHostsClient = clientFactory.NewSessionHostsClient()
 	avd.userSessionsClient = clientFactory.NewUserSessionsClient()
-	avd.appGroupsClient = clientFactory.NewApplicationGroupsClient()
-	avd.appsClient = clientFactory.NewApplicationsClient()
+	avd.applicationGroupsClient = clientFactory.NewApplicationGroupsClient()
+	avd.applicationsClient = clientFactory.NewApplicationsClient()
 	avd.desktopsClient = clientFactory.NewDesktopsClient()
 
 	roleassignmentsclient, err := armauthorization.NewRoleAssignmentsClient(avd.Credentials.SubscriptionID, cred, &baseOptions)
@@ -105,9 +105,15 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	}
 	avd.roleAssignmentsClient = roleassignmentsclient
 
-	avd.Config.HostPoolNamePrefix = avd.Config.PrefixBase + "-HP-"
-	avd.Config.WorkspaceNamePrefix = avd.Config.PrefixBase + "-WS-"
-	avd.Config.AppGroupNamePrefix = avd.Config.PrefixBase + "-DAG-"
+	avd.Config.PersonalHostPoolNamePrefix = avd.Config.PrefixBase + "-HP-Personal-"
+	avd.Config.PersonalWorkspaceNamePrefix = avd.Config.PrefixBase + "-WS-Personal-"
+	avd.Config.PersonalAppGroupNamePrefix = avd.Config.PrefixBase + "-AG-Personal-"
+
+	avd.Config.PooledHostPoolNamePrefix = avd.Config.PrefixBase + "-HP-Pooled-"
+	avd.Config.PooledWorkspaceNamePrefix = avd.Config.PrefixBase + "-WS-Pooled-"
+	avd.Config.PooledAppGroupNamePrefix = avd.Config.PrefixBase + "-AG-Pooled-"
+
+	// TODO: ensure all AVD resources with this PrefixBase fit into these naming conventions, cleanup those that do not
 
 	return nil
 }
@@ -121,10 +127,10 @@ func (avd *AzureVirtualDesktopManager) Initialize(ctx context.Context) error {
 	// TODO: if config . linux VMs enabled
 
 	// TODO: fix conflict of pooled vs personal host pools
-	// _, _, _, err := avd.EnsurePooledStack(ctx, avd.Credentials.ResourceGroup, armdesktopvirtualization.LoadBalancerTypeBreadthFirst, 3)
-	// if err != nil {
-	// 	return logging.LogAndWrapErr(ctx, log, err, "Failed to ensure AVD pooled stack")
-	// }
+	_, _, err := avd.EnsurePooledStack(ctx, armdesktopvirtualization.LoadBalancerTypeBreadthFirst, 3)
+	if err != nil {
+		return logging.LogAndWrapErr(ctx, log, err, "Failed to ensure AVD pooled stack")
+	}
 
 	return nil
 }
@@ -167,17 +173,15 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		return nil, nil, fmt.Errorf("unsupported OS type; only Windows is supported for AVD registration")
 	}
 
-	rgName := avd.Credentials.ResourceGroup
-
 	avd.stackMutex.Lock()
 	defer avd.stackMutex.Unlock()
 	log.DebugContext(ctx, "AVD PreRegister - cleared AVD stack lock")
 
 	// Step 1: Check existing host pools
-	hpFilter := avd.Config.HostPoolNamePrefix
-	log.DebugContext(ctx, "Retrieving host pools", "ResourceGroup", rgName, "Filter", hpFilter)
+	hpFilter := avd.Config.PersonalHostPoolNamePrefix
+	log.DebugContext(ctx, "Retrieving host pools", "Filter", hpFilter)
 
-	hostPools, err := avd.listHostPools(ctx, rgName, &hpFilter)
+	hostPools, err := avd.listHostPools(ctx, &hpFilter)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to retrieve host pools", "Error", err)
 		return nil, nil, fmt.Errorf("failed to retrieve host pools: %w", err)
@@ -193,15 +197,15 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		log := log.With("HostPool", *pool.Name, "UserID", vm.UserID) // shrink repetitive fields
 
 		// determine AVD stack suffix
-		suffix := strings.TrimPrefix(*pool.Name, avd.Config.HostPoolNamePrefix)
+		suffix := strings.TrimPrefix(*pool.Name, avd.Config.PersonalHostPoolNamePrefix)
 		if suffix == "" {
 			log.WarnContext(ctx, "host pool name is empty after trimming prefix, skipping…")
 			continue
 		}
 
 		// valid desktop app group
-		appGroupName := avd.Config.AppGroupNamePrefix + suffix
-		desktopAppGroup, err := avd.GetDesktopAppGroupByName(ctx, rgName, appGroupName)
+		appGroupName := avd.Config.PersonalAppGroupNamePrefix + suffix
+		desktopAppGroup, err := avd.GetDesktopAppGroupByName(ctx, appGroupName)
 		if err != nil {
 			log.WarnContext(ctx, "no valid desktop app group, skipping…", "AppGroupName", appGroupName, "Error", err)
 			continue
@@ -213,8 +217,8 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		log.DebugContext(ctx, "desktop app group OK", "AppGroupName", *desktopAppGroup.Name)
 
 		// valid workspace
-		workspaceName := avd.Config.WorkspaceNamePrefix + suffix
-		workspace, err := avd.GetWorkspaceByName(ctx, rgName, workspaceName)
+		workspaceName := avd.Config.PersonalWorkspaceNamePrefix + suffix
+		workspace, err := avd.GetWorkspaceByName(ctx, workspaceName)
 		if err != nil {
 			log.WarnContext(ctx, "no valid workspace, skipping…", "WorkspaceName", workspaceName, "Error", err)
 			continue
@@ -222,7 +226,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		log.DebugContext(ctx, "workspace OK", "WorkspaceName", *workspace.Name)
 
 		// user can be assigned
-		canAssign, err := avd.CanAssignUserToHostPool(ctx, rgName, *pool.Name, vm.UserID)
+		canAssign, err := avd.CanAssignUserToHostPool(ctx, *pool.Name, vm.UserID)
 		if err != nil {
 			log.WarnContext(ctx, "error checking assignment, skipping…", "Error", err)
 			continue
@@ -250,7 +254,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 		log.InfoContext(ctx, "No suitable host pool found; creating new host pool")
 
 		highestHostPoolName := hostPools[len(hostPools)-1].Name
-		highestSuffix := strings.TrimPrefix(*highestHostPoolName, avd.Config.HostPoolNamePrefix)
+		highestSuffix := strings.TrimPrefix(*highestHostPoolName, avd.Config.PersonalHostPoolNamePrefix)
 		nameSuffix, err := GenerateNextName(highestSuffix, 2)
 		if err != nil {
 			log.ErrorContext(ctx, "Failed to generate new host pool name", "Error", err)
@@ -276,7 +280,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 
 	// Step 3: Retrieve registration token
 	log.DebugContext(ctx, "Retrieving registration token", "HostPool", *targetHostPool.Name)
-	token, err = avd.RetrieveRegistrationToken(ctx, rgName, *targetHostPool.Name)
+	token, err = avd.RetrieveRegistrationToken(ctx, *targetHostPool.Name)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to retrieve registration token", "HostPool", *targetHostPool.Name, "Error", err)
 		avd.releaseHostPoolLockForUser(ctx, vm.UserID, *targetHostPool.Name)
@@ -299,10 +303,8 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 		avd.releaseHostPoolLockForUser(ctx, vm.UserID, hpName)
 	}()
 
-	rgName := avd.Credentials.ResourceGroup
-
-	log.DebugContext(ctx, "Waiting for session host to be ready", "ResourceGroup", rgName, "HostPoolName", hpName, "VM", vm.ID)
-	sessionHost, err := avd.WaitForSessionHost(ctx, rgName, hpName, vm.ID, 10*time.Minute)
+	log.DebugContext(ctx, "Waiting for session host to be ready", "HostPoolName", hpName, "VM", vm.ID)
+	sessionHost, err := avd.WaitForSessionHost(ctx, hpName, vm.ID, 10*time.Minute)
 	if err != nil {
 		log.WarnContext(ctx, "Error waiting for session host", "Error", err)
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Waiting for session host to be ready")
@@ -322,7 +324,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 
 	// Assign session host to user
 	log.InfoContext(ctx, "Assigning session host to user", "SessionHostName", sessionHostName, "UserID", vm.UserID)
-	err = avd.AssignSessionHost(ctx, rgName, hpName, sessionHostName, vm.UserID)
+	err = avd.AssignSessionHost(ctx, hpName, sessionHostName, vm.UserID)
 	if err != nil {
 		log.WarnContext(ctx, "Error assigning session host to user", "Error", err)
 		return nil, err
@@ -330,7 +332,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 
 	// Find desktop application group from host pool
 	log.DebugContext(ctx, "Retrieving desktop application group", "HostPoolName", hpName)
-	desktopApplicationGroup, err := avd.GetDesktopApplicationGroupFromHostpool(ctx, rgName, hpName)
+	desktopApplicationGroup, err := avd.GetDesktopApplicationGroupFromHostpool(ctx, hpName)
 	if err != nil {
 		log.WarnContext(ctx, "Error retrieving desktop application group", "Error", err)
 		return nil, err
@@ -342,7 +344,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	workspaceName := workspacePathSegments[len(workspacePathSegments)-1]
 	log.DebugContext(ctx, "Parsed workspace name", "WorkspaceName", workspaceName)
 
-	workspace, err := avd.GetWorkspaceByName(ctx, rgName, workspaceName)
+	workspace, err := avd.GetWorkspaceByName(ctx, workspaceName)
 	if err != nil {
 		log.WarnContext(ctx, "Error retrieving workspace", "Error", err)
 		return nil, err
@@ -352,7 +354,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 
 	// Find the resource ID of the desktop application
 	log.DebugContext(ctx, "Retrieving desktop application", "DesktopApplicationGroup", *desktopApplicationGroup.Name)
-	desktop, err := avd.getSingleDesktop(ctx, rgName, *desktopApplicationGroup.Name)
+	desktop, err := avd.getSingleDesktop(ctx, *desktopApplicationGroup.Name)
 	if err != nil {
 		log.WarnContext(ctx, "Error retrieving desktop application", "Error", err)
 		return nil, err
@@ -364,7 +366,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	log.DebugContext(ctx, "Generating Windows client URI", "avdUriVersion", avd.Config.UriVersion, "UseMultiMon", avd.Config.UseMultipleMonitors)
 	connection := &models.VirtualMachineConnection{
 		RemoteDesktopProvider: "AVD",
-		URL:                   generateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.Config.UriEnv, avd.Config.UriVersion, toBool(avd.Config.UseMultipleMonitors)),
+		URL:                   avd.GenerateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.Config.UriEnv, avd.Config.UriVersion, toBool(avd.Config.UseMultipleMonitors)),
 	}
 
 	vm.Connect = connection
@@ -377,10 +379,9 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 // Removes the session host and cleans up empty host pools / app groups / workspaces
 func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string) error {
 	log := logging.GetLogger(ctx)
-	rgName := avd.Credentials.ResourceGroup
 
-	hpFilter := avd.Config.HostPoolNamePrefix
-	log.InfoContext(ctx, "Starting AVD Cleanup process", "vmID", vmID, "resourceGroup", rgName, "hostPoolFilter", hpFilter)
+	hpFilter := avd.Config.PersonalHostPoolNamePrefix
+	log.InfoContext(ctx, "Starting AVD Cleanup process", "vmID", vmID, "hostPoolFilter", hpFilter)
 
 	// acquire lock so we don't have concurrency issues with other threads deleting or creating host pools
 	avd.stackMutex.Lock()
@@ -388,7 +389,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	log.DebugContext(ctx, "AVD cleanup - cleared AVD stack lock")
 
 	// Step 1: Check existing host pools
-	hostPools, err := avd.listHostPools(ctx, rgName, &hpFilter)
+	hostPools, err := avd.listHostPools(ctx, &hpFilter)
 	if err != nil {
 		return fmt.Errorf("AVD Cleanup - failed to retrieve host pools: %w", err)
 	}
@@ -402,7 +403,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 		}
 
 		log.DebugContext(ctx, "Searching for a VM's session host in this host pool in order to delete", "VMID", vmID, "hostPoolName", *hostPool.Name)
-		sessionHostsPager := avd.sessionHostsClient.NewListPager(rgName, *hostPool.Name, nil)
+		sessionHostsPager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, *hostPool.Name, nil)
 		for sessionHostsPager.More() {
 			page, err := sessionHostsPager.NextPage(ctx)
 			if err != nil {
@@ -419,7 +420,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 					sessionHostName := sessionHostParts[1]
 
 					log.InfoContext(ctx, "Found session host associated with VM; deleting", "sessionHost", sessionHostName, "hostPoolName", *hostPool.Name)
-					_, err := avd.sessionHostsClient.Delete(ctx, rgName, *hostPool.Name, sessionHostName, nil)
+					_, err := avd.sessionHostsClient.Delete(ctx, avd.Credentials.ResourceGroup, *hostPool.Name, sessionHostName, nil)
 					if err != nil {
 						return fmt.Errorf("error deleting session host %s in host pool %s: %w", sessionHostName, *hostPool.Name, err)
 					}
@@ -445,7 +446,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 		}
 
 		log.DebugContext(ctx, "Checking if host pool is empty", "hostPoolName", *hostPool.Name)
-		isEmpty, err := avd.isHostPoolEmpty(ctx, rgName, *hostPool.Name)
+		isEmpty, err := avd.isHostPoolEmpty(ctx, *hostPool.Name)
 		if err != nil {
 			return fmt.Errorf("error checking if host pool %s is empty: %w", *hostPool.Name, err)
 		}
@@ -471,7 +472,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	log.InfoContext(ctx, "Deleting empty host pools", "hostPoolsToDelete", deleteHostPoolNames)
 	for _, hostPoolNameToDelete := range deleteHostPoolNames {
 		log.InfoContext(ctx, "Deleting host pool and its associated resources", "hostPoolName", hostPoolNameToDelete)
-		err := avd.deleteStack(ctx, rgName, hostPoolNameToDelete)
+		err := avd.deleteStack(ctx, hostPoolNameToDelete)
 		if err != nil {
 			return fmt.Errorf("error deleting host pool %s and its associated resources: %w", hostPoolNameToDelete, err)
 		}
@@ -489,25 +490,25 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 	log.DebugContext(ctx, "Creating AVD stack", "Suffix", suffix)
 	defer log.DebugContext(ctx, "AVD stack creation complete")
 
-	rgName := avd.Credentials.ResourceGroup
+	resourceGroupName := avd.Credentials.ResourceGroup
 
 	tags := map[string]*string{
 		"stack_group_suffix": to.Ptr(suffix),
 		"arkloud_created_by": to.Ptr("cloudy-azure"),
 	}
 
-	log.DebugContext(ctx, "Creating host pool", "ResourceGroup", rgName, "Suffix", suffix)
+	log.DebugContext(ctx, "Creating host pool", "ResourceGroup", resourceGroupName, "Suffix", suffix)
 	// Create host pool
-	hostPool, err := avd.CreateHostPool(ctx, rgName, suffix, tags)
+	hostPool, err := avd.CreateHostPool(ctx, suffix, tags)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to create host pool", "Error", err)
 		return nil, nil, nil, fmt.Errorf("failed to create host pool: %w", err)
 	}
 	log.DebugContext(ctx, "Host pool created successfully", "HostPoolName", *hostPool.Name)
 
-	log.DebugContext(ctx, "Creating application group linked to the host pool", "ResourceGroup", rgName, "Suffix", suffix)
+	log.DebugContext(ctx, "Creating application group linked to the host pool", "ResourceGroup", resourceGroupName, "Suffix", suffix)
 	// Create application group linked to the new host pool
-	desktopAppGroup, err := avd.CreateApplicationGroup(ctx, rgName, suffix, tags)
+	desktopAppGroup, err := avd.CreatePersonalDesktopApplicationGroup(ctx, suffix, tags)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to create application group", "Error", err)
 		// TODO: delete resources during failed stack creation
@@ -515,17 +516,17 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 	}
 	log.DebugContext(ctx, "Application group created successfully", "AppGroupName", *desktopAppGroup.Name)
 
-	log.DebugContext(ctx, "Renaming desktop application", "ResourceGroup", rgName, "AppGroupName", *desktopAppGroup.Name, "Suffix", suffix, "DesktopNamePrefix", avd.Config.DesktopNamePrefix)
-	desktopApp, err := avd.renameDesktop(ctx, rgName, *desktopAppGroup.Name, suffix, avd.Config.DesktopNamePrefix)
+	log.DebugContext(ctx, "Renaming desktop application", "ResourceGroup", resourceGroupName, "AppGroupName", *desktopAppGroup.Name, "Suffix", suffix, "DesktopNamePrefix", avd.Config.DesktopNamePrefix)
+	desktopApp, err := avd.renameDesktop(ctx, *desktopAppGroup.Name, suffix, avd.Config.DesktopNamePrefix)
 	if err != nil {
 		log.ErrorContext(ctx, "Error renaming desktop application", "Error", err)
 		return nil, nil, nil, errors.Wrap(err, "error renaming desktopApp during stack creation")
 	}
 	log.DebugContext(ctx, "Desktop application renamed successfully", "DesktopApp", desktopApp)
 
-	log.DebugContext(ctx, "Creating workspace linked to the desktop application group", "ResourceGroup", rgName, "Suffix", suffix, "AppGroupName", *desktopAppGroup.Name)
+	log.DebugContext(ctx, "Creating workspace linked to the desktop application group", "ResourceGroup", resourceGroupName, "Suffix", suffix, "AppGroupName", *desktopAppGroup.Name)
 	// Create workspace linked to the desktop application group
-	workspace, err := avd.CreateWorkspace(ctx, rgName, suffix, *desktopAppGroup.Name, tags)
+	workspace, err := avd.CreatePersonalWorkspaceForAppGroup(ctx, suffix, *desktopAppGroup.Name, tags)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to create workspace", "Error", err)
 		// TODO: delete resources during failed stack creation
@@ -535,7 +536,7 @@ func (avd *AzureVirtualDesktopManager) createAvdStack(ctx context.Context, suffi
 
 	log.DebugContext(ctx, "Assigning AVD user group to the desktop application group", "AppGroupName", *desktopAppGroup.Name)
 	// Assign AVD user group to the new desktop application group (DAG)
-	err = avd.AssignRoleToAppGroup(ctx, *desktopAppGroup.Name)
+	err = avd.AssignAVDUserGroupToAppGroup(ctx, *desktopAppGroup.Name)
 	if err != nil {
 		log.ErrorContext(ctx, "Failed to assign AVD user group to desktop application group", "AppGroupName", *desktopAppGroup.Name, "Error", err)
 		// TODO: delete resources during failed stack creation

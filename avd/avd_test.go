@@ -133,34 +133,34 @@ func _TestRetrieveRegistrationToken(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	hostpools, err = avd.listHostPools(ctx, testConfig.ResourceGroupName, nil)
+	hostpools, err = avd.listHostPools(ctx, nil)
 	assert.Nil(t, err)
 	assert.NotZero(t, len(hostpools))
 
 	for i := 1; i < len(hostpools); i++ {
-		sessionHosts, err := avd.listSessionHosts(ctx, testConfig.ResourceGroupName, *hostpools[i].Name)
+		sessionHosts, err := avd.ListSessionHosts(ctx, *hostpools[i].Name)
 		assert.GreaterOrEqual(t, len(sessionHosts), 0)
 		assert.Nil(t, err)
 	}
 
-	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
+	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.Upn)
 	assert.Nil(t, err)
 	assert.NotEmpty(t, firstHostpool.Name)
 
 	if err == nil {
-		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
+		regToken, err = avd.RetrieveRegistrationToken(ctx, *firstHostpool.Name)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, regToken)
 	}
 
 	if err == nil {
-		sessionHost, err = avd.getAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
+		sessionHost, err = avd.getAvailableSessionHost(ctx, *firstHostpool.Name)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, sessionHost)
 	}
 
 	if err == nil {
-		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name, *sessionHost, testConfig.Upn)
+		err = avd.AssignSessionHost(ctx, *firstHostpool.Name, *sessionHost, testConfig.Upn)
 		assert.Nil(t, err)
 	}
 }
@@ -169,7 +169,7 @@ func _TestAssignSessionHost(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.AssignSessionHost(ctx, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
@@ -177,7 +177,7 @@ func _TestDeleteSessionHost(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.DeleteSessionHost(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost)
+	err = avd.DeleteSessionHost(ctx, testConfig.HostPool, testConfig.SessionHost)
 	assert.Nil(t, err)
 }
 
@@ -185,7 +185,7 @@ func _TestDeleteUserSession(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.DeleteUserSession(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.DeleteUserSession(ctx, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
@@ -193,7 +193,7 @@ func _TestDisconnectUserSession(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.DisconnectUserSession(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.DisconnectUserSession(ctx, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
@@ -201,10 +201,10 @@ func _TestAssignUserToRoles(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.AssignRoleToUser(ctx, testConfig.ResourceGroupName, testConfig.DesktopVirtualizationUserRoleId, testConfig.UserObjectId)
+	err = avd.AssignRoleToUser(ctx, testConfig.DesktopVirtualizationUserRoleId, testConfig.UserObjectId)
 	assert.Nil(t, err)
 
-	err = avd.AssignRoleToUser(ctx, testConfig.ResourceGroupName, testConfig.VirtualMachineUserLoginRoleId, testConfig.UserObjectId)
+	err = avd.AssignRoleToUser(ctx, testConfig.VirtualMachineUserLoginRoleId, testConfig.UserObjectId)
 	assert.Nil(t, err)
 }
 

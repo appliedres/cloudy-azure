@@ -13,7 +13,7 @@ import (
 )
 
 // WaitForSessionHost waits for a VM to appear as a session host in a specified host pool and ensures its status is 'Available'.
-func (avd *AzureVirtualDesktopManager) WaitForSessionHost(ctx context.Context, rgName, hpName, vmID string, timeout time.Duration) (*armdesktopvirtualization.SessionHost, error) {
+func (avd *AzureVirtualDesktopManager) WaitForSessionHost(ctx context.Context, hpName, vmID string, timeout time.Duration) (*armdesktopvirtualization.SessionHost, error) {
 	// Set up a timer for the timeout
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(10 * time.Second) // TODO: switch to exponential backoff
@@ -23,7 +23,7 @@ func (avd *AzureVirtualDesktopManager) WaitForSessionHost(ctx context.Context, r
 		// TODO: switch to multiple waits - 1 for session host existing, another for when it's ready.
 
 		// Check if the VM is registered as a session host
-		sessionHost, err := avd.FindSessionHostByVMNameInHostPool(ctx, rgName, hpName, vmID)
+		sessionHost, err := avd.FindSessionHostByVMNameInHostPool(ctx, hpName, vmID)
 		if err != nil {
 			return nil, fmt.Errorf("error finding session host: %w", err)
 		}
@@ -54,12 +54,12 @@ func (avd *AzureVirtualDesktopManager) WaitForSessionHost(ctx context.Context, r
 }
 
 // Searches for a session host with a name that contains the VMs ID
-func (avd *AzureVirtualDesktopManager) FindSessionHostByVMNameInHostPool(ctx context.Context, rgName string, hostPoolName string, vmID string) (*armdesktopvirtualization.SessionHost, error) {
+func (avd *AzureVirtualDesktopManager) FindSessionHostByVMNameInHostPool(ctx context.Context, hostPoolName string, vmID string) (*armdesktopvirtualization.SessionHost, error) {
 	log := logging.GetLogger(ctx)
 
 	log.DebugContext(ctx, "Searching for session host in host pool", "Host Pool Name", hostPoolName)
 
-	allSessionHosts, err := avd.listSessionHosts(ctx, rgName, hostPoolName)
+	allSessionHosts, err := avd.ListSessionHosts(ctx, hostPoolName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list session hosts: %w", err)
 	}
@@ -75,8 +75,8 @@ func (avd *AzureVirtualDesktopManager) FindSessionHostByVMNameInHostPool(ctx con
 	return nil, nil
 }
 
-func (avd *AzureVirtualDesktopManager) listSessionHosts(ctx context.Context, rgName string, hostPoolName string) ([]*armdesktopvirtualization.SessionHost, error) {
-	pager := avd.sessionHostsClient.NewListPager(rgName, hostPoolName, nil)
+func (avd *AzureVirtualDesktopManager) ListSessionHosts(ctx context.Context, hostPoolName string) ([]*armdesktopvirtualization.SessionHost, error) {
+	pager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, hostPoolName, nil)
 	var all []*armdesktopvirtualization.SessionHost
 	for {
 		if !pager.More() {
@@ -92,8 +92,8 @@ func (avd *AzureVirtualDesktopManager) listSessionHosts(ctx context.Context, rgN
 }
 
 // only used if there is a pool of available VMs to assign to users
-func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, rgName string, hostPoolName string) (*string, error) {
-	sessions, err := avd.listSessionHosts(ctx, rgName, hostPoolName)
+func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, hostPoolName string) (*string, error) {
+	sessions, err := avd.ListSessionHosts(ctx, hostPoolName)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +115,8 @@ func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Conte
 }
 
 // Assigns a User to a session host
-func (avd *AzureVirtualDesktopManager) AssignSessionHost(ctx context.Context, rgName string, hpName string, shName string, userobjectid string) error {
-	res, err := avd.sessionHostsClient.Update(ctx, rgName, hpName, shName,
+func (avd *AzureVirtualDesktopManager) AssignSessionHost(ctx context.Context, hpName string, shName string, userobjectid string) error {
+	res, err := avd.sessionHostsClient.Update(ctx, avd.Credentials.ResourceGroup, hpName, shName,
 		&armdesktopvirtualization.SessionHostsClientUpdateOptions{
 			SessionHost: &armdesktopvirtualization.SessionHostPatch{
 				Properties: &armdesktopvirtualization.SessionHostPatchProperties{
@@ -134,10 +134,10 @@ func (avd *AzureVirtualDesktopManager) AssignSessionHost(ctx context.Context, rg
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, rgName string, hostPoolName string, sessionhost string) error {
+func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, hostPoolName string, sessionhost string) error {
 	// removes session host from host pool, does not delete VM
 
-	res, err := avd.sessionHostsClient.Delete(ctx, rgName, hostPoolName, sessionhost, nil)
+	res, err := avd.sessionHostsClient.Delete(ctx, avd.Credentials.ResourceGroup, hostPoolName, sessionhost, nil)
 	if err != nil {
 		return cloudy.Error(ctx, "AssignSessionHost failure: %+v", err)
 	}

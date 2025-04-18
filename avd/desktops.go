@@ -9,18 +9,14 @@ import (
 	"github.com/appliedres/cloudy/logging"
 )
 
-
-
-
-
-func (avd *AzureVirtualDesktopManager) GetDesktopApplicationObjectIDFromAppGroup(ctx context.Context, rgName string, appGroup *armdesktopvirtualization.ApplicationGroup) (string, error) {
+func (avd *AzureVirtualDesktopManager) GetDesktopApplicationObjectIDFromAppGroup(ctx context.Context, appGroup *armdesktopvirtualization.ApplicationGroup) (string, error) {
 	log := logging.GetLogger(ctx)
 
 	if appGroup == nil || appGroup.Name == nil {
 		return "", fmt.Errorf("invalid application group provided")
 	}
 
-	appPager := avd.appsClient.NewListPager(rgName, *appGroup.Name, nil)
+	appPager := avd.applicationsClient.NewListPager(avd.Credentials.ResourceGroup, *appGroup.Name, nil)
 	for appPager.More() {
 		page, err := appPager.NextPage(ctx)
 		if err != nil {
@@ -37,22 +33,22 @@ func (avd *AzureVirtualDesktopManager) GetDesktopApplicationObjectIDFromAppGroup
 	return "", fmt.Errorf("no desktop application found in application group %s", *appGroup.Name)
 }
 
-func (avd *AzureVirtualDesktopManager) GetAllDesktopApplications(ctx context.Context, rgName string) ([]string, error) {
+func (avd *AzureVirtualDesktopManager) GetAllDesktopApplications(ctx context.Context, resourceGroupName string) ([]string, error) {
 	log := logging.GetLogger(ctx)
 
-	appGroupPager := avd.appGroupsClient.NewListByResourceGroupPager(rgName, nil)
+	appGroupPager := avd.applicationGroupsClient.NewListByResourceGroupPager(resourceGroupName, nil)
 	var appIDs []string
 
 	for appGroupPager.More() {
 		page, err := appGroupPager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list application groups in resource group %s: %w", rgName, err)
+			return nil, fmt.Errorf("failed to list application groups in resource group %s: %w", resourceGroupName, err)
 		}
 		for _, appGroup := range page.Value {
 			if appGroup.Name != nil {
 				log.InfoContext(ctx, "Found Application Group", "group_name", *appGroup.Name)
 
-				appPager := avd.appsClient.NewListPager(rgName, *appGroup.Name, nil)
+				appPager := avd.applicationsClient.NewListPager(resourceGroupName, *appGroup.Name, nil)
 				for appPager.More() {
 					appPage, err := appPager.NextPage(ctx)
 					if err != nil {
@@ -70,14 +66,14 @@ func (avd *AzureVirtualDesktopManager) GetAllDesktopApplications(ctx context.Con
 	}
 
 	if len(appIDs) == 0 {
-		return nil, fmt.Errorf("no desktop applications found in resource group %s", rgName)
+		return nil, fmt.Errorf("no desktop applications found in resource group %s", resourceGroupName)
 	}
 
 	return appIDs, nil
 }
 
-func (avd *AzureVirtualDesktopManager) listDesktops(ctx context.Context, rgName string, appGroupName string) ([]*armdesktopvirtualization.Desktop, error) {
-	pager := avd.desktopsClient.NewListPager(rgName, appGroupName, nil)
+func (avd *AzureVirtualDesktopManager) listDesktops(ctx context.Context, appGroupName string) ([]*armdesktopvirtualization.Desktop, error) {
+	pager := avd.desktopsClient.NewListPager(avd.Credentials.ResourceGroup, appGroupName, nil)
 	var allDesktops []*armdesktopvirtualization.Desktop
 
 	for {
@@ -96,8 +92,8 @@ func (avd *AzureVirtualDesktopManager) listDesktops(ctx context.Context, rgName 
 	return allDesktops, nil
 }
 
-func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, rgName string, appGroupName string) (*armdesktopvirtualization.Desktop, error) {
-	desktops, err := avd.listDesktops(ctx, rgName, appGroupName)
+func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, appGroupName string) (*armdesktopvirtualization.Desktop, error) {
+	desktops, err := avd.listDesktops(ctx, appGroupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list desktops: %w", err)
 	}
@@ -112,13 +108,13 @@ func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, rgN
 	return desktops[0], nil
 }
 
-func (avd *AzureVirtualDesktopManager) renameDesktop(ctx context.Context, rgName, appGroupName, suffix string, desktopAppNamePrefix *string) (*armdesktopvirtualization.Desktop, error) {
+func (avd *AzureVirtualDesktopManager) renameDesktop(ctx context.Context, appGroupName, suffix string, desktopAppNamePrefix *string) (*armdesktopvirtualization.Desktop, error) {
 	namePrefix := "vDesktop"
 	if desktopAppNamePrefix != nil {
 		namePrefix = *desktopAppNamePrefix
 	}
-	
-	res, err := avd.desktopsClient.Update(ctx, rgName, appGroupName, "SessionDesktop", &armdesktopvirtualization.DesktopsClientUpdateOptions{Desktop: &armdesktopvirtualization.DesktopPatch{
+
+	res, err := avd.desktopsClient.Update(ctx, avd.Credentials.ResourceGroup, appGroupName, "SessionDesktop", &armdesktopvirtualization.DesktopsClientUpdateOptions{Desktop: &armdesktopvirtualization.DesktopPatch{
 		Properties: &armdesktopvirtualization.DesktopPatchProperties{
 			Description:  to.Ptr("virtual Desktop application - connected to AVD stack with '" + suffix + "' suffix"),
 			FriendlyName: to.Ptr(namePrefix + " - " + suffix),

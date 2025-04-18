@@ -10,7 +10,10 @@ import (
 	"github.com/appliedres/cloudy-azure/vm"
 )
 
-// Manages both VMs and the AVD resources that are associated with them
+// The VirtualDesktopOrchestrator manages both Azure Virtual Machines and Azure Virtual Desktop (AVD) resources.
+// It presents a unified interface for creating and managing virtual machines.
+// The management of AVD resources is hidden behind the scenes, and is only used when completing VM operations.
+// AVD can be disabled by setting the AVDManagerConfig to nil in the config.
 type VirtualDesktopOrchestrator struct {
 	name string // for identification when multiple orchestrators are used
 
@@ -20,7 +23,7 @@ type VirtualDesktopOrchestrator struct {
 	avdManager *avd.AzureVirtualDesktopManager // optional
 }
 
-// TODO: how much should credentials match? Do we allow different tenant, subscription, etc?
+// TODO: how much should credentials match? Do we allow different subscription?
 
 func NewVirtualDesktopOrchestrator(
 	ctx context.Context,
@@ -36,9 +39,12 @@ func NewVirtualDesktopOrchestrator(
 		return nil, err
 	}
 
-	avdMgr, err := avd.NewAzureVirtualDesktopManager(ctx, name, avdCredentials, &config.AVD.AVDManagerConfig)
-	if err != nil {
-		return nil, err
+	var avdMgr *avd.AzureVirtualDesktopManager
+	if isAVDEnabled(*config) {
+		avdMgr, err = avd.NewAzureVirtualDesktopManager(ctx, name, avdCredentials, &config.AVD.AVDManagerConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	vdo := &VirtualDesktopOrchestrator{
