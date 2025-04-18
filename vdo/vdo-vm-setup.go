@@ -14,26 +14,6 @@ import (
 	"github.com/appliedres/cloudy/models"
 )
 
-func (vdo *VirtualDesktopOrchestrator) InitialVirtualMachineSetup(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
-	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "InitialVirtualMachineSetup started")
-
-	var err error
-	switch vm.Template.OperatingSystem {
-	case "windows":
-		vm, err = vdo.virtualMachineSetupWindows(ctx, vm)
-	case "linux":
-		vm, err = vdo.virtualMachineSetupLinux(ctx, vm)
-	default:
-		err = errors.New("unsupported operating system during initial VM setup")
-	}
-
-    if err != nil {
-	    return vm, logging.LogAndWrapErr(ctx, log, err, "initial VM setup failed")
-    }
-    return vm, nil
-}
-
 func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "virtualMachineSetupWindows started")
