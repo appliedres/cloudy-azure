@@ -78,6 +78,14 @@ func (vdo *VirtualDesktopOrchestrator) LinuxAVDPreCreateSetup(ctx context.Contex
 	return nil
 }
 
+// Perform post-creation setup for Linux AVD VMs
+// VM must include NIC with private IP
+// Steps:
+// - Create application group
+// - Add application group to workspace
+// - Create RDP application
+// - Generate RDP URL
+// - Assign user to application group
 func (vdo *VirtualDesktopOrchestrator) LinuxAVDPostCreateSetup(ctx context.Context, vm cm.VirtualMachine) (*cm.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 
@@ -106,8 +114,13 @@ func (vdo *VirtualDesktopOrchestrator) LinuxAVDPostCreateSetup(ctx context.Conte
 	}
 	log.DebugContext(ctx, "LinuxAVDPostCreateSetup - Added application group to workspace", "WorkspaceName", vdo.avdManager.Config.PooledWorkspaceNamePrefix+vdo.avdManager.Name)
 
+	privateIP, err := getPrivateIPFromNICs(ctx, vm.Nics)
+	if err != nil {
+		return nil, logging.LogAndWrapErr(ctx, log, err, "Failed to get private IP for Linux AVD start steps")
+	}
+
 	appName := vm.ID + "-linux-avd"
-	rdpApp, err := vdo.avdManager.CreateRDPApplication(ctx, *appGroup.Name, appName, vm.Nics[0].PrivateIP)
+	rdpApp, err := vdo.avdManager.CreateRDPApplication(ctx, *appGroup.Name, appName, *privateIP)
 	if err != nil {
 		log.ErrorContext(ctx, "LinuxAVDPostCreateSetup - Failed to create RDP application", "Error", err)
 		return nil, fmt.Errorf("failed to create RDP application: %w", err)
@@ -132,7 +145,7 @@ func (vdo *VirtualDesktopOrchestrator) LinuxAVDPostCreateSetup(ctx context.Conte
 	}
 	vm.Connect = connection
 
-	vdo.avdManager.AssignAVDUserGroupToAppGroup(ctx, *appGroup.Name)  // FIXME: this should be limited to the user only
+	vdo.avdManager.AssignAVDUserGroupToAppGroup(ctx, *appGroup.Name)  // FIXME: this should be limited to the user only, not group
 	// vdo.avdManager.AssignPrincipalToAppGroup(ctx, *appGroup.Name, vm.UserID)
 	log.DebugContext(ctx, "LinuxAVDPostCreateSetup - Assigned user to app group", "UserID", vm.UserID)
 

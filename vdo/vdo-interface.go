@@ -2,6 +2,7 @@ package vdo
 
 import (
 	"context"
+	"regexp"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/appliedres/cloudy/logging"
@@ -96,13 +97,23 @@ func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, 
 			"StartVirtualMachine failed to retrieve VM for AVD check")
 	}
 
+	nics, err := vdo.vmManager.GetNics(ctx, vm.ID)
+	if err != nil {
+		return logging.LogAndWrapErr(ctx, log, err,
+			"StartVirtualMachine failed to retrieve Nics for AVD check")
+	}
+	vm.Nics = nics
+
 	// If Linux AVD, do the AVD "On startup" steps
 	if vm.Template != nil && vm.Template.OperatingSystem == "Linux" {
 		if len(vm.Nics) == 0 {
 			log.WarnContext(ctx, "No NICs found for VM – cannot proceed with Linux AVD start steps")
 			return nil
 		}
-		privateIP := vm.Nics[0].PrivateIP  // TODO: verify this is always valid
+		privateIP, err := getPrivateIPFromNICs(ctx, vm.Nics)
+		if err != nil {
+			return logging.LogAndWrapErr(ctx, log, err, "Failed to get private IP for Linux AVD start steps")
+		}
 
 		err = vdo.LinuxAVDPreCreateSetup(ctx, vm)
 		if err != nil {
@@ -130,7 +141,7 @@ func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, 
 		}
 
 		appName := vm.ID + "-linux-avd"
-		rdpApp, err := vdo.avdManager.CreateRDPApplication(ctx, *appGroup.Name, appName, privateIP)
+		rdpApp, err := vdo.avdManager.CreateRDPApplication(ctx, *appGroup.Name, appName, *privateIP)
 		if err != nil {
 			return logging.LogAndWrapErr(ctx, log, err, "Failed to create RDP app on start")
 		}
@@ -341,4 +352,20 @@ func (vdo *VirtualDesktopOrchestrator) GetVirtualMachineUsage(ctx context.Contex
 
 	log.DebugContext(ctx, "VM usage retrieved", "familyCount", len(usage))
 	return usage, nil
+}
+
+func getPrivateIPFromNICs(ctx context.Context, vmNICs []*models.VirtualMachineNic) (*string, error) {
+	log := logging.GetLogger(ctx)
+
+	// regex for private IP ranges
+	privateIPRegex := regexp.MustCompile(`^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})$`)
+
+	for _, nic := range vmNICs {
+		if nic.PrivateIP != "" && privateIPRegex.MatchString(nic.PrivateIP) {
+			log.DebugContext(ctx, "Found NIC with private IP", "NIC", nic.Name, "PrivateIP", nic.PrivateIP)
+			return &nic.PrivateIP, nil
+		}
+	}
+
+	return nil, logging.LogAndWrapErr(ctx, log, nil, "No valid private IP found in NICs")
 }
