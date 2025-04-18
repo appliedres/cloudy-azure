@@ -3,7 +3,6 @@ package vdo
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 	"github.com/appliedres/cloudy/logging"
 	cm "github.com/appliedres/cloudy/models"
+	"github.com/appliedres/cloudy"
 )
 
 // TODO: lock session host 'slot' during this process so its not factored in for simultaneous requests
@@ -60,13 +60,8 @@ func (vdo *VirtualDesktopOrchestrator) LinuxAVDPreCreateSetup(ctx context.Contex
 
 	if bestHost == nil {
 		log.InfoContext(ctx, "LinuxAVDPreCreateSetup - No suitable session host found, creating a new one")
-		
-		// generate timestamped ID in hexadecimal format
-		millis := time.Now().UnixNano() / 1e6
-		hex := strconv.FormatInt(millis, 16) // ~11–12 chars
-		hex = hex[len(hex)-10:] // keep least significant part
-		sessionHostID := strings.ToLower(fmt.Sprintf("shvm-%s", hex))
-
+			
+		sessionHostID := strings.ToLower(fmt.Sprintf("shvm-%s", cloudy.GenerateTimestampIDNow()))
 		bestHost, err = vdo.CreateSessionHost(ctx, sessionHostID, hostPoolName)
 		if err != nil {
 			log.ErrorContext(ctx, "LinuxAVDPreCreateSetup - Failed to create new session host", "Error", err)
