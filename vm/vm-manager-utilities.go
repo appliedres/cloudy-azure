@@ -8,13 +8,13 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 )
 
-func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) armcompute.VirtualMachine {
+func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) (*armcompute.VirtualMachine, error) {
 	// log := logging.GetLogger(ctx)
 
 	azVM := armcompute.VirtualMachine{
@@ -34,20 +34,22 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 
 	azVM.Tags = generateAzureTagsForVM(cloudyVM)
 
+	imgRef, imgPlan, err := translateImageID(ctx, cloudyVM.Template.OsBaseImageID)
+	if err != nil {
+		return nil, fmt.Errorf("VM image ID parsing failed: %w", err)
+	}
+
+	// Set Marketplace Plan if it is specified
+	if imgPlan != nil {
+		azVM.Plan = imgPlan
+	}
+
 	azVM.Properties = &armcompute.VirtualMachineProperties{
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: (*armcompute.VirtualMachineSizeTypes)(&cloudyVM.Template.Size.ID),
 		},
 		StorageProfile: &armcompute.StorageProfile{
-			ImageReference: &armcompute.ImageReference{
-				ID: &cloudyVM.Template.OsBaseImageID,
-
-				// TODO: add support for marketplace images in this format:
-				// Publisher: to.Ptr("Canonical"),
-				// Offer:     to.Ptr("ubuntu-24_04-lts"),
-				// SKU:       to.Ptr("minimal"),
-				// Version:   to.Ptr("latest"),
-			},
+			ImageReference: imgRef,
 			OSDisk: &armcompute.OSDisk{
 				CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
 			},
@@ -73,10 +75,10 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 
 	// OS-specific items
 	switch cloudyVM.Template.OperatingSystem {
-	case "windows":
+	case models.VirtualMachineTemplateOperatingSystemWindows:
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesWindows)
 		azVM.Properties.OSProfile.WindowsConfiguration = &armcompute.WindowsConfiguration{}
-	case "linux":
+	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
 		azVM.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: to.Ptr(false),
@@ -106,7 +108,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		NetworkInterfaces: nics,
 	}
 
-	return azVM
+	return &azVM, nil
 }
 
 func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine) *models.VirtualMachine {
@@ -410,4 +412,59 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 	default:
 		return models.VirtualMachineCloudStateUnknown
 	}
+}
+
+const mpPrefix = "marketplace::" // shorthand for marketplace
+
+// translateImageID builds the ImageReference and optional Plan from the encoded ID.
+// Format:
+//   marketplace:
+//		"marketplace::<Publisher>::<Offer>::<SKU>::<Version>[::PlanName]"
+//   gallery: 
+//		"/subscriptions/<SubscriptionID/resourceGroups/<ResourceGroup>/providers/Microsoft.Compute/galleries/<ImageGalleryName/images/<ImageName>/versions/<version>"
+func translateImageID(ctx context.Context, imageID string) (*armcompute.ImageReference, *armcompute.Plan, error) {
+	log := logging.GetLogger(ctx)
+
+	// Gallery image
+	if !strings.HasPrefix(imageID, mpPrefix) {
+		log.DebugContext(ctx, fmt.Sprintf("Detected gallery image ID: %q", imageID))
+		return &armcompute.ImageReference{ID: to.Ptr(imageID)}, nil, nil
+	}
+
+	// Marketplace image
+	log.DebugContext(ctx, fmt.Sprintf("Translating marketplace image ID: %q", imageID))
+	parts := strings.Split(strings.TrimPrefix(imageID, mpPrefix), "::")
+	log.DebugContext(ctx, fmt.Sprintf("Marketplace image parts: %v", parts))
+
+	if len(parts) < 4 || len(parts) > 5 {
+		err := fmt.Errorf("invalid marketplace image spec: must be marketplace::<Publisher>::<Offer>::<SKU>::<Version>[::PlanName], got %q", imageID)
+		log.ErrorContext(ctx, "Error parsing marketplace image ID", logging.WithError(err))
+		return nil, nil, err
+	}
+
+	publisher := parts[0]
+	offer := parts[1]
+	sku := parts[2]
+	version := parts[3]
+
+	log.InfoContext(ctx, fmt.Sprintf("Using marketplace image: Publisher=%s, Offer=%s, SKU=%s, Version=%s", publisher, offer, sku, version))
+
+	img := &armcompute.ImageReference{
+		Publisher: to.Ptr(publisher),
+		Offer:     to.Ptr(offer),
+		SKU:       to.Ptr(sku),
+		Version:   to.Ptr(version),
+	}
+
+	var plan *armcompute.Plan
+	if len(parts) == 5 && parts[4] != "" {
+		plan = &armcompute.Plan{
+			Name:      to.Ptr(parts[4]),
+			Publisher: to.Ptr(publisher),
+			Product:   to.Ptr(offer),
+		}
+		log.InfoContext(ctx, fmt.Sprintf("Using image plan: Name=%s, Publisher=%s, Product=%s", parts[4], publisher, offer))
+	}
+
+	return img, plan, nil
 }

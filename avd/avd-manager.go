@@ -168,7 +168,7 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	log.InfoContext(ctx, "Starting AVD PreRegister", "VM", vm.ID)
 
 	osType := vm.Template.OperatingSystem
-	if osType != "windows" {
+	if osType != models.VirtualMachineTemplateOperatingSystemWindows {
 		log.WarnContext(ctx, "Unsupported OS type for AVD registration", "OS", osType)
 		return nil, nil, fmt.Errorf("unsupported OS type; only Windows is supported for AVD registration")
 	}

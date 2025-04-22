@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 	"github.com/pkg/errors"
@@ -71,7 +71,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 		vmm.Credentials.SubscriptionID, vmm.Config.VnetResourceGroup, vmm.Config.VnetId, subnetId)
 
 	dnsServers := []*string{}
-	if strings.EqualFold(vm.Template.OperatingSystem, "windows") {
+	if strings.EqualFold(vm.Template.OperatingSystem, models.VirtualMachineTemplateOperatingSystemWindows) {
 		dnsServers = vmm.Config.DomainControllers
 	}
 	// TODO: linux dns servers

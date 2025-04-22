@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
 	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"

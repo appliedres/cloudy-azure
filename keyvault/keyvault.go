@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/appliedres/cloudy"
 	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/secrets"
@@ -112,7 +112,7 @@ func (k *KeyVault) GetSecretBinary(ctx context.Context, key string) ([]byte, err
 func (k *KeyVault) GetAllSecrets(ctx context.Context) (map[string]string, error) {
 	var merr *multierror.Error
 
-	pager := k.Client.NewListSecretsPager(&azsecrets.ListSecretsOptions{})
+	pager := k.Client.NewListSecretPropertiesPager(&azsecrets.ListSecretPropertiesOptions{})
 	all := make(map[string]string)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
