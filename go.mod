@@ -25,6 +25,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/testcontainers/testcontainers-go v0.35.0
+	golang.org/x/sync v0.12.0
 )
 
 require (

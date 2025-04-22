@@ -24,29 +24,22 @@ func (avd *AzureVirtualDesktopManager) EnsurePooledStack(
 		"arkloud_created_by": to.Ptr("cloudy-azure"),
 	}
 
-	// TODO: limit host pool sessions, create additional pooled host pools?
-
 	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, "Ensuring pooled stack exists", "HostPoolName", avd.Config.PooledHostPoolNamePrefix+suffix)
 
-	// 1. Ensure host pool
+	// Ensure host pool
 	hostPool, err := avd.EnsurePooledHostPoolForRemoteApps(ctx, suffix, loadBalancerType, maxSessionLimit, tags)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to ensure host pool: %w", err)
 	}
 
-	// // 2. Ensure application group
-	// TODO: do we need an app group, since these are created on demand?
-	// appGroup, err := avd.EnsureRemoteAppGroup(ctx, resourceGroupName, suffix, tags)
-	// if err != nil {
-	// 	return nil, nil, nil, fmt.Errorf("failed to ensure app group: %w", err)
-	// }
-
-	// 3. Ensure workspace
+	// Ensure workspace
 	workspace, err := avd.EnsureWorkspace(ctx, suffix, tags)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to ensure workspace: %w", err)
 	}
+
+	// TODO: ensureCapacity here?
 
 	return hostPool, workspace, nil
 }
@@ -153,52 +146,6 @@ func (avd *AzureVirtualDesktopManager) EnsurePooledHostPoolForRemoteApps(
 
 	log.InfoContext(ctx, "Verified existing pooled host pool is configured for RemoteApps", "HostPoolName", wantedHPName)
 	return foundHP, nil
-}
-
-// EnsureRemoteAppGroup checks if the application group (type=RemoteApp) already exists for the suffix.
-// If not found, creates it. Otherwise, ensures it is correct.
-func (avd *AzureVirtualDesktopManager) EnsureRemoteAppGroup(
-	ctx context.Context,
-	resourceGroupName, suffix string,
-	tags map[string]*string,
-) (*armdesktopvirtualization.ApplicationGroup, error) {
-
-	log := logging.GetLogger(ctx)
-	wantedAGName := avd.Config.PooledAppGroupNamePrefix + suffix
-	log.InfoContext(ctx, "Ensuring remote app group exists", "Name", wantedAGName)
-
-	// 1. See if it already exists
-	existingAG, err := avd.GetAppGroupByName(ctx, wantedAGName)
-	if err != nil {
-		return nil, fmt.Errorf("failed checking existing app group: %w", err)
-	}
-
-	if existingAG == nil {
-		// 2. Create new
-		newAG, err := avd.CreatePooledRemoteAppApplicationGroup(ctx, suffix, tags)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create new remote app group: %w", err)
-		}
-
-		// Make sure the type is RemoteApp
-		// If your existing "CreateApplicationGroup" sets Type=RemoteApp by default, that's good.
-		log.InfoContext(ctx, "Created new remote application group", "Name", *newAG.Name)
-		return newAG, nil
-	}
-
-	// 3. If found, verify or update
-	if existingAG.Properties == nil {
-		return nil, fmt.Errorf("existing app group %s has nil properties", wantedAGName)
-	}
-	if existingAG.Properties.ApplicationGroupType == nil ||
-		*existingAG.Properties.ApplicationGroupType != armdesktopvirtualization.ApplicationGroupTypeRemoteApp {
-		log.WarnContext(ctx, "Existing app group is not RemoteApp, you may want to delete/recreate or patch it", "Name", wantedAGName)
-		// There's no official "update" for app group type; you may have to delete & re-create
-		// or handle a custom patch. Typically, you can’t just flip from Desktop->RemoteApp.
-	}
-
-	log.InfoContext(ctx, "Verified existing remote app group", "Name", *existingAG.Name)
-	return existingAG, nil
 }
 
 func (avd *AzureVirtualDesktopManager) EnsureWorkspace(

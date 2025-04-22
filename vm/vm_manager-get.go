@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
@@ -47,32 +48,57 @@ func (vmm *AzureVirtualMachineManager) GetVirtualMachine(ctx context.Context, vm
 	return vm, nil
 }
 
-// Queries Azure for the details of all VMs.
+// Queries Azure for the details of all User VMs.
 //
 //	If includeState is true, this will also retrieve the state of the VMs (running, stopped, etc.)
 //	If includeState is false, vm.State will be an empty string
-func (vmm *AzureVirtualMachineManager) GetAllVirtualMachines(ctx context.Context, filter string, attrs []string, includeState bool) (*[]models.VirtualMachine, error) {
+func (vmm *AzureVirtualMachineManager) GetAllUserVirtualMachines(ctx context.Context, attrs []string, includeState bool) (*[]models.VirtualMachine, error) {
+	return vmm.getAllVirtualMachinesWithPrefix(ctx, "uvm-", attrs, includeState)
+}
 
-	vmList := []models.VirtualMachine{}
+// Queries Azure for the details of all Session Host VMs.
+//
+//	If includeState is true, this will also retrieve the state of the VMs (running, stopped, etc.)
+//	If includeState is false, vm.State will be an empty string
+func (vmm *AzureVirtualMachineManager) GetAllSessionHostVirtualMachines(ctx context.Context, attrs []string, includeState bool) (*[]models.VirtualMachine, error) {
+	return vmm.getAllVirtualMachinesWithPrefix(ctx, "shvm-", attrs, includeState)
+}
 
-	statusOnlyString := strconv.FormatBool(includeState)
+// Warning: this could return critical infrastructure VMs if filter is not specified
+func (vmm *AzureVirtualMachineManager) getAllVirtualMachinesWithPrefix(ctx context.Context, filterPrefix string, attrs []string, includeState bool) (*[]models.VirtualMachine, error) {
+	log := logging.GetLogger(ctx)
 
-	pager := vmm.vmClient.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
-		StatusOnly: &statusOnlyString,
-	})
-
-	for pager.More() {
-		resp, err := pager.NextPage(ctx)
-		if err != nil {
-			return &vmList, err
-		}
-
-		for _, vm := range resp.Value {
-			cloudyVm := ToCloudyVirtualMachine(ctx, vm)
-			vmList = append(vmList, *cloudyVm)
-		}
-
+	if filterPrefix == "" {
+		log.WarnContext(ctx, "Querying VMs without a filter. This could return critical infrastructure VMs")
 	}
 
-	return &vmList, nil
+    vmList := []models.VirtualMachine{}
+
+    statusOnlyString := strconv.FormatBool(includeState)
+
+    options := &armcompute.VirtualMachinesClientListAllOptions{
+        StatusOnly: &statusOnlyString,
+    }
+    pager := vmm.vmClient.NewListAllPager(options)
+
+    for pager.More() {
+        resp, err := pager.NextPage(ctx)
+        if err != nil {
+            return &vmList, err
+        }
+
+        for _, armVM := range resp.Value {
+            // If a prefix filter was provided, skip any VM that doesn't match
+            if filterPrefix != "" {
+                if armVM.Name == nil || !strings.HasPrefix(*armVM.Name, filterPrefix) {
+                    continue
+                }
+            }
+
+            cloudyVM := ToCloudyVirtualMachine(ctx, armVM)
+            vmList = append(vmList, *cloudyVM)
+        }
+    }
+
+    return &vmList, nil
 }
