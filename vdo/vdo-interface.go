@@ -18,9 +18,9 @@ func (vdo *VirtualDesktopOrchestrator) CreateVirtualMachine(ctx context.Context,
 	defer log.InfoContext(ctx, "VM Orchestrator - CreateVirtualMachine complete")
 
 	switch vm.Template.OperatingSystem {
-	case "windows": 
+	case models.VirtualMachineTemplateOperatingSystemWindows: 
 		return vdo.createWindowsVM(ctx, vm)
-	case "linux":
+	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
 		if linuxAVDEnabled {
 			return vdo.createLinuxVMWithAVD(ctx, vm)
 		} else {
@@ -51,7 +51,7 @@ func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, 
 	}
 
     switch vm.Template.OperatingSystem {
-    case "linux":
+    case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
         if linuxAVDEnabled {
             return vdo.startLinuxAVD(ctx, vm)
         }
@@ -78,7 +78,9 @@ func (vdo *VirtualDesktopOrchestrator) StopVirtualMachine(ctx context.Context, v
 			"StopVirtualMachine failed to retrieve VM for AVD check")
 	}
 
-    if vm.Template.OperatingSystem == "linux" && linuxAVDEnabled {
+    if linuxAVDEnabled && 
+		(vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxDeb ||
+		vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxRhel) {
         return vdo.cleanupLinuxAVD(ctx, vm)
 
 		// TODO: remove the connection info from the VM object? Or save it for auto-start?
@@ -98,8 +100,10 @@ func (vdo *VirtualDesktopOrchestrator) DeleteVirtualMachine(ctx context.Context,
 		log.WarnContext(ctx, "Cannot retrieve VM to check OS; will try to delete anyway", "Error", err)
 	}
 
-    if vm != nil && vm.Template.OperatingSystem == "linux" && linuxAVDEnabled {
-        _ = vdo.cleanupLinuxAVD(ctx, vm)
+    if linuxAVDEnabled && 
+		(vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxDeb ||
+		vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxRhel) {
+		_ = vdo.cleanupLinuxAVD(ctx, vm)
     }
 
 	err = vdo.vmManager.DeleteVirtualMachine(ctx, vmName)
