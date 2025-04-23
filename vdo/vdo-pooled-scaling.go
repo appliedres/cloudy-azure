@@ -60,10 +60,17 @@ func (vdo *VirtualDesktopOrchestrator) reservationVMs(pool string) []string {
 }
 
 // purgeStaleHost deletes both the AVD session‐host record and its VM
-func (vdo *VirtualDesktopOrchestrator) purgeStaleHost(ctx context.Context, hostName string) {
+func (vdo *VirtualDesktopOrchestrator) purgeStaleHost(ctx context.Context, host *armdesktopvirtualization.SessionHost) {
     log := logging.GetLogger(ctx)
-	pool := vdo.avdManager.Config.PooledHostPoolNamePrefix + vdo.avdManager.Name
-    log.DebugContext(ctx, "purgeStaleHost start", "pool", pool, "rawHost", hostName)
+	// pool := vdo.avdManager.Config.PooledHostPoolNamePrefix + vdo.avdManager.Name
+
+    poolName, hostName, hostVMID, err := vdo.avdManager.ParseSessionHostName(ctx, host)
+    if err != nil {
+        log.WarnContext(ctx, "Failed to parse session host name", "host name", *host.Name, "err", err)
+        return
+    }
+
+    log.DebugContext(ctx, "purgeStaleHost start", "pool", poolName, "rawHost", hostName)
 
     // Normalize host name
     if strings.Contains(hostName, "/") {
@@ -73,16 +80,16 @@ func (vdo *VirtualDesktopOrchestrator) purgeStaleHost(ctx context.Context, hostN
     }
 
     // remove session host from AVD
-    log.DebugContext(ctx, "Deleting session host from AVD", "pool", pool, "host", hostName)
-    if err := vdo.avdManager.DeleteSessionHost(ctx, pool, hostName); err != nil {
-        log.WarnContext(ctx, "Failed to delete stale session host object", "pool", pool, "host", hostName, "err", err)
+    log.DebugContext(ctx, "Deleting session host from AVD", "pool", poolName, "host", hostName)
+    if err := vdo.avdManager.DeleteSessionHost(ctx, host); err != nil {
+        log.WarnContext(ctx, "Failed to delete stale session host object", "pool", poolName, "host", hostName, "err", err)
     } else {
         log.DebugContext(ctx, "Deleted stale session host from AVD", "host", hostName)
     }
 
     // best-effort delete session host VM
     log.DebugContext(ctx, "Deleting associated session host VM", "host", hostName)
-    if err := vdo.vmManager.DeleteVirtualMachine(ctx, hostName); err != nil {
+    if err := vdo.vmManager.DeleteVirtualMachine(ctx, hostVMID); err != nil {
         log.WarnContext(ctx, "Failed to delete session host VM", "host", hostName, "err", err)
     } else {
         log.DebugContext(ctx, "Deleted session host VM", "host", hostName)
@@ -104,7 +111,7 @@ func (vdo *VirtualDesktopOrchestrator) RebuildReservationsFromAppGroups(ctx cont
         log.ErrorContext(ctx, "ListApplicationGroupsForHostPool failed", "err", err)
         return err
     }
-    log.DebugContext(ctx, "Fetched application groups", "count", len(appGroups))
+    log.DebugContext(ctx, "Fetched application groups for host pool", "count", len(appGroups))
 
     // 2) Fetch all user VMs once
     allUserVMsPtr, err := vdo.vmManager.GetAllUserVirtualMachines(ctx, nil, true)
@@ -117,7 +124,7 @@ func (vdo *VirtualDesktopOrchestrator) RebuildReservationsFromAppGroups(ctx cont
         vm := allUserVMs[i]
         vmMap[vm.ID] = &vm
     }
-    log.DebugContext(ctx, "Cached all VMs", "count", len(vmMap))
+    log.DebugContext(ctx, "cached all VMs during app group processing", "count", len(vmMap))
 
     // 3) Validate each app group in parallel
     fresh := &sync.Map{}
@@ -139,7 +146,7 @@ func (vdo *VirtualDesktopOrchestrator) RebuildReservationsFromAppGroups(ctx cont
 
         eg.Go(func() error {
             innerLog := logging.GetLogger(ctx)
-            innerLog.DebugContext(ctx, "Validating VM & assignments", "appGroup", agName, "vmID", vmID)
+            innerLog.DebugContext(ctx, "Validating VM and assignments", "appGroup", agName, "vmID", vmID)
 
             // VM must exist & be running
             vm, found := vmMap[vmID]
@@ -189,7 +196,7 @@ func (vdo *VirtualDesktopOrchestrator) RebuildReservationsFromAppGroups(ctx cont
     // // 5) Warn for running Linux VMs missing app groups
 	// TODO: get all either gets status OR os type, not both at once
     // for id, vm := range vmMap {
-    //     if vm.Template.OperatingSystem == "Linux" && vm.CloudState != nil && *vm.CloudState == models.VirtualMachineCloudStateRunning {
+    //     if vm.Template.OperatingSystem ==  && vm.CloudState != nil && *vm.CloudState == models.VirtualMachineCloudStateRunning {
     //         if _, found := fresh.Load(id); !found {
     //             log.WarnContext(ctx, "Running Linux VM missing AVD app group", "vmID", id)
     //         }
@@ -237,16 +244,14 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
     var (
         upHosts       []*armdesktopvirtualization.SessionHost
         shutdownHosts []*armdesktopvirtualization.SessionHost
-        staleHosts    []string
+        staleHosts    []*armdesktopvirtualization.SessionHost
     )
 
     // 3) Categorize hosts by status
     for _, h := range hosts {
-        if h.Name == nil || h.Properties == nil || h.Properties.Status == nil {
-            if h.Name != nil {
-                log.DebugContext(ctx, "Found stale host entry", "host", *h.Name)
-                staleHosts = append(staleHosts, *h.Name)
-            }
+        if h.Properties == nil || h.Properties.Status == nil {
+            log.DebugContext(ctx, "Found stale host entry", "host", *h.Name)
+            staleHosts = append(staleHosts, h)
             continue
         }
         status := *h.Properties.Status
@@ -257,7 +262,7 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
         case armdesktopvirtualization.StatusShutdown:
             shutdownHosts = append(shutdownHosts, h)
         default:
-            staleHosts = append(staleHosts, *h.Name)
+            staleHosts = append(staleHosts, h)
         }
     }
     log.DebugContext(ctx, "Host categorization complete",
@@ -297,17 +302,22 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
         // pop first shutdown host
         host := shutdownHosts[0]
         shutdownHosts = shutdownHosts[1:]
-        name := *host.Name
 
-        log.DebugContext(ctx, "Starting shutdown session host VM", "host", name)
-        if err := vdo.vmManager.StartVirtualMachine(ctx, name); err != nil {
-            log.WarnContext(ctx, "StartVirtualMachine failed", "host", name, "err", err)
+        _, sessionHostName, vmName, err := vdo.avdManager.ParseSessionHostName(ctx, host)
+        if err != nil {
+            log.WarnContext(ctx, "Failed to parse session host name", "host name", *host.Name, "err", err) 
+            continue
+        }
+        
+        log.DebugContext(ctx, "Starting shutdown session host VM", "host", sessionHostName, "vmName", vmName)
+        if err := vdo.vmManager.StartVirtualMachine(ctx, vmName); err != nil {
+            log.WarnContext(ctx, "StartVirtualMachine failed", "host", sessionHostName, "vmName", vmName, "err", err)
             // you might choose to append it back: shutdownHosts = append(shutdownHosts, host)
             continue
         }
 
-        if _, err := vdo.avdManager.WaitForSessionHost(ctx, pool, name, 5*time.Minute); err != nil {
-            log.WarnContext(ctx, "SessionHost did not become available after start", "host", name, "err", err)
+        if _, err := vdo.avdManager.WaitForSessionHost(ctx, pool, vmName, 5*time.Minute); err != nil {
+            log.WarnContext(ctx, "SessionHost did not become available after start", "host", sessionHostName, "vmName", vmName, "err", err)
             continue
         }
 
@@ -329,12 +339,57 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
     }
 
     // 8) Delete any unused shutdown hosts once capacity is met
-    if len(upHosts) >= needHosts {
+    if len(upHosts) >= needHosts  && len(shutdownHosts) > 0  {
         log.DebugContext(ctx, "Deleting unused shutdown hosts", "count", len(shutdownHosts))
         for _, host := range shutdownHosts {
             log.DebugContext(ctx, "Deleting unused shutdown host", "host", *host.Name)
-            go vdo.purgeStaleHost(ctx, *host.Name)
+            go vdo.purgeStaleHost(ctx, host)
         }
+    }
+    log.DebugContext(ctx, "shutdown session host VM sweep complete")
+
+    // 9) Find any remaining VMs with the "shvm-" prefix that are NOT represented
+    //       by an Azure Virtual Desktop session-host object.
+    //    These are likely orphaned and should be deleted.
+
+    // 9a) Build a set of VM names that do have session-host records.
+    knownSHVMs := make(map[string]struct{}, len(hosts))
+    for _, h := range hosts {
+        if _, _, vmName, err := vdo.avdManager.ParseSessionHostName(ctx, h); err == nil {
+            knownSHVMs[vmName] = struct{}{}
+        }
+    }
+
+    // 9b) Retrieve every VM whose name begins with the shvm- prefix.
+    //     (The helper already filters by the prefix; set resourceGroup=nil to search subscription-wide.)
+    hostVMsPtr, err := vdo.vmManager.GetAllSessionHostVirtualMachines(ctx, nil, true)
+    hostVMs := *hostVMsPtr
+    if err != nil {
+        log.WarnContext(ctx, "GetAllSessionHostVirtualMachines failed during shvm orphan check", "err", err)
+    } else {
+        var orphaned []string
+        for _, vm := range hostVMs {
+            // Double-check the prefix in case the helper’s filtering ever changes.
+            if !strings.HasPrefix(vm.ID, "shvm-") {
+                log.WarnContext(ctx, "Session Host VM retrieval found VM with bad prefix", "vmid", vm.ID)
+                continue
+            }
+            if _, knownHost := knownSHVMs[vm.ID]; knownHost {
+                continue // still an active or shutdown session host
+            }
+
+            // 9c) VM is orphaned – delete it asynchronously.
+            orphaned = append(orphaned, vm.ID)
+            log.WarnContext(ctx, "Deleting orphaned session host VM", "vmid", vm.ID)
+            go func(vmid string) {
+                if err := vdo.vmManager.DeleteVirtualMachine(ctx, vmid); err != nil {
+                    log.WarnContext(ctx, "Deleting Orphaned Session Host VM failed", "vmid", vmid, "err", err)
+                } else {
+                    log.WarnContext(ctx, "Orphaned session host VM deleted", "vmid", vmid)
+                }
+            }(vm.ID)
+        }
+        log.DebugContext(ctx, "Orphaned session host VM sweep complete", "count", len(orphaned))
     }
 
     log.DebugContext(ctx, "ensureCapacity complete",

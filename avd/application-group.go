@@ -222,7 +222,7 @@ func (avd *AzureVirtualDesktopManager) ListApplicationGroupsForHostPool(ctx cont
 				parsedHostPoolName := hostPoolPathSegments[len(hostPoolPathSegments)-1]
 
 				if parsedHostPoolName == hostPoolName {
-					log.DebugContext(ctx, "Matched application group", "AppGroupName", *group.Name, "Type", string(*group.Properties.ApplicationGroupType))
+					log.DebugContext(ctx, "Found matching application group for host pool", "AppGroupName", *group.Name, "Type", string(*group.Properties.ApplicationGroupType))
 					results = append(results, group)
 				}
 			}

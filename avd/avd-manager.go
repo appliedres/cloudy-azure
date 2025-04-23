@@ -312,15 +312,11 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 
 	log.DebugContext(ctx, "Session host ready", "SessionHostName", *sessionHost.Name)
 
-	// Parse session host name
-	parts := strings.SplitN(*sessionHost.Name, "/", 2)
-	if len(parts) != 2 {
-		err := fmt.Errorf("Could not split sessionHost.Name: %s", *sessionHost.Name)
-		log.WarnContext(ctx, "Error splitting session host name", "Error", err)
+	_, sessionHostName, _, err := avd.ParseSessionHostName(ctx, sessionHost)
+	if err != nil {
+		log.WarnContext(ctx, "Error parsing session host name", "Error", err)
 		return nil, err
 	}
-	sessionHostName := parts[1]
-	log.DebugContext(ctx, "Parsed session host name", "SessionHostName", sessionHostName)
 
 	// Assign session host to user
 	log.InfoContext(ctx, "Assigning session host to user", "SessionHostName", sessionHostName, "UserID", vm.UserID)

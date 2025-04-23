@@ -173,13 +173,16 @@ func _TestAssignSessionHost(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func _TestDeleteSessionHost(t *testing.T) {
-	err = initAVD()
-	assert.Nil(t, err)
+// FIXME: use session host obj in delete action
+// func _TestDeleteSessionHost(t *testing.T) {
+// 	err = initAVD()
+// 	assert.Nil(t, err)
 
-	err = avd.DeleteSessionHost(ctx, testConfig.HostPool, testConfig.SessionHost)
-	assert.Nil(t, err)
-}
+// 	sessionHost = avd.GetSessionHost(ctx, testConfig.SessionHost)
+
+// 	err = avd.DeleteSessionHost(ctx, sessionHost)
+// 	assert.Nil(t, err)
+// }
 
 func _TestDeleteUserSession(t *testing.T) {
 	err = initAVD()
