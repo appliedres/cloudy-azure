@@ -70,12 +70,6 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	fullSubnetId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s",
 		vmm.Credentials.SubscriptionID, vmm.Config.VnetResourceGroup, vmm.Config.VnetId, subnetId)
 
-	dnsServers := []*string{}
-	if strings.EqualFold(vm.Template.OperatingSystem, models.VirtualMachineTemplateOperatingSystemWindows) {
-		dnsServers = vmm.Config.DomainControllers
-	}
-	// TODO: linux dns servers
-
 	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.Config.VnetResourceGroup, nicName, armnetwork.Interface{
 		Location: &vmm.Credentials.Region,
 		Tags:     generateAzureTagsForVM(vm),
@@ -94,7 +88,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 				},
 			},
 			DNSSettings: &armnetwork.InterfaceDNSSettings{
-				DNSServers: dnsServers,
+				DNSServers: vmm.Config.DomainControllers,
 			},
 		},
 	}, nil)

@@ -17,13 +17,11 @@ func (vdo *VirtualDesktopOrchestrator) createBasicLinuxVM(ctx context.Context, v
 		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed creating Linux VM")
 	}
 
-	// TODO: cleanup/integrate the case statement in the setup method with this case statement
-	// FIXME: re-enable salt minion on linux
-	// log.DebugContext(ctx, "Running initial setup for Linux VM")
-	// vm, err = vdo.virtualMachineSetupLinux(ctx, vm)
-	// if err != nil {
-	// 	return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Linux VM setup")
-	// }
+	log.DebugContext(ctx, "Running initial setup for Linux VM")
+	vm, err = vdo.virtualMachineSetupLinux(ctx, vm)
+	if err != nil {
+		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Linux VM setup")
+	}
 
 	log.DebugContext(ctx, "Finished creating basic Linux VM")
 	return vm, err

@@ -66,7 +66,8 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupLinux(ctx context.Cont
 	log.DebugContext(ctx, "virtualMachineSetupLinux started")
 	defer log.DebugContext(ctx, "virtualMachineSetupLinux finished")
 
-	shellScript, err := vdo.buildVirtualMachineSetupScriptLinux(ctx, vm)
+	// TODO: improve / remove online vs offline decision
+	shellScript, err := vdo.buildVirtualMachineSetupScriptLinuxOnline(ctx, vm)
 	if err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build Linux setup script")
 	}
@@ -80,15 +81,14 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupLinux(ctx context.Cont
 	return vm, nil
 }
 
-func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinux(ctx context.Context, vm *models.VirtualMachine) (string, error) {
+func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinuxOffline(ctx context.Context, vm *models.VirtualMachine) (string, error) {
 	log := logging.GetLogger(ctx)
 	cfg := vdo.config
-	cfg.SaltMinionInstall = nil  // FIXME: salt minion install disabled for now
 	if cfg.SaltMinionInstall == nil {
 		return "", errors.New("Salt Minion install config not provided for Linux VM setup")
 	}
 
-	saltScript, err := GenerateInstallSaltMinionScriptLinux(
+	saltScript, err := GenerateInstallSaltMinionScriptLinuxOffline(
 		ctx,
 		vdo.vmManager.Credentials,
 		cfg.BinaryStorage.BlobStorageAccount,
@@ -102,7 +102,22 @@ func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinux(ctx c
 	return saltScript, nil
 }
 
-func GenerateInstallSaltMinionScriptLinux(
+func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinuxOnline(ctx context.Context, vm *models.VirtualMachine) (string, error) {
+	log := logging.GetLogger(ctx)
+	cfg := vdo.config
+	if cfg.SaltMinionInstall == nil {
+		return "", errors.New("Salt Minion install config not provided for Linux VM setup")
+	}
+
+	saltScript, err := GenerateInstallSaltMinionAndADJoinOnline(ctx, &cfg)
+	if err != nil {
+		return "", logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
+	}
+
+	return saltScript, nil
+}
+
+func GenerateInstallSaltMinionScriptLinuxOffline(
 	ctx context.Context,
 	creds *cloudyazure.AzureCredentials,
 	storageAccountName, containerName string,
@@ -258,14 +273,184 @@ func GenerateInstallSaltMinionScriptLinux(
 	return script, nil
 }
 
-// Linux install script that uses online / public sources
-var installSaltMinionOnlineTemplate = `#!/usr/bin/env bash
+
+// GenerateLinuxBootstrapScript builds a single bash script:
+// 1) AD join block  (if cfg.AD != nil)
+// 2) Salt-minion install block
+func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualDesktopOrchestratorConfig) (string, error) {
+    if cfg == nil {
+        return "", errors.New("nil config")
+    }
+
+    var sb strings.Builder
+    sb.WriteString(shellHeader)
+
+    // ── AD block (optional) ────────────────────────────────────────────────
+    if cfg.AD != nil {
+
+		// strip DOMAIN\ or DOMAIN/ prefix
+		strippedUser := cfg.AD.DomainUsername
+		if idx := strings.IndexAny(strippedUser, "\\/"); idx != -1 {
+			strippedUser = strippedUser[idx+1:]
+		}
+
+        ou := stringPtrOrEmpty(cfg.AD.OrganizationalUnitPath)
+        dc := firstOrEmpty(cfg.VM.DomainControllers)
+
+        ad := adJoinBlock
+        for k, v := range map[string]string{
+            "$AD_DOMAIN": cfg.AD.DomainName,
+            "$AD_USER":   strippedUser,
+            "$AD_PASS":   cfg.AD.DomainPassword,
+            "$AD_OU":     ou,
+            "$AD_DC":     dc,
+        } {
+            ad = strings.ReplaceAll(ad, k, v)
+        }
+        sb.WriteString(ad)
+    }
+
+    // ── Salt block (always) ────────────────────────────────────────────────
+    if cfg.SaltMinionInstall != nil && cfg.SaltMinionInstall.SaltMaster != "" {
+		salt := strings.ReplaceAll(saltBlock, "$SALT_MASTER", cfg.SaltMinionInstall.SaltMaster)
+		sb.WriteString(salt)
+    }
+
+    sb.WriteString(shellFooter)
+    return sb.String(), nil
+}
+
+func stringPtrOrEmpty(p *string) string {
+    if p == nil {
+        return ""
+    }
+    return *p
+}
+
+func firstOrEmpty(ptrs []*string) string {
+    if len(ptrs) == 0 || ptrs[0] == nil {
+        return ""
+    }
+    return *ptrs[0]
+}
+
+
+// ───────────────────────── shellHeader ─────────────────────────
+const shellHeader = `#!/usr/bin/env bash
 set -euo pipefail
-trap 'echo "[ERROR] $LINENO: command failed." >&2; exit 1' ERR
 
-log() { echo "[INFO] $*"; }
+LOG=/var/log/ark-init.log
+exec 3>&1                       # anything we want Azure to show
+exec 1>>"$LOG" 2>&1             # everything else into a file
 
+fatal(){ printf '[%s] [ERROR] %s\n' "$(date +'%F %T')" "$*" >&3; exit 1; }
+trap 'fatal "line $LINENO – aborted."' ERR
+log(){ printf '[%s] [INFO] %s\n' "$(date +'%F %T')" "$*" >&3; }
+`
+
+// ───────────────────────── adJoinBlock ─────────────────────────
+const adJoinBlock = `
+# ── Stage 1 : Active-Directory join ──────────────────────────────────────────
+
+# ----- INSTALL DEPENDENCIES -----
+log "Installing required packages..."
+if command -v apt-get &>/dev/null; then
+  DEBIAN_FRONTEND=noninteractive apt-get -qq update
+  DEBIAN_FRONTEND=noninteractive apt-get -yqq install \
+      realmd sssd sssd-tools adcli oddjob oddjob-mkhomedir \
+      samba-common-bin packagekit dnsutils expect krb5-user
+else
+  dnf -qy install realmd sssd adcli oddjob oddjob-mkhomedir \
+                  samba-common-tools bind-utils expect krb5-workstation
+fi
+log "Package installation complete."
+
+# ----- CONFIGURATION -----
+DOMAIN_NAME="$AD_DOMAIN"
+DOMAIN_USER="$AD_USER"
+DOMAIN_PASSWORD="$AD_PASS"
+OU_PATH="$AD_OU"
+DC_IP="$AD_DC"
+
+# ----- DERIVED VARIABLES -----
+FQDN_LOWER=$(hostname --fqdn | tr '[:upper:]' '[:lower:]')
+SHORT_LOWER=$(hostname -s | tr '[:upper:]' '[:lower:]')
+IP_ADDR=$(hostname -I | awk '{print $1}')
+REALM_UPPER=$(echo "$DOMAIN_NAME" | tr '[:lower:]' '[:upper:]')
+
+# ----- HOSTNAME & /etc/hosts PATCH -----
+log "Setting hostname to $FQDN_LOWER and patching /etc/hosts"
+sudo hostnamectl set-hostname "$FQDN_LOWER"
+
+sudo sed -i "/\s$SHORT_LOWER$/Id" /etc/hosts
+if ! grep -qi "$FQDN_LOWER" /etc/hosts; then
+    echo "$IP_ADDR $FQDN_LOWER $SHORT_LOWER" | sudo tee -a /etc/hosts > /dev/null
+    log "Added $FQDN_LOWER to /etc/hosts"
+else
+    log "Entry for $FQDN_LOWER already exists in /etc/hosts"
+fi
+
+# ----- DYNAMIC DNS UPDATE IF RECORD IS MISSING -----
+log "Checking DNS for $FQDN_LOWER"
+if ! host "$FQDN_LOWER" > /dev/null 2>&1; then
+    log "DNS record missing, registering via nsupdate"
+    echo "$DOMAIN_PASSWORD" | kinit "$DOMAIN_USER@$REALM_UPPER"
+    nsupdate -g <<EOF
+server $DC_IP
+update delete $FQDN_LOWER A
+update add $FQDN_LOWER 3600 A $IP_ADDR
+send
+EOF
+    log "DNS record updated for $FQDN_LOWER"
+else
+    log "DNS record already exists for $FQDN_LOWER"
+fi
+
+# ----- ENSURE DOMAIN BASE NAME RESOLVES -----
+if ! getent hosts "$DOMAIN_NAME" &>/dev/null; then
+  echo "$DC_IP $DOMAIN_NAME" | sudo tee -a /etc/hosts > /dev/null
+  log "Patched /etc/hosts for domain $DOMAIN_NAME → $DC_IP"
+fi
+
+# ----- PRE-CHECKS -----
+if ! command -v realm &> /dev/null; then
+    fatal "'realmd' is not installed."
+fi
+
+# ----- DOMAIN DISCOVERY -----
+log "Discovering domain: $DOMAIN_NAME"
+if ! realm discover "$DOMAIN_NAME"; then
+    fatal "Failed to discover domain."
+fi
+log "Domain $DOMAIN_NAME discovered successfully."
+
+# ----- JOINING DOMAIN -----
+if realm list | grep -qi "$DOMAIN_NAME"; then
+  log "Already joined to domain: $DOMAIN_NAME"
+else
+  log "Joining domain $DOMAIN_NAME as $DOMAIN_USER"
+  expect <<EOF
+spawn realm join -v -U "$DOMAIN_USER" --computer-name=$SHORT_LOWER ${OU_PATH:+--computer-ou=$OU_PATH} "$DOMAIN_NAME"
+expect "Password for *:"
+send "$DOMAIN_PASSWORD\r"
+expect eof
+EOF
+
+  if realm list | grep -qi "$DOMAIN_NAME"; then
+    log "Successfully joined domain: $DOMAIN_NAME"
+  else
+    fatal "Failed to join domain."
+  fi
+fi
+
+log "Stage 1 – AD join complete."
+`
+
+// ───────────────────────── saltBlock ──────────────────────────
+const saltBlock = `
+# ── Stage 2 : Salt minion install ────────────────────────────────────────────
 SALT_MASTER="$SALT_MASTER"
+
 
 # ── Detect distro ──────────────────────────────────────────────────────────
 if [ -f /etc/os-release ]; then
@@ -342,8 +527,13 @@ if sudo salt-call --local test.ping; then
 else
   log "[WARNING] salt-call test.ping failed (local). Check service status and config."
 fi
-
 `
+
+// ───────────────────────── shellFooter ────────────────────────
+const shellFooter = `
+log "Bootstrap finished OK"
+`
+
 
 // Air-gapped install using individual packages in storage account
 var installSaltMinionLinuxTemplate = `#!/usr/bin/env bash
