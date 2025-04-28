@@ -3,6 +3,7 @@ package avd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,6 +68,16 @@ func NewAzureVirtualDesktopManager(ctx context.Context, name string, credentials
 	return avd, nil
 }
 
+// until the SDK is updated, this injects the header that ARM now requires for list calls.
+// TODO: remove custom header when SDK fixes this issue
+type addTargetLocations struct {
+    value string
+}
+func (p addTargetLocations) Do(req *policy.Request) (*http.Response, error) {
+    req.Raw().Header.Set("x-ms-arm-resource-list-target-locations", p.value)
+    return req.Next()
+}
+
 // Handles the configuration of the Azure Virtual Desktop Manager
 func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	log := logging.GetLogger(ctx)
@@ -81,12 +92,13 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	baseOptions := arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
+			PerCallPolicies: []policy.Policy{
+				addTargetLocations{value: avd.Credentials.Region},  // TODO: remove when SDK fixes this
+			},
 		},
 	}
 
-	avdOptions := baseOptions
-	avdOptions.APIVersion = "2023-09-05" // Important! Latest AVD API version is not supported in Azure Govt
-	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.Credentials.SubscriptionID, cred, &avdOptions)
+	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.Credentials.SubscriptionID, cred, &baseOptions)
 	if err != nil {
 		return err
 	}
