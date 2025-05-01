@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -263,6 +264,7 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 
 		"$AZURE_SALT_MINION_RPM_URL": rpmURLMinion,
 		"$AZURE_SALT_COMMON_RPM_URL": rpmURLCommon,
+
 		"$SALT_MASTER":               saltConfig.SaltMaster,
 	}
 
@@ -285,7 +287,7 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
     var sb strings.Builder
     sb.WriteString(shellHeader)
 
-    // ── AD block (optional) ────────────────────────────────────────────────
+    // AD block
     if cfg.AD != nil {
 
 		// strip DOMAIN\ or DOMAIN/ prefix
@@ -310,14 +312,27 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
         sb.WriteString(ad)
     }
 
-    // ── Salt block (always) ────────────────────────────────────────────────
+	// RDP setup block (always)
+	sb.WriteString(rdpSetupBlock)
+
+    // Salt block
     if cfg.SaltMinionInstall != nil && cfg.SaltMinionInstall.SaltMaster != "" {
 		salt := strings.ReplaceAll(saltBlock, "$SALT_MASTER", cfg.SaltMinionInstall.SaltMaster)
 		sb.WriteString(salt)
     }
 
     sb.WriteString(shellFooter)
-    return sb.String(), nil
+
+	script := sb.String()
+
+    // write out to a file for testing
+	timestamp := time.Now().Format("20060102-150405")
+    outPath := fmt.Sprintf("/tmp/bootstrap-%s.sh", timestamp)
+	    if err := os.WriteFile(outPath, []byte(script), 0o700); err != nil {
+        return "", fmt.Errorf("failed writing bootstrap script to %s: %w", outPath, err)
+    }
+
+    return script, nil
 }
 
 func stringPtrOrEmpty(p *string) string {
@@ -343,107 +358,170 @@ LOG=/var/log/ark-init.log
 exec 3>&1                       # anything we want Azure to show
 exec 1>>"$LOG" 2>&1             # everything else into a file
 
-fatal(){ printf '[%s] [ERROR] %s\n' "$(date +'%F %T')" "$*" >&3; exit 1; }
-trap 'fatal "line $LINENO – aborted."' ERR
+on_error() {
+  local exit_code=$?
+  local line_no=$1
+  local cmd=$2
+  printf '[%s] [ERROR] line %d → "%s" (exit %d)\n' \
+         "$(date +'%F %T')" "$line_no" "$cmd" "$exit_code" >&3
+  exit "$exit_code"
+}
+set -o errtrace           # let ERR propagate through functions/ subshells
+trap 'on_error $LINENO "$BASH_COMMAND"' ERR
+
 log(){ printf '[%s] [INFO] %s\n' "$(date +'%F %T')" "$*" >&3; }
+
 `
 
 // ───────────────────────── adJoinBlock ─────────────────────────
 const adJoinBlock = `
-# ── Stage 1 : Active-Directory join ──────────────────────────────────────────
+# ── Stage 1 : AD Domain Join ────────────────────────────────────────────────
 
-# ----- INSTALL DEPENDENCIES -----
-log "Installing required packages..."
-if command -v apt-get &>/dev/null; then
-  DEBIAN_FRONTEND=noninteractive apt-get -qq update
-  DEBIAN_FRONTEND=noninteractive apt-get -yqq install \
-      realmd sssd sssd-tools adcli oddjob oddjob-mkhomedir \
-      samba-common-bin packagekit dnsutils expect krb5-user
-else
-  dnf -qy install realmd sssd adcli oddjob oddjob-mkhomedir \
-                  samba-common-tools bind-utils expect krb5-workstation
-fi
-log "Package installation complete."
+# replaced via go
+AD_DOMAIN="$AD_DOMAIN"
+AD_USER="$AD_USER"
+AD_PASS="$AD_PASS"
+AD_OU="$AD_OU"
+AD_DC="$AD_DC"
 
-# ----- CONFIGURATION -----
-DOMAIN_NAME="$AD_DOMAIN"
-DOMAIN_USER="$AD_USER"
-DOMAIN_PASSWORD="$AD_PASS"
-OU_PATH="$AD_OU"
-DC_IP="$AD_DC"
+# generated
+AD_REALM=$(echo "$AD_DOMAIN" | tr '[:lower:]' '[:upper:]')
+VM_NAME=$(hostname -s | tr '[:upper:]' '[:lower:]')
 
-# ----- DERIVED VARIABLES -----
-FQDN_LOWER=$(hostname --fqdn | tr '[:upper:]' '[:lower:]')
-SHORT_LOWER=$(hostname -s | tr '[:upper:]' '[:lower:]')
-IP_ADDR=$(hostname -I | awk '{print $1}')
-REALM_UPPER=$(echo "$DOMAIN_NAME" | tr '[:lower:]' '[:upper:]')
+install_ad_packages() {
+  log "Installing packages for AD join..."
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+  else
+    log "[ERROR] Cannot find /etc/os-release; aborting."
+    exit 1
+  fi
 
-# ----- HOSTNAME & /etc/hosts PATCH -----
-log "Setting hostname to $FQDN_LOWER and patching /etc/hosts"
-sudo hostnamectl set-hostname "$FQDN_LOWER"
+  case "$ID" in
+    debian|ubuntu)
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -y
+      apt-get install -y realmd sssd sssd-tools adcli oddjob oddjob-mkhomedir \
+        samba-common-bin packagekit dnsutils expect krb5-user
+      ;;
+    rhel|centos|rocky|almalinux|fedora)
+      yum install -y realmd sssd sssd-tools adcli oddjob oddjob-mkhomedir \
+        samba-common-tools expect krb5-workstation
+      ;;
+    *)
+      log "[ERROR] Unsupported distribution: $ID"
+      exit 1
+      ;;
+  esac
+}
 
-sudo sed -i "/\s$SHORT_LOWER$/Id" /etc/hosts
-if ! grep -qi "$FQDN_LOWER" /etc/hosts; then
-    echo "$IP_ADDR $FQDN_LOWER $SHORT_LOWER" | sudo tee -a /etc/hosts > /dev/null
-    log "Added $FQDN_LOWER to /etc/hosts"
-else
-    log "Entry for $FQDN_LOWER already exists in /etc/hosts"
-fi
+configure_dns() {
+  log "Setting DNS to use $AD_DC and search domain $AD_DOMAIN"
+  IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
+  if command -v resolvectl &>/dev/null; then
+    resolvectl dns "$IFACE" "$AD_DC"
+    resolvectl domain "$IFACE" "$AD_DOMAIN"
+  else
+    echo "nameserver $AD_DC" > /etc/resolv.conf
+    echo "search $AD_DOMAIN" >> /etc/resolv.conf
+  fi
+}
 
-# ----- DYNAMIC DNS UPDATE IF RECORD IS MISSING -----
-log "Checking DNS for $FQDN_LOWER"
-if ! host "$FQDN_LOWER" > /dev/null 2>&1; then
-    log "DNS record missing, registering via nsupdate"
-    echo "$DOMAIN_PASSWORD" | kinit "$DOMAIN_USER@$REALM_UPPER"
-    nsupdate -g <<EOF
-server $DC_IP
-update delete $FQDN_LOWER A
-update add $FQDN_LOWER 3600 A $IP_ADDR
-send
-EOF
-    log "DNS record updated for $FQDN_LOWER"
-else
-    log "DNS record already exists for $FQDN_LOWER"
-fi
+join_ad_domain() {
+  log "Checking if already joined to $AD_DOMAIN..."
+  if realm list | grep -q "^$AD_DOMAIN\$"; then
+    log "✔ Already joined to $AD_DOMAIN. Skipping join."
+    return
+  fi
 
-# ----- ENSURE DOMAIN BASE NAME RESOLVES -----
-if ! getent hosts "$DOMAIN_NAME" &>/dev/null; then
-  echo "$DC_IP $DOMAIN_NAME" | sudo tee -a /etc/hosts > /dev/null
-  log "Patched /etc/hosts for domain $DOMAIN_NAME → $DC_IP"
-fi
-
-# ----- PRE-CHECKS -----
-if ! command -v realm &> /dev/null; then
-    fatal "'realmd' is not installed."
-fi
-
-# ----- DOMAIN DISCOVERY -----
-log "Discovering domain: $DOMAIN_NAME"
-if ! realm discover "$DOMAIN_NAME"; then
-    fatal "Failed to discover domain."
-fi
-log "Domain $DOMAIN_NAME discovered successfully."
-
-# ----- JOINING DOMAIN -----
-if realm list | grep -qi "$DOMAIN_NAME"; then
-  log "Already joined to domain: $DOMAIN_NAME"
-else
-  log "Joining domain $DOMAIN_NAME as $DOMAIN_USER"
+  log "Joining domain $AD_DOMAIN with computer name $VM_NAME"
   expect <<EOF
-spawn realm join -v -U "$DOMAIN_USER" --computer-name=$SHORT_LOWER ${OU_PATH:+--computer-ou=$OU_PATH} "$DOMAIN_NAME"
+spawn realm join -v -U "$AD_USER" --computer-name=$VM_NAME ${AD_OU:+--computer-ou=$AD_OU} "$AD_DOMAIN"
 expect "Password for *:"
-send "$DOMAIN_PASSWORD\r"
+send "$AD_PASS\r"
 expect eof
 EOF
 
-  if realm list | grep -qi "$DOMAIN_NAME"; then
-    log "Successfully joined domain: $DOMAIN_NAME"
+  log "Validating that the system is now joined to $AD_DOMAIN..."
+  if realm list | grep -q "^$AD_DOMAIN\$"; then
+    log "✔ Successfully joined to $AD_DOMAIN"
   else
-    fatal "Failed to join domain."
+    log "[ERROR] Domain join appears to have failed — $AD_DOMAIN not listed in realm list"
+    exit 1
   fi
-fi
+}
 
-log "Stage 1 – AD join complete."
+patch_sssd_conf() {
+  local SSSD_CONF="/etc/sssd/sssd.conf"
+  log "Patching $SSSD_CONF"
+
+  if [ ! -f "$SSSD_CONF" ]; then
+    mkdir -p /etc/sssd
+    touch "$SSSD_CONF"
+    echo -e "[sssd]\ndomains = $AD_DOMAIN\nconfig_file_version = 2\nservices = nss, pam\n\n[domain/$AD_DOMAIN]" > "$SSSD_CONF"
+  fi
+
+  chmod 600 "$SSSD_CONF"
+
+  # Clean conflicting settings
+  sed -i '/^access_provider/d' "$SSSD_CONF"
+  sed -i '/^ad_access_filter/d' "$SSSD_CONF"
+  sed -i '/^simple_allow_users/d' "$SSSD_CONF"
+  sed -i '/^use_fully_qualified_names/d' "$SSSD_CONF"
+  sed -i '/^fallback_homedir/d' "$SSSD_CONF"
+  sed -i '/^default_shell/d' "$SSSD_CONF"
+
+  # Insert enforced access configuration
+  sed -i "/^\[domain\/.*\]/a access_provider = permit" "$SSSD_CONF"
+
+  # Insert default options if not already present
+  echo "use_fully_qualified_names = false" >> "$SSSD_CONF"
+  echo "fallback_homedir = /home/%u" >> "$SSSD_CONF"
+  echo "default_shell = /bin/bash" >> "$SSSD_CONF"
+
+  systemctl restart sssd
+  log "$SSSD_CONF patched with access_provider=permit (unrestricted AD logins)"
+}
+
+verify_ad_status() {
+  log "Verifying AD domain join status..."
+
+  # Check if realm list includes the domain
+  if realm list | grep -q "$AD_DOMAIN"; then
+    log "✔ realm list includes $AD_DOMAIN"
+  else
+    log "[ERROR] realm list does not include $AD_DOMAIN"
+    exit 1
+  fi
+
+  # Check sssctl domain status is online
+  if sssctl domain-status "$AD_DOMAIN" | grep -q "Online status: Online"; then
+    log "✔ SSSD reports domain $AD_DOMAIN is Online"
+  else
+    log "[ERROR] SSSD domain status is not Online for $AD_DOMAIN"
+    sssctl domain-status "$AD_DOMAIN"
+    exit 1
+  fi
+
+  # Check user can be resolved without FQDN suffix
+  TEST_USER="${AD_USER,,}"
+  if getent passwd "$TEST_USER" > /dev/null; then
+    log "✔ User $TEST_USER is resolvable without domain suffix"
+  else
+    log "[ERROR] getent could not resolve user $TEST_USER (without domain suffix)"
+    log "Attempting getent with FQDN: $TEST_USER@$AD_DOMAIN"
+    getent passwd "$TEST_USER@$AD_DOMAIN" || true
+    exit 1
+  fi
+}
+
+# ── Execute AD join sequence ────────────────────────────────────────────────
+install_ad_packages
+configure_dns
+join_ad_domain
+patch_sssd_conf
+sleep 5  # time to stabilize
+verify_ad_status
 `
 
 // ───────────────────────── saltBlock ──────────────────────────
@@ -528,6 +606,115 @@ else
   log "[WARNING] salt-call test.ping failed (local). Check service status and config."
 fi
 `
+
+const rdpSetupBlock = `
+# ── Stage 3 : RDP Setup ─────────────────────────────────────────────────────
+log "Installing and configuring RDP server..."
+
+# Detect distro
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+else
+  fatal "Cannot find /etc/os-release; aborting RDP setup."
+fi
+
+case "$ID" in
+  debian|ubuntu)
+    log "Installing xrdp and XFCE via apt for $ID $VERSION_ID"
+    sudo apt-get update -y
+    sudo apt-get install -y xrdp xfce4 xfce4-terminal
+    ;;
+  rhel|centos|rocky|almalinux|fedora)
+    log "Installing xrdp and XFCE via dnf/yum for $ID $VERSION_ID"
+    sudo dnf install -y xrdp xfce4-session xfce4-terminal
+    ;;
+  *)
+    fatal "Unsupported distribution: $ID for RDP setup."
+    ;;
+esac
+
+# Enable and start xrdp
+log "Enabling and starting xrdp service"
+sudo systemctl enable xrdp
+sudo systemctl start xrdp
+
+# Enable automatic home directory creation
+log "Configuring pam_mkhomedir for session login"
+if ! grep -q pam_mkhomedir.so /etc/pam.d/common-session; then
+  echo "session required pam_mkhomedir.so skel=/etc/skel umask=0077" | sudo tee -a /etc/pam.d/common-session
+fi
+
+if systemctl is-enabled --quiet oddjobd 2>/dev/null || systemctl list-unit-files | grep -q oddjobd; then
+  log "Enabling and starting oddjobd for mkhomedir support"
+  sudo systemctl enable oddjobd
+  sudo systemctl start oddjobd
+fi
+
+# Create default .xsession in skeleton for future users
+echo "startxfce4" | sudo tee /etc/skel/.xsession
+chmod +x /etc/skel/.xsession
+
+# If the domain user is resolvable, create home and session file explicitly
+if id "$AD_USER" &>/dev/null; then
+  USER_UID=$(id -u "$AD_USER")
+  USER_GID=$(id -g "$AD_USER")
+  HOME_DIR="/home/$AD_USER"
+  mkdir -p "$HOME_DIR"
+  echo "startxfce4" > "$HOME_DIR/.xsession"
+  chown "$USER_UID:$USER_GID" "$HOME_DIR" "$HOME_DIR/.xsession"
+  chmod +x "$HOME_DIR/.xsession"
+fi
+
+# Open RDP port
+if command -v ufw >/dev/null 2>&1; then
+  log "Allowing RDP through ufw firewall (port 3389)"
+  sudo ufw allow 3389/tcp
+elif command -v firewall-cmd >/dev/null 2>&1; then
+  log "Allowing RDP through firewalld (port 3389)"
+  sudo firewall-cmd --permanent --add-port=3389/tcp
+  sudo firewall-cmd --reload
+else
+  log "[WARNING] No known firewall tool detected. Skipping firewall configuration."
+fi
+
+# Allow anyone to start X sessions
+sudo sed -i 's/^allowed_users=.*/allowed_users=anybody/' /etc/X11/Xwrapper.config || true
+
+# configure login banner
+HOSTNAME=$(hostname -s)
+
+log "Setting login banner in /etc/issue"
+
+cat <<'EOF' | tee /etc/issue >/dev/null
+────────────────────────────────────────────────────────────
+Welcome to VM: $HOSTNAME
+
+To log in via RDP or SSH, use your domain credentials:
+
+Format:
+    john.doe@$domain.onmicrosoft.us
+
+Notes:
+  - Password is your Entra login password.
+  - Access is restricted to approved users.
+
+────────────────────────────────────────────────────────────
+EOF
+
+# Restart XRDP to apply all changes
+sudo systemctl restart xrdp
+
+# Confirm service is running
+if systemctl is-active --quiet xrdp; then
+  log "RDP service (xrdp) is active and running"
+else
+  fatal "RDP service (xrdp) is not running properly."
+fi
+
+log "Stage 3 – RDP setup complete."
+`
+
+
 
 // ───────────────────────── shellFooter ────────────────────────
 const shellFooter = `

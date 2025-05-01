@@ -27,7 +27,7 @@ type scaleCfg struct {
 
 // TODO: move to vdo config
 var tempConfig = scaleCfg{
-    MaxSessionsPerHost: 2,
+    MaxSessionsPerHost: 4,
     MinHosts:           1,
     MaxHosts:           10,
     DeleteOnScaleDown:  true,
