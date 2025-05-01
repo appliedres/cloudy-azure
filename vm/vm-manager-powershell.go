@@ -180,7 +180,7 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 
 	validFor := 1 * time.Hour
 
-	saltInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, *saltConfig.SaltMinionMsiFilename, validFor, sas.BlobPermissions{Read: true})
+	saltInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, saltConfig.SaltMinionMsiFilename, validFor, sas.BlobPermissions{Read: true})
 	if err != nil {
 		return "", fmt.Errorf("failed to generate SAS for Salt Minion Installer: %w", err)
 	}

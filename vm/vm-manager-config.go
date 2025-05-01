@@ -34,10 +34,21 @@ type AVDInstallConfig struct {
 }
 
 // SaltMinionInstallConfig defines the settings required for Salt Minion installation
+
 type SaltMinionInstallConfig struct {
-	SaltMaster              string // ip or hostname of Salt Master, to be used for registering the Salt Minion
-	
-	SaltMinionMsiFilename   *string // For windows installs
+	SaltMaster string // ip or hostname of Salt Master, to be used for registering the Salt Minion
+
+	SaltMinionMsiFilename 	string // For windows installs
+
+	SaltMinionRpmFilename 	string // For RHEL
+	SaltBaseRpmFilename 	string
+
+	SaltMinionDebFilename   string // For debian based, e.g. Ubuntu
+	SaltCommonDebFilename   string
+	BsdmainDebFilename 		string
+	BsdextraDebFilename     string
+	DctrlToolsDebFilename   string
+	NcalDebFilename         string
 }
 
 // InstallerBinaryStorageConfig defines the settings required for storing installer binaries

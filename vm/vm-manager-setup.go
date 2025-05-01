@@ -3,10 +3,13 @@ package vm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	cloudyazure "github.com/appliedres/cloudy-azure"
+	"github.com/appliedres/cloudy-azure/storage"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
 )
@@ -84,21 +87,23 @@ func (vmm *AzureVirtualMachineManager) virtualMachineSetupLinux(ctx context.Cont
 	log.DebugContext(ctx, "virtualMachineSetupLinux started")
 	defer log.DebugContext(ctx, "virtualMachineSetupLinux finished")
 
-	shellScript, err := vmm.buildVirtualMachineSetupScriptLinux(ctx, vm)
+	shellScript, err := vmm.buildVirtualMachineSetupScriptLinuxOffline(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build Linux setup script")
+		log.WarnContext(ctx, "failed to build Linux setup script for offline install, skipping....", logging.WithError(err))
+		return nil, nil
 	}
 
 	err = vmm.ExecuteRemoteShellScript(ctx, vm.ID, &shellScript, 10*time.Minute, 15*time.Second)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run Linux setup script")
+		log.WarnContext(ctx, "failed to execute Linux setup script for offline install, skipping....", logging.WithError(err))
+		return nil, nil
 	}
 
 	log.InfoContext(ctx, "Initial Linux VM setup completed successfully")
 	return vm, nil
 }
 
-func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScriptLinux(ctx context.Context, vm *models.VirtualMachine) (string, error) {
+func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScriptLinuxOnline(ctx context.Context, vm *models.VirtualMachine) (string, error) {
 	log := logging.GetLogger(ctx)
 	cfg := vmm.config.InitialSetupConfig
 	if cfg == nil || cfg.SaltMinionInstallConfig == nil {
@@ -221,4 +226,333 @@ else
   log "[WARNING] salt-call test.ping failed (local). Check service status and config."
 fi
 
+`
+
+
+////////////////////////////////////////////
+// Offline Install
+////////////////////////////////////////////
+
+func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScriptLinuxOffline(ctx context.Context, vm *models.VirtualMachine) (string, error) {
+	log := logging.GetLogger(ctx)
+	cfg := vmm.config
+	if cfg.InitialSetupConfig.SaltMinionInstallConfig == nil {
+		log.WarnContext(ctx, "Salt Minion install config not provided for Linux VM setup, skipping Salt Minion installation")
+		return "", nil
+	}
+
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionRpmFilename = 	"salt-minion.rpm"
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltBaseRpmFilename = 	"salt.rpm"
+	
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionDebFilename = "salt-minion.deb"
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltCommonDebFilename = "salt-common.deb"
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.BsdmainDebFilename = "bsdmain.deb"
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.BsdextraDebFilename = "bsdextra.deb"
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.DctrlToolsDebFilename = "dctrl.deb"
+	cfg.InitialSetupConfig.SaltMinionInstallConfig.NcalDebFilename = "ncal.deb"
+
+	saltScript, err := GenerateInstallSaltMinionScriptLinuxOffline(
+		ctx,
+		vmm.credentials,
+		cfg.InitialSetupConfig.BinaryStorage.BlobStorageAccount,
+		cfg.InitialSetupConfig.BinaryStorage.BlobContainer,
+		cfg.InitialSetupConfig.SaltMinionInstallConfig,
+	)
+	if err != nil {
+		return "", logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
+	}
+
+	return saltScript, nil
+}
+
+func GenerateInstallSaltMinionScriptLinuxOffline(
+	ctx context.Context,
+	creds *cloudyazure.AzureCredentials,
+	storageAccountName, containerName string,
+	saltConfig *SaltMinionInstallConfig,
+) (string, error) {
+
+	if saltConfig.SaltMaster == "" {
+		return "", errors.New("salt master hostname/IP is empty")
+	}
+	if saltConfig.SaltMinionDebFilename == "" && saltConfig.SaltMinionRpmFilename == "" {
+		return "", errors.New("At least one Salt minion package filename (deb or rpm) is required")
+	}
+	if saltConfig.SaltCommonDebFilename == "" {
+		return "", errors.New("At least one Salt common package filename (deb or rpm) is required")
+	}
+	if saltConfig.NcalDebFilename == "" {
+		return "", errors.New("ncal package filename is required")
+	}
+
+	validFor := 1 * time.Hour
+
+	// DEB packages
+	var debURLMinion, debURLCommon, bsdMainDebURL, bsdExtraDebURL, dctrlDebURL, ncalDebURL string
+
+
+	if saltConfig.SaltMinionDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.SaltMinionDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for salt-minion DEB: %w", err)
+		}
+		debURLMinion = u
+	}
+	if saltConfig.SaltCommonDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.SaltCommonDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for salt-common DEB: %w", err)
+		}
+		debURLCommon = u
+	}
+	if saltConfig.BsdmainDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.BsdmainDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for bsdmainutils DEB: %w", err)
+		}
+		bsdMainDebURL = u
+	}
+	if saltConfig.BsdextraDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.BsdextraDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for bsdmainutils DEB: %w", err)
+		}
+		bsdExtraDebURL = u
+	}
+	if saltConfig.DctrlToolsDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.DctrlToolsDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for dctrl-tools DEB: %w", err)
+		}
+		dctrlDebURL = u
+	}
+	if saltConfig.NcalDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.NcalDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for ncal DEB: %w", err)
+		}
+		ncalDebURL = u
+	}
+
+	// RPM packages
+	// var rpmURLMinion string
+	var rpmURLMinion, rpmURLSalt string
+	if saltConfig.SaltMinionRpmFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.SaltMinionRpmFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for salt-minion RPM: %w", err)
+		}
+		rpmURLMinion = u
+	}
+	if saltConfig.SaltBaseRpmFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.SaltBaseRpmFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for salt-common RPM: %w", err)
+		}
+		rpmURLSalt = u
+	}
+
+	// Generate the script with the SAS URLs
+	script := installSaltMinionLinuxTemplateOffline
+
+	replacements := map[string]string{
+		"$AZURE_SALT_MINION_DEB_URL":  	debURLMinion,
+		"$AZURE_SALT_COMMON_DEB_URL":  	debURLCommon,
+		"$AZURE_BSDMAIN_DEB_URL": 		bsdMainDebURL,
+		"$AZURE_BSDEXTRA_DEB_URL": 		bsdExtraDebURL,
+		"$AZURE_DCTRL_TOOLS_DEB_URL":  	dctrlDebURL,
+		"$AZURE_NCAL_DEB_URL":         	ncalDebURL,
+
+		"$AZURE_SALT_MINION_RPM_URL": 	rpmURLMinion,
+		"$AZURE_SALT_BASE_RPM_URL": 	rpmURLSalt,
+		
+		"$SALT_MASTER":               saltConfig.SaltMaster,
+	}
+
+	for placeholder, value := range replacements {
+		script = strings.ReplaceAll(script, placeholder, value)
+	}
+
+	return script, nil
+}
+
+// Air-gapped install using individual packages in storage account
+var installSaltMinionLinuxTemplateOffline = `#!/usr/bin/env bash
+set -euo pipefail
+
+trap 'echo "[ERROR] A fatal error occurred at line $LINENO. Exiting." >&2' ERR
+
+log_info()  { echo "[INFO] $*"; }
+log_error() { echo "[ERROR] $*" >&2; }
+
+DOWNLOAD_FOLDER="/tmp/ArkloudDownloads"
+[ -d "$DOWNLOAD_FOLDER" ] || { log_info "Creating $DOWNLOAD_FOLDER"; mkdir -p "$DOWNLOAD_FOLDER"; }
+
+log_info "Detecting package manager..."
+IS_RHEL=false
+IS_DEBIAN=false
+if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1 || command -v microdnf >/dev/null 2>&1; then
+    log_info "Detected RHEL-based system."
+    IS_RHEL=true
+elif command -v apt-get >/dev/null 2>&1; then
+    log_info "Detected Debian-based system."
+    IS_DEBIAN=true
+else
+    log_error "No recognized package manager (dnf/yum/microdnf or apt-get) found. Exiting."
+    exit 1
+fi
+
+#######################################################################
+# Debian / Ubuntu
+#######################################################################
+if [ "$IS_DEBIAN" = true ]; then
+    log_info "Installing DEB packages (offline)…"
+
+    fetch_and_install_deb() {
+        local url="$1" outfile="$2"
+        [ -n "$url" ] || { log_error "URL missing for $outfile — skipping."; return 1; }
+        log_info "Downloading $outfile"
+        curl -fSL "$url" -o "$outfile"
+        log_info "Installing $outfile"
+        if ! dpkg -i "$outfile"; then
+            log_info "Fixing dependencies for $outfile"
+            apt-get update -y && apt-get install -f -y
+        fi
+    }
+
+    fetch_and_install_deb "$AZURE_NCAL_DEB_URL"         "$DOWNLOAD_FOLDER/ncal.deb"
+	fetch_and_install_deb "$AZURE_BSDEXTRA_DEB_URL" 	"$DOWNLOAD_FOLDER/bsdextra.deb"
+    fetch_and_install_deb "$AZURE_BSDMAIN_DEB_URL" 		"$DOWNLOAD_FOLDER/bsdmain.deb"
+    fetch_and_install_deb "$AZURE_DCTRL_TOOLS_DEB_URL"  "$DOWNLOAD_FOLDER/dctrl.deb"
+    fetch_and_install_deb "$AZURE_SALT_COMMON_DEB_URL"  "$DOWNLOAD_FOLDER/salt-common.deb"
+    fetch_and_install_deb "$AZURE_SALT_MINION_DEB_URL"  "$DOWNLOAD_FOLDER/salt-minion.deb"
+fi
+
+#######################################################################
+# RHEL / CentOS / Rocky / Alma
+#######################################################################
+if [ "$IS_RHEL" = true ]; then
+    log_info "Installing RPM packages (offline)…"
+
+    # Pick the first available package manager
+    if command -v dnf >/dev/null 2>&1;      then PKG_CMD="dnf";      elif \
+       command -v yum >/dev/null 2>&1;      then PKG_CMD="yum";      else \
+       PKG_CMD="microdnf"; fi
+    INSTALL_OPTS="-y --nogpgcheck"
+
+    fetch_and_install_rpm() {
+        local url="$1" outfile="$2"
+        [ -n "$url" ] || { log_error "URL missing for $outfile — skipping."; return 1; }
+        log_info "Downloading $outfile"
+        curl -fSL "$url" -o "$outfile"
+        log_info "Installing $outfile via $PKG_CMD"
+        $PKG_CMD install $INSTALL_OPTS "$outfile"
+    }
+
+	fetch_and_install_rpm "$AZURE_SALT_BASE_RPM_URL" "$DOWNLOAD_FOLDER/salt.rpm"
+    fetch_and_install_rpm "$AZURE_SALT_MINION_RPM_URL" "$DOWNLOAD_FOLDER/salt-minion.rpm"
+fi
+
+#######################################################################
+# Common post-install steps
+#######################################################################
+# Update the minion configuration
+if [ -f /etc/salt/minion ]; then
+    log_info "Updating /etc/salt/minion configuration with master: $SALT_MASTER"
+    sed -i '/^[[:space:]]*master:/d' /etc/salt/minion
+    echo "master: $SALT_MASTER" | sudo tee -a /etc/salt/minion
+else
+    log_info "/etc/salt/minion not found. Assuming the package creates it on first run."
+fi
+
+# Restart the salt-minion service
+log_info "Restarting salt-minion service..."
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl restart salt-minion || log_info "[ERROR] Failed to restart salt-minion service via systemctl."
+else
+    sudo service salt-minion restart || log_info "[ERROR] Failed to restart salt-minion service via SysV."
+fi
+
+# ── Wait for service to stabilize ──────────────────────────────────────────
+sleep 5
+
+# ── Check minion logs for master connection ────────────────────────────────
+if sudo grep -qi "Authentication with master at" /var/log/salt/minion; then
+  log_info "Salt Minion attempted to connect to master $SALT_MASTER"
+else
+  log_info "[WARNING] Salt Minion log does not yet show a connection to the master."
+fi
+
+# ── Optionally check ping locally (does NOT verify master, but confirms minion works) ──
+if sudo salt-call --local test.ping; then
+  log_info "Salt Minion installed and working (local test.ping passed)"
+else
+  log_info "[WARNING] salt-call test.ping failed (local). Check service status and config."
+fi
+
+log_info "Salt installation and startup completed successfully!"
 `
