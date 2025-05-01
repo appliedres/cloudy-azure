@@ -38,7 +38,7 @@ type AVDInstallConfig struct {
 type SaltMinionInstallConfig struct {
 	SaltMaster string // ip or hostname of Salt Master, to be used for registering the Salt Minion
 
-	SaltMinionMsiFilename 	string // For windows installs
+	SaltMinionMsiFilename 	*string // For windows installs
 
 	SaltMinionRpmFilename 	string // For RHEL
 	SaltBaseRpmFilename 	string
