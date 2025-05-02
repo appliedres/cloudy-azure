@@ -241,16 +241,6 @@ func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScriptLinuxOfflin
 		return "", nil
 	}
 
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionRpmFilename = 	"salt-minion.rpm"
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltBaseRpmFilename = 	"salt.rpm"
-	
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionDebFilename = "salt-minion.deb"
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.SaltCommonDebFilename = "salt-common.deb"
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.BsdmainDebFilename = "bsdmain.deb"
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.BsdextraDebFilename = "bsdextra.deb"
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.DctrlToolsDebFilename = "dctrl.deb"
-	cfg.InitialSetupConfig.SaltMinionInstallConfig.NcalDebFilename = "ncal.deb"
-
 	saltScript, err := GenerateInstallSaltMinionScriptLinuxOffline(
 		ctx,
 		vmm.credentials,

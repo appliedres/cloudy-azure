@@ -18,6 +18,17 @@ import (
 func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config SetupScriptConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
+	// FIXME: temporary solution for air-gapped installs
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionRpmFilename = 	"salt-minion.rpm"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltBaseRpmFilename = 	"salt.rpm"
+	
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionDebFilename = "salt-minion.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltCommonDebFilename = "salt-common.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.BsdmainDebFilename = "bsdmain.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.BsdextraDebFilename = "bsdextra.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.DctrlToolsDebFilename = "dctrl.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.NcalDebFilename = "ncal.deb"
+
 	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
 	}
