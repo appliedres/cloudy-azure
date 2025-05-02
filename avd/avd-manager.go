@@ -67,9 +67,7 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 		},
 	}
 
-	avdOptions := baseOptions
-	avdOptions.APIVersion = "2023-09-05" // Important! Latest AVD API version is not supported in Azure Govt
-	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.credentials.SubscriptionID, cred, &avdOptions)
+	clientFactory, err := armdesktopvirtualization.NewClientFactory(avd.credentials.SubscriptionID, cred, &baseOptions)
 	if err != nil {
 		return err
 	}
