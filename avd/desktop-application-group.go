@@ -93,3 +93,30 @@ func (avd *AzureVirtualDesktopManager) AssignGroupToDesktopAppGroup(ctx context.
 	_ = res
 	return nil
 }
+
+func (avd *AzureVirtualDesktopManager) AssignUserToDesktopAppGroup(ctx context.Context, desktopAppGroupName, userObjectID string) error {
+	scope := fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.DesktopVirtualization/applicationgroups/%s",
+		avd.credentials.SubscriptionID, avd.credentials.ResourceGroup, desktopAppGroupName)
+
+	roleDefID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s",
+		avd.credentials.SubscriptionID, avd.config.DesktopApplicationUserRoleID)
+
+	uuidWithHyphen := uuid.New().String()
+
+	res, err := avd.roleAssignmentsClient.Create(ctx, scope, uuidWithHyphen,
+		armauthorization.RoleAssignmentCreateParameters{
+			Properties: &armauthorization.RoleAssignmentProperties{
+				RoleDefinitionID: to.Ptr(roleDefID),
+				PrincipalID:      to.Ptr(userObjectID), // <- use user object ID here
+			},
+		}, nil)
+
+	if err != nil {
+		return cloudy.Error(ctx, "AssignRoleToUser failure: %+v", err)
+	}
+	if res.ID == nil {
+		return cloudy.Error(ctx, "AssignRoleToUser failure: role ID is empty")
+	}
+
+	return nil
+}
