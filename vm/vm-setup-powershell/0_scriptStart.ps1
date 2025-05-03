@@ -2,7 +2,13 @@ Param(
     [int]$InstallTimeoutSeconds = 600  # Default timeout in seconds
 )
 
-$logFilePath = "$PSScriptRoot\install_log.txt"
+# Ensure persistent log directory
+$logDir = "C:\ProgramData\arkloud-bootstrap"
+if (-not (Test-Path $logDir)) {
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+}
+
+$logFilePath = Join-Path $logDir "install_log.txt"
 Start-Transcript -Path $logFilePath -Append
 
 function Exit-OnFailure {
