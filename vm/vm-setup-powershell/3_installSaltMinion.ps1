@@ -24,7 +24,6 @@ Write-Host "Salt Minion installer downloaded successfully."
 # --------------------------------------------------------------------------------
 # INSTALL SALT MINION (MSI) & START SERVICE
 # --------------------------------------------------------------------------------
-Wait-ForInstaller -timeoutSeconds $InstallTimeoutSeconds
 Write-Host "Salt Minion installation starting..."
 
 if (!(Test-Path $saltInstallerPath)) {
@@ -41,13 +40,8 @@ if (-not [string]::IsNullOrWhiteSpace("$SALT_MASTER")) {
     $saltArgs += "MASTER=$SALT_MASTER"
 }
 
-Write-Host "Launching Salt Minion installer..."
 try {
-    $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $saltArgs -NoNewWindow -PassThru -Wait
-    if ($process.ExitCode -ne 0) {
-        Exit-OnFailure "Salt Minion MSI did not exit cleanly. Exit code: $($process.ExitCode)"
-    }
-    Write-Host "Salt Minion MSI process exited successfully."
+    Install-MSIWithRetry -InstallerPath $saltInstallerPath -ArgumentList $saltArgs -TimeoutSeconds $InstallTimeoutSeconds -Description "Salt Minion"
 } catch {
     Exit-OnFailure "Error launching Salt Minion installer: $_"
 }
