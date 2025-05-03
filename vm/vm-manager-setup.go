@@ -18,6 +18,17 @@ func (vmm *AzureVirtualMachineManager) InitialVirtualMachineSetup(ctx context.Co
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "InitialVirtualMachineSetup started")
 
+	// FIXME: temporary solution for air-gapped installs
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionRpmFilename = "salt-minion.rpm"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltBaseRpmFilename = "salt.rpm"
+
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltMinionDebFilename = "salt-minion.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.SaltCommonDebFilename = "salt-common.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.BsdmainDebFilename = "bsdmain.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.BsdextraDebFilename = "bsdextra.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.DctrlToolsDebFilename = "dctrl.deb"
+	vmm.config.InitialSetupConfig.SaltMinionInstallConfig.NcalDebFilename = "ncal.deb"
+
 	var err error
 	switch vm.Template.OperatingSystem {
 	case models.VirtualMachineTemplateOperatingSystemWindows:
@@ -49,7 +60,7 @@ func (vmm *AzureVirtualMachineManager) virtualMachineSetupWindows(ctx context.Co
 			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
-		script, err := vmm.buildVirtualMachineSetupScript(ctx, *setupScriptConfig, hostPoolToken)
+		script, err := vmm.buildSetupScriptWindows(ctx, *setupScriptConfig, hostPoolToken)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
@@ -66,7 +77,7 @@ func (vmm *AzureVirtualMachineManager) virtualMachineSetupWindows(ctx context.Co
 
 	} else {
 		log.InfoContext(ctx, "Initial VM setup - AVD disabled")
-		script, err := vmm.buildVirtualMachineSetupScript(ctx, *setupScriptConfig, nil)
+		script, err := vmm.buildSetupScriptWindows(ctx, *setupScriptConfig, nil)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
 		}
@@ -228,7 +239,6 @@ fi
 
 `
 
-
 ////////////////////////////////////////////
 // Offline Install
 ////////////////////////////////////////////
@@ -279,7 +289,6 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 
 	// DEB packages
 	var debURLMinion, debURLCommon, bsdMainDebURL, bsdExtraDebURL, dctrlDebURL, ncalDebURL string
-
 
 	if saltConfig.SaltMinionDebFilename != "" {
 		u, err := storage.GenerateBlobSAS(
@@ -410,17 +419,17 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 	script := installSaltMinionLinuxTemplateOffline
 
 	replacements := map[string]string{
-		"$AZURE_SALT_MINION_DEB_URL":  	debURLMinion,
-		"$AZURE_SALT_COMMON_DEB_URL":  	debURLCommon,
-		"$AZURE_BSDMAIN_DEB_URL": 		bsdMainDebURL,
-		"$AZURE_BSDEXTRA_DEB_URL": 		bsdExtraDebURL,
-		"$AZURE_DCTRL_TOOLS_DEB_URL":  	dctrlDebURL,
-		"$AZURE_NCAL_DEB_URL":         	ncalDebURL,
+		"$AZURE_SALT_MINION_DEB_URL": debURLMinion,
+		"$AZURE_SALT_COMMON_DEB_URL": debURLCommon,
+		"$AZURE_BSDMAIN_DEB_URL":     bsdMainDebURL,
+		"$AZURE_BSDEXTRA_DEB_URL":    bsdExtraDebURL,
+		"$AZURE_DCTRL_TOOLS_DEB_URL": dctrlDebURL,
+		"$AZURE_NCAL_DEB_URL":        ncalDebURL,
 
-		"$AZURE_SALT_MINION_RPM_URL": 	rpmURLMinion,
-		"$AZURE_SALT_BASE_RPM_URL": 	rpmURLSalt,
-		
-		"$SALT_MASTER":               saltConfig.SaltMaster,
+		"$AZURE_SALT_MINION_RPM_URL": rpmURLMinion,
+		"$AZURE_SALT_BASE_RPM_URL":   rpmURLSalt,
+
+		"$SALT_MASTER": saltConfig.SaltMaster,
 	}
 
 	for placeholder, value := range replacements {
