@@ -15,19 +15,8 @@ import (
 )
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
-func (vmm *AzureVirtualMachineManager) buildVirtualMachineSetupScript(ctx context.Context, config SetupScriptConfig, hostPoolRegistrationToken *string) (*string, error) {
+func (vmm *AzureVirtualMachineManager) buildSetupScriptWindows(ctx context.Context, config SetupScriptConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
-
-	// FIXME: temporary solution for air-gapped installs
-	config.SaltMinionInstallConfig.SaltMinionRpmFilename = 	"salt-minion.rpm"
-	config.SaltMinionInstallConfig.SaltBaseRpmFilename = 	"salt.rpm"
-	
-	config.SaltMinionInstallConfig.SaltMinionDebFilename = "salt-minion.deb"
-	config.SaltMinionInstallConfig.SaltCommonDebFilename = "salt-common.deb"
-	config.SaltMinionInstallConfig.BsdmainDebFilename = "bsdmain.deb"
-	config.SaltMinionInstallConfig.BsdextraDebFilename = "bsdextra.deb"
-	config.SaltMinionInstallConfig.DctrlToolsDebFilename = "dctrl.deb"
-	config.SaltMinionInstallConfig.NcalDebFilename = "ncal.deb"
 
 	if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
