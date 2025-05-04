@@ -12,13 +12,13 @@ import (
 	cm "github.com/appliedres/cloudy/models"
 )
 
-func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, hostPoolName string) (*armdesktopvirtualization.SessionHost, error) {
+func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, hostPoolName string, idInPool int) (*armdesktopvirtualization.SessionHost, error) {
 	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, "CreateSessionHost - Starting", "HostPoolName", hostPoolName)
 
 	timestampedID := cloudy.GenerateTimestampIDNow()
 	sessionHostID := fmt.Sprintf("shvm-%s", timestampedID)
-	sessionHostName := fmt.Sprintf("Session Host VM %s", timestampedID)
+	sessionHostName := fmt.Sprintf("Session Host #%d Pool: %s", idInPool, hostPoolName)
 
 	// TODO: make session host template configurable
 	sessionHostVM := &cm.VirtualMachine{
