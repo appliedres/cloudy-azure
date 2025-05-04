@@ -20,13 +20,14 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 	sessionHostID := fmt.Sprintf("shvm-%s", timestampedID)
 	sessionHostName := fmt.Sprintf("Session Host VM %s", timestampedID)
 
+	// TODO: make session host template configurable
 	sessionHostVM := &cm.VirtualMachine{
 		ID: 			sessionHostID,
 		Name: 			sessionHostName,
 		Description: 	"a session host VM for pooled AVD'",
 		Template: &cm.VirtualMachineTemplate{
 			OperatingSystem:      "windows",
-			OsBaseImageID:        "/subscriptions/58a87bdf-316e-464d-90c5-088c55e78c45/resourceGroups/arkloud-portal-testing-usgt/providers/Microsoft.Compute/galleries/vulcan_test_image_gallery/images/Windows-11-WS/versions/1.0.0",
+			OsBaseImageID: "marketplace::microsoftwindowsdesktop::windows-11::win11-22h2-ent::latest",
 			LocalAdministratorID: "salt",
 			Size: &cm.VirtualMachineSize{
 				ID: "Standard_D2s_v4",
