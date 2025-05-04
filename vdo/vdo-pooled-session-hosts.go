@@ -27,7 +27,7 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 		Description: 	"a session host VM for pooled AVD'",
 		Template: &cm.VirtualMachineTemplate{
 			OperatingSystem:      "windows",
-			OsBaseImageID: "marketplace::microsoftwindowsdesktop::windows-11::win11-22h2-ent::latest",
+			OsBaseImageID: "marketplace::microsoftwindowsdesktop::windows-11::win11-22h2-avd::latest",
 			LocalAdministratorID: "salt",
 			Size: &cm.VirtualMachineSize{
 				ID: "Standard_D2s_v4",
