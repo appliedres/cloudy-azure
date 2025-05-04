@@ -265,12 +265,18 @@ func (avd *AzureVirtualDesktopManager) PreRegister(ctx context.Context, vm *mode
 	if targetHostPool == nil {
 		log.InfoContext(ctx, "No suitable host pool found; creating new host pool")
 
-		highestHostPoolName := hostPools[len(hostPools)-1].Name
-		highestSuffix := strings.TrimPrefix(*highestHostPoolName, avd.Config.PersonalHostPoolNamePrefix)
-		nameSuffix, err := GenerateNextName(highestSuffix, 2)
-		if err != nil {
-			log.ErrorContext(ctx, "Failed to generate new host pool name", "Error", err)
-			return nil, nil, fmt.Errorf("failed to generate new host pool name: %w", err)
+		var nameSuffix string
+		if len(hostPools) == 0 {
+			nameSuffix = "ALPHA"
+		} else {
+			highestHostPoolName := hostPools[len(hostPools)-1].Name
+			highestSuffix := strings.TrimPrefix(*highestHostPoolName, avd.Config.PersonalHostPoolNamePrefix)
+			var err error
+			nameSuffix, err = GenerateNextName(highestSuffix, 2)
+			if err != nil {
+				log.ErrorContext(ctx, "Failed to generate new host pool name", "Error", err)
+				return nil, nil, fmt.Errorf("failed to generate new host pool name: %w", err)
+			}
 		}
 
 		log.InfoContext(ctx, "Creating new AVD stack", "Suffix", nameSuffix)
