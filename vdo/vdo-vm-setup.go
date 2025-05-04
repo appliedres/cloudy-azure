@@ -275,6 +275,32 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 	return script, nil
 }
 
+// stripADUsername removes the AD domain prefix or suffix from a full username.
+func stripADUsername(ctx context.Context, fullUsername string) string {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "stripADUsername started", "fullUsername", fullUsername)
+
+	var stripped = fullUsername
+
+	// Strip prefix: DOMAIN\username or DOMAIN/username
+	if idx := strings.IndexAny(stripped, "\\/"); idx != -1 {
+		stripped = stripped[idx+1:]
+	}
+
+	// Strip suffix: username@domain.com
+	if atIdx := strings.Index(stripped, "@"); atIdx != -1 {
+		stripped = stripped[:atIdx]
+	}
+
+	// Final validation: no empty string, no backslash, slash, or @
+	if strings.TrimSpace(stripped) == "" || strings.ContainsAny(stripped, "\\/@") {
+		log.WarnContext(ctx, "Invalid AD username format after stripping. using it anyways...", "input", fullUsername, "stripped", stripped)
+		return stripped
+	}
+
+	log.DebugContext(ctx, "stripADUsername complete", "stripped", stripped)
+	return stripped
+}
 
 // GenerateLinuxBootstrapScript builds a single bash script:
 // 1) AD join block  (if cfg.AD != nil)
@@ -290,19 +316,13 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
     // AD block
     if cfg.AD != nil {
 
-		// strip DOMAIN\ or DOMAIN/ prefix
-		strippedUser := cfg.AD.DomainUsername
-		if idx := strings.IndexAny(strippedUser, "\\/"); idx != -1 {
-			strippedUser = strippedUser[idx+1:]
-		}
-
         ou := stringPtrOrEmpty(cfg.AD.OrganizationalUnitPath)
         dc := firstOrEmpty(cfg.VM.DomainControllers)
 
         ad := adJoinBlock
         for k, v := range map[string]string{
             "$AD_DOMAIN": cfg.AD.DomainName,
-            "$AD_USER":   strippedUser,
+            "$AD_USER":   stripADUsername(ctx, cfg.AD.DomainUsername),
             "$AD_PASS":   cfg.AD.DomainPassword,
             "$AD_OU":     ou,
             "$AD_DC":     dc,
@@ -430,7 +450,7 @@ configure_dns() {
 join_ad_domain() {
   log "Checking if already joined to $AD_DOMAIN..."
   if realm list | grep -q "^$AD_DOMAIN\$"; then
-    log "✔ Already joined to $AD_DOMAIN. Skipping join."
+    log "Already joined to $AD_DOMAIN. Skipping join."
     return
   fi
 
@@ -444,7 +464,7 @@ EOF
 
   log "Validating that the system is now joined to $AD_DOMAIN..."
   if realm list | grep -q "^$AD_DOMAIN\$"; then
-    log "✔ Successfully joined to $AD_DOMAIN"
+    log "Successfully joined to $AD_DOMAIN"
   else
     log "[ERROR] Domain join appears to have failed — $AD_DOMAIN not listed in realm list"
     exit 1
@@ -488,7 +508,7 @@ verify_ad_status() {
 
   # Check if realm list includes the domain
   if realm list | grep -q "$AD_DOMAIN"; then
-    log "✔ realm list includes $AD_DOMAIN"
+    log "realm list includes $AD_DOMAIN"
   else
     log "[ERROR] realm list does not include $AD_DOMAIN"
     exit 1
@@ -496,7 +516,7 @@ verify_ad_status() {
 
   # Check sssctl domain status is online
   if sssctl domain-status "$AD_DOMAIN" | grep -q "Online status: Online"; then
-    log "✔ SSSD reports domain $AD_DOMAIN is Online"
+    log "SSSD reports domain $AD_DOMAIN is Online"
   else
     log "[ERROR] SSSD domain status is not Online for $AD_DOMAIN"
     sssctl domain-status "$AD_DOMAIN"
@@ -506,7 +526,7 @@ verify_ad_status() {
   # Check user can be resolved without FQDN suffix
   TEST_USER="${AD_USER,,}"
   if getent passwd "$TEST_USER" > /dev/null; then
-    log "✔ User $TEST_USER is resolvable without domain suffix"
+    log "User $TEST_USER is resolvable without domain suffix"
   else
     log "[ERROR] getent could not resolve user $TEST_USER (without domain suffix)"
     log "Attempting getent with FQDN: $TEST_USER@$AD_DOMAIN"
@@ -615,7 +635,8 @@ log "Installing and configuring RDP server..."
 if [ -f /etc/os-release ]; then
   . /etc/os-release
 else
-  fatal "Cannot find /etc/os-release; aborting RDP setup."
+  log "[ERROR] Cannot find /etc/os-release; aborting."
+  exit 1
 fi
 
 case "$ID" in
@@ -624,12 +645,54 @@ case "$ID" in
     sudo apt-get update -y
     sudo apt-get install -y xrdp xfce4 xfce4-terminal
     ;;
+
   rhel|centos|rocky|almalinux|fedora)
-    log "Installing xrdp and XFCE via dnf/yum for $ID $VERSION_ID"
-    sudo dnf install -y xrdp xfce4-session xfce4-terminal
+    log "Installing xrdp and XFCE for $ID $VERSION_ID"
+
+    RHEL_VERSION=$(rpm -E %rhel)
+    if [[ -z "$RHEL_VERSION" ]]; then
+      log "[ERROR] Could not determine RHEL version for EPEL install."
+      exit 1
+    fi
+
+    # Try standard EPEL install first
+    if ! sudo dnf install -y epel-release; then
+      log "epel-release install failed, falling back to direct EPEL RPM"
+
+      if ! command -v curl >/dev/null 2>&1; then
+        log "curl not found, installing it first..."
+        sudo dnf install -y curl || { log "[ERROR] Failed to install curl"; exit 1; }
+      fi
+
+      EPEL_URL="https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL_VERSION}.noarch.rpm"
+      log "Checking EPEL URL: $EPEL_URL"
+
+      if curl -Is "$EPEL_URL" | head -n 1 | grep -q "200"; then
+        if ! sudo dnf install -y "$EPEL_URL" --nogpgcheck; then
+          log "[ERROR] Failed to install EPEL from $EPEL_URL"
+          exit 1
+        fi
+      else
+        log "[ERROR] EPEL URL not reachable or invalid: $EPEL_URL"
+        exit 1
+      fi
+    fi
+
+    # Enable XRDP Copr repository if needed
+    if ! dnf list xrdp &>/dev/null; then
+      log "xrdp not found in current repos, enabling Copr repo..."
+      sudo dnf install -y 'dnf-command(copr)'
+      sudo dnf copr enable -y @xrdp/xrdp
+    fi
+
+    # Install full XFCE and xorgxrdp
+    sudo dnf groupinstall -y "Xfce"
+    sudo dnf install -y xrdp xorgxrdp --setopt=install_weak_deps=False
     ;;
+
   *)
-    fatal "Unsupported distribution: $ID for RDP setup."
+    log "[ERROR] Unsupported distribution: $ID for RDP setup."
+    exit 1
     ;;
 esac
 
@@ -650,9 +713,9 @@ if systemctl is-enabled --quiet oddjobd 2>/dev/null || systemctl list-unit-files
   sudo systemctl start oddjobd
 fi
 
-# Create default .xsession in skeleton for future users
-echo "startxfce4" | sudo tee /etc/skel/.xsession
-chmod +x /etc/skel/.xsession
+# Create default .Xclients in skeleton for future users
+echo "startxfce4" | sudo tee /etc/skel/.Xclients
+chmod +x /etc/skel/.Xclients
 
 # If the domain user is resolvable, create home and session file explicitly
 if id "$AD_USER" &>/dev/null; then
@@ -660,9 +723,9 @@ if id "$AD_USER" &>/dev/null; then
   USER_GID=$(id -g "$AD_USER")
   HOME_DIR="/home/$AD_USER"
   mkdir -p "$HOME_DIR"
-  echo "startxfce4" > "$HOME_DIR/.xsession"
-  chown "$USER_UID:$USER_GID" "$HOME_DIR" "$HOME_DIR/.xsession"
-  chmod +x "$HOME_DIR/.xsession"
+  echo "startxfce4" > "$HOME_DIR/.Xclients"
+  chown "$USER_UID:$USER_GID" "$HOME_DIR" "$HOME_DIR/.Xclients"
+  chmod +x "$HOME_DIR/.Xclients"
 fi
 
 # Open RDP port
@@ -680,7 +743,7 @@ fi
 # Allow anyone to start X sessions
 sudo sed -i 's/^allowed_users=.*/allowed_users=anybody/' /etc/X11/Xwrapper.config || true
 
-# configure login banner
+# Configure login banner
 HOSTNAME=$(hostname -s)
 
 log "Setting login banner in /etc/issue"
@@ -692,7 +755,7 @@ Welcome to VM: $HOSTNAME
 To log in via RDP or SSH, use your domain credentials:
 
 Format:
-    john.doe@$domain.onmicrosoft.us
+    john.doe@yourdomain.onmicrosoft.us
 
 Notes:
   - Password is your Entra login password.
@@ -708,12 +771,12 @@ sudo systemctl restart xrdp
 if systemctl is-active --quiet xrdp; then
   log "RDP service (xrdp) is active and running"
 else
-  fatal "RDP service (xrdp) is not running properly."
+  log "[ERROR] RDP service (xrdp) is not running properly."
+  exit 1
 fi
 
 log "Stage 3 – RDP setup complete."
 `
-
 
 
 // ───────────────────────── shellFooter ────────────────────────
