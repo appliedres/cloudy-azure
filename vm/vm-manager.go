@@ -3,8 +3,10 @@ package vm
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -329,6 +331,8 @@ func pollCommandExecution(ctx context.Context, response *runtime.Poller[armcompu
 
 // processCommandResult processes and logs the output of a remote command execution.
 func processCommandResult(ctx context.Context, result armcompute.RunCommandResult, label string) error {
+	var controlChars = regexp.MustCompile(`[\x00-\x1F\x7F]`)
+
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, fmt.Sprintf("%s execution completed, processing result", label))
 
@@ -338,16 +342,29 @@ func processCommandResult(ctx context.Context, result armcompute.RunCommandResul
 				message := *output.Message
 				lines := strings.Split(message, "\n")
 				for _, line := range lines {
-					trimmedLine := strings.TrimSpace(line)
-					if trimmedLine == "" {
-						continue // Skip empty lines
+					// trim whitespaces
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
 					}
-					safeLogContent := fmt.Sprintf("[%s Output]: %s", label, trimmedLine)
-					if strings.Contains(strings.ToLower(trimmedLine), "error") {
-						err := fmt.Errorf("%s response contains an error: %s", label, trimmedLine)
+
+					// remove control characters
+					line = controlChars.ReplaceAllString(line, "")
+
+					// ensure valid UTF-8 encoding
+					// This is a safeguard, as Azure should return valid UTF-8, but we handle it just in case.
+					if !utf8.ValidString(line) {
+						line = strings.ToValidUTF8(line, "")
+					}
+
+					// add labeling
+					safeLogContent := fmt.Sprintf("[%s Output]: %s", label, line)
+					if strings.Contains(strings.ToLower(line), "error") {
+						err := fmt.Errorf("%s response contains an error: %s", label, line)
 						log.ErrorContext(ctx, safeLogContent)
 						return logging.LogAndWrapErr(ctx, log, err, fmt.Sprintf("%s script error detected", label))
 					}
+
 					log.InfoContext(ctx, safeLogContent)
 				}
 			}

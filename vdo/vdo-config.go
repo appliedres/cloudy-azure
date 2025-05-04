@@ -28,12 +28,13 @@ type SaltMinionInstallConfig struct {
 
 	SaltMinionMsiFilename string // For windows installs
 
-	SaltMinionRpmFilename string // For RHEL
-	SaltCommonRpmFilename string
+	SaltMinionRpmFilename 	string // For RHEL
+	SaltBaseRpmFilename 	string
 
 	SaltMinionDebFilename   string // For debian based, e.g. Ubuntu
 	SaltCommonDebFilename   string
-	BsdmainutilsDebFilename string
+	BsdmainDebFilename 		string
+	BsdextraDebFilename     string
 	DctrlToolsDebFilename   string
 	NcalDebFilename         string
 }

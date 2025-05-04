@@ -29,7 +29,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
-		script, err := vdo.buildVirtualMachineSetupScript(ctx, vdoConfig, hostPoolToken)
+		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
@@ -46,7 +46,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 
 	} else {
 		log.InfoContext(ctx, "Initial VM setup - AVD disabled")
-		script, err := vdo.buildVirtualMachineSetupScript(ctx, vdoConfig, nil)
+		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, nil)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
 		}
@@ -131,7 +131,7 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 	if saltConfig.SaltMinionDebFilename == "" && saltConfig.SaltMinionRpmFilename == "" {
 		return "", errors.New("At least one Salt minion package filename (deb or rpm) is required")
 	}
-	if saltConfig.SaltCommonDebFilename == "" && saltConfig.SaltCommonRpmFilename == "" {
+	if saltConfig.SaltCommonDebFilename == "" && saltConfig.SaltBaseRpmFilename == "" {
 		return "", errors.New("At least one Salt common package filename (deb or rpm) is required")
 	}
 	if saltConfig.NcalDebFilename == "" {
@@ -141,7 +141,7 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 	validFor := 1 * time.Hour
 
 	// DEB packages
-	var debURLMinion, debURLCommon, bsdDebURL, dctrlDebURL, ncalDebURL string
+	var debURLMinion, debURLCommon, bsdMainDebURL, bsdExtraDebURL, dctrlDebURL, ncalDebURL string
 
 	if saltConfig.SaltMinionDebFilename != "" {
 		u, err := storage.GenerateBlobSAS(
@@ -173,20 +173,35 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 		}
 		debURLCommon = u
 	}
-	if saltConfig.BsdmainutilsDebFilename != "" {
+	if saltConfig.BsdmainDebFilename != "" {
 		u, err := storage.GenerateBlobSAS(
 			ctx,
 			creds,
 			storageAccountName,
 			containerName,
-			saltConfig.BsdmainutilsDebFilename,
+			saltConfig.BsdmainDebFilename,
 			validFor,
 			sas.BlobPermissions{Read: true},
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate SAS for bsdmainutils DEB: %w", err)
 		}
-		bsdDebURL = u
+		bsdMainDebURL = u
+	}
+	if saltConfig.BsdextraDebFilename != "" {
+		u, err := storage.GenerateBlobSAS(
+			ctx,
+			creds,
+			storageAccountName,
+			containerName,
+			saltConfig.BsdextraDebFilename,
+			validFor,
+			sas.BlobPermissions{Read: true},
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate SAS for bsdmainutils DEB: %w", err)
+		}
+		bsdExtraDebURL = u
 	}
 	if saltConfig.DctrlToolsDebFilename != "" {
 		u, err := storage.GenerateBlobSAS(
@@ -220,7 +235,7 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 	}
 
 	// RPM packages
-	var rpmURLMinion, rpmURLCommon string
+	var rpmURLMinion, rpmURLSalt string
 	if saltConfig.SaltMinionRpmFilename != "" {
 		u, err := storage.GenerateBlobSAS(
 			ctx,
@@ -236,36 +251,37 @@ func GenerateInstallSaltMinionScriptLinuxOffline(
 		}
 		rpmURLMinion = u
 	}
-	if saltConfig.SaltCommonRpmFilename != "" {
+	if saltConfig.SaltBaseRpmFilename != "" {
 		u, err := storage.GenerateBlobSAS(
 			ctx,
 			creds,
 			storageAccountName,
 			containerName,
-			saltConfig.SaltCommonRpmFilename,
+			saltConfig.SaltBaseRpmFilename,
 			validFor,
 			sas.BlobPermissions{Read: true},
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate SAS for salt-common RPM: %w", err)
 		}
-		rpmURLCommon = u
+		rpmURLSalt = u
 	}
 
 	// Generate the script with the SAS URLs
-	script := installSaltMinionLinuxTemplate
+	script := installSaltMinionLinuxTemplateOffline
 
 	replacements := map[string]string{
-		"$AZURE_SALT_MINION_DEB_URL":  debURLMinion,
-		"$AZURE_SALT_COMMON_DEB_URL":  debURLCommon,
-		"$AZURE_BSDMAINUTILS_DEB_URL": bsdDebURL,
-		"$AZURE_DCTRL_TOOLS_DEB_URL":  dctrlDebURL,
-		"$AZURE_NCAL_DEB_URL":         ncalDebURL,
+		"$AZURE_SALT_MINION_DEB_URL": debURLMinion,
+		"$AZURE_SALT_COMMON_DEB_URL": debURLCommon,
+		"$AZURE_BSDMAIN_DEB_URL":     bsdMainDebURL,
+		"$AZURE_BSDEXTRA_DEB_URL":    bsdExtraDebURL,
+		"$AZURE_DCTRL_TOOLS_DEB_URL": dctrlDebURL,
+		"$AZURE_NCAL_DEB_URL":        ncalDebURL,
 
 		"$AZURE_SALT_MINION_RPM_URL": rpmURLMinion,
-		"$AZURE_SALT_COMMON_RPM_URL": rpmURLCommon,
+		"$AZURE_SALT_BASE_RPM_URL":   rpmURLSalt,
 
-		"$SALT_MASTER":               saltConfig.SaltMaster,
+		"$SALT_MASTER": saltConfig.SaltMaster,
 	}
 
 	for placeholder, value := range replacements {
@@ -786,7 +802,7 @@ log "Bootstrap finished OK"
 
 
 // Air-gapped install using individual packages in storage account
-var installSaltMinionLinuxTemplate = `#!/usr/bin/env bash
+var installSaltMinionLinuxTemplateOffline = `#!/usr/bin/env bash
 set -euo pipefail
 
 # Trap errors and report line number

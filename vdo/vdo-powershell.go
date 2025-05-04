@@ -15,7 +15,7 @@ import (
 )
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
-func (vdo VirtualDesktopOrchestrator) buildVirtualMachineSetupScript(ctx context.Context, config VirtualDesktopOrchestratorConfig, hostPoolRegistrationToken *string) (*string, error) {
+func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(ctx context.Context, config VirtualDesktopOrchestratorConfig, hostPoolRegistrationToken *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
 	// TODO: validate VDO config

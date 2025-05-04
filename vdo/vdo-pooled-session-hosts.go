@@ -59,7 +59,7 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 	// build setup script
 	vdoConfig := vdo.config
 	vdoConfig.SaltMinionInstall = nil // disable salt minion install
-	script, err := vdo.buildVirtualMachineSetupScript(ctx, vdoConfig, hostPoolToken)
+	script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken)
 	if err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 	}

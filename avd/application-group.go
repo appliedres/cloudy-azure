@@ -144,6 +144,8 @@ func (avd *AzureVirtualDesktopManager) AssignAVDUserGroupToAppGroup(ctx context.
 	return nil
 }
 
+// TODO assign user to app group
+
 // Used for assigning a role to a user or group in an application group
 func (avd *AzureVirtualDesktopManager) AssignPrincipalToAppGroup(ctx context.Context, appGroupName string, principalID string) error {
 	// Source: https://learn.microsoft.com/en-us/answers/questions/2104093/azure-virtual-desktop-application-group-assignment
