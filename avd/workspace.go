@@ -27,7 +27,7 @@ func (avd *AzureVirtualDesktopManager) CreatePersonalWorkspaceForAppGroup(ctx co
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
 			ApplicationGroupReferences: appGroups,
-			FriendlyName:               to.Ptr("Workspace for AVD stack '" + suffix + "'"),
+			FriendlyName:               to.Ptr(avd.Config.PersonalWorkspaceNamePrefix + "Workspace for AVD stack '" + suffix + "'"),
 			Description:                to.Ptr("Generated via cloudy-azure"),
 		},
 	}
@@ -39,14 +39,14 @@ func (avd *AzureVirtualDesktopManager) CreatePersonalWorkspaceForAppGroup(ctx co
 	return &resp.Workspace, nil
 }
 
-func (avd *AzureVirtualDesktopManager) CreatePooledWorkspace(ctx context.Context, suffix string, tags map[string]*string) (*armdesktopvirtualization.Workspace, error) {
-	workspaceName := avd.Config.PooledWorkspaceNamePrefix + suffix
+func (avd *AzureVirtualDesktopManager) CreatePooledWorkspace(ctx context.Context, teamName string, tags map[string]*string) (*armdesktopvirtualization.Workspace, error) {
+	workspaceName := avd.Config.PooledWorkspaceNamePrefix + teamName
 
 	newWorkspace := armdesktopvirtualization.Workspace{
 		Location: to.Ptr(string(avd.Credentials.Region)),
 		Tags:     tags,
 		Properties: &armdesktopvirtualization.WorkspaceProperties{
-			FriendlyName: to.Ptr("Workspace for '" + suffix + "'"),
+			FriendlyName: to.Ptr(avd.Config.PooledWorkspaceNamePrefix + " Pooled Workspace for Team: '" + teamName + "'"),
 			Description:  to.Ptr("Generated via cloudy-azure"),
 		},
 	}
