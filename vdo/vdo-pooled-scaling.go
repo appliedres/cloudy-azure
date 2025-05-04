@@ -88,7 +88,7 @@ func (vdo *VirtualDesktopOrchestrator) purgeStaleHost(ctx context.Context, host 
     }
 
     // best-effort delete session host VM
-    log.DebugContext(ctx, "Deleting associated session host VM", "host", hostName)
+    log.DebugContext(ctx, "Attempting to delete associated session host VM if it exists", "host", hostName)
     if err := vdo.vmManager.DeleteVirtualMachine(ctx, hostVMID); err != nil {
         log.WarnContext(ctx, "Failed to delete session host VM", "host", hostName, "err", err)
     } else {
@@ -244,31 +244,50 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
     var (
         upHosts       []*armdesktopvirtualization.SessionHost
         shutdownHosts []*armdesktopvirtualization.SessionHost
-        staleHosts    []*armdesktopvirtualization.SessionHost
+        hostsToDelete    []*armdesktopvirtualization.SessionHost
     )
 
     // 3) Categorize hosts by status
     for _, h := range hosts {
         if h.Properties == nil || h.Properties.Status == nil {
-            log.DebugContext(ctx, "Found stale host entry", "host", *h.Name)
-            staleHosts = append(staleHosts, h)
+            log.DebugContext(ctx, "Found session host with empty properties or status. Marking it for deletion", "host", *h.Name)
+            hostsToDelete = append(hostsToDelete, h)
             continue
         }
         status := *h.Properties.Status
         log.DebugContext(ctx, "Host status check", "host", *h.Name, "status", status)
         switch status {
         case armdesktopvirtualization.StatusAvailable:
+            log.DebugContext(ctx, "Host is available. Marking it as 'up'", "host", *h.Name)
             upHosts = append(upHosts, h)
         case armdesktopvirtualization.StatusShutdown:
+            // sometimes session hosts report shutdown even if the VM does not exist. We'll verify that it exists.
+            _, _, vmName, err := vdo.avdManager.ParseSessionHostName(ctx, h)
+            if err != nil {
+                log.WarnContext(ctx, "Failed to parse session host name. Marking it for deletion", "host name", *h.Name, "err", err)
+                hostsToDelete = append(hostsToDelete, h)
+                continue
+            }
+            
+            vm, err := vdo.vmManager.GetVirtualMachine(ctx, vmName, true)
+            if err != nil || vm == nil {
+                log.WarnContext(ctx, "GetVirtualMachine failed for shutdown host. Marking it for deletion", "host", *h.Name, "vmName", vmName, "err", err)
+                hostsToDelete = append(hostsToDelete, h)
+                continue
+            }
+
+            // session host reports stale and VM exists, mark as shutdown
+            log.DebugContext(ctx, "Session host is shutdown amd VM exists. Marking it as shutdown", "host", *h.Name, "vmName", vmName)
             shutdownHosts = append(shutdownHosts, h)
         default:
-            staleHosts = append(staleHosts, h)
+            log.DebugContext(ctx, "Host is not available or shutdown. Marking it for deletion", "host", *h.Name, "status", status)
+            hostsToDelete = append(hostsToDelete, h)
         }
     }
     log.DebugContext(ctx, "Host categorization complete",
-        "available", len(upHosts),
-        "shutdown", len(shutdownHosts),
-        "stale", len(staleHosts),
+        "up hosts", len(upHosts),
+        "shutdown hosts", len(shutdownHosts),
+        "hosts to delete", len(hostsToDelete),
     )
 
     // 4) Capacity calculation
@@ -287,9 +306,9 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
     mu.Unlock()
     log.DebugContext(ctx, "Capacity lock released")
 
-    // 5) Purge stale hosts asynchronously
-    log.DebugContext(ctx, "Purging stale hosts asynchronously", "count", len(staleHosts))
-    for _, host := range staleHosts {
+    // 5) Delete hosts marked for deletion
+    log.DebugContext(ctx, "Deleting hosts marked for deletion asynchronously", "count", len(hostsToDelete))
+    for _, host := range hostsToDelete {
         go vdo.purgeStaleHost(ctx, host)
     }
 
@@ -332,10 +351,13 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
         log.DebugContext(ctx, "Provisioning new hosts", "toCreate", toCreate)
         for i := 0; i < toCreate; i++ {
             log.DebugContext(ctx, "Creating new session host", "index", i+1)
-            if _, err := vdo.CreateSessionHost(ctx, pool); err != nil {
+            createdHost, err := vdo.CreateSessionHost(ctx, pool) 
+            if err != nil || createdHost == nil {
                 log.WarnContext(ctx, "CreateSessionHost failed", "index", i+1, "err", err)
             }
-        }
+            log.DebugContext(ctx, "Created new session host VM. Marking it as up", "host", *createdHost.Name)
+            upHosts = append(upHosts, createdHost)
+        }    
     }
 
     // 8) Delete any unused shutdown hosts once capacity is met
@@ -352,11 +374,11 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
     //       by an Azure Virtual Desktop session-host object.
     //    These are likely orphaned and should be deleted.
 
-    // 9a) Build a set of VM names that do have session-host records.
-    knownSHVMs := make(map[string]struct{}, len(hosts))
-    for _, h := range hosts {
+    // 9a) Build a set of VM names that do have valid session host objects.
+    upHostVMIDs := make(map[string]struct{}, len(hosts))
+    for _, h := range upHosts {
         if _, _, vmName, err := vdo.avdManager.ParseSessionHostName(ctx, h); err == nil {
-            knownSHVMs[vmName] = struct{}{}
+            upHostVMIDs[vmName] = struct{}{}
         }
     }
 
@@ -374,7 +396,7 @@ func (vdo *VirtualDesktopOrchestrator) ensureCapacity(ctx context.Context) error
                 log.WarnContext(ctx, "Session Host VM retrieval found VM with bad prefix", "vmid", vm.ID)
                 continue
             }
-            if _, knownHost := knownSHVMs[vm.ID]; knownHost {
+            if _, knownHost := upHostVMIDs[vm.ID]; knownHost {
                 continue // still an active or shutdown session host
             }
 

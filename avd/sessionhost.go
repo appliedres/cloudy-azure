@@ -209,6 +209,6 @@ func (avd *AzureVirtualDesktopManager) ParseSessionHostName(
     nameParts := strings.SplitN(sessionHostName, ".", 2)
     VMID = nameParts[0]
 
-	log.DebugContext(ctx, "parsed session host name", "pool", hostPoolName, "host", sessionHost, "vmid", VMID)
+	log.DebugContext(ctx, "parsed session host name", "pool", hostPoolName, "host", sessionHostName, "vmid", VMID)
     return hostPoolName, sessionHostName, VMID, nil
 }
