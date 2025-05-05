@@ -372,12 +372,12 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
 
 	script := sb.String()
 
-    // write out to a file for testing
-	timestamp := time.Now().Format("20060102-150405")
-    outPath := fmt.Sprintf("/tmp/bootstrap-%s.sh", timestamp)
-	    if err := os.WriteFile(outPath, []byte(script), 0o700); err != nil {
-        return "", fmt.Errorf("failed writing bootstrap script to %s: %w", outPath, err)
-    }
+    // // write out to a file for testing
+	// timestamp := time.Now().Format("20060102-150405")
+    // outPath := fmt.Sprintf("/tmp/bootstrap-%s.sh", timestamp)
+	//     if err := os.WriteFile(outPath, []byte(script), 0o700); err != nil {
+    //     return "", fmt.Errorf("failed writing bootstrap script to %s: %w", outPath, err)
+    // }
 
     return script, nil
 }
