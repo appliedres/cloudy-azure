@@ -322,6 +322,8 @@ func stripADUsername(ctx context.Context, fullUsername string) string {
 // 1) AD join block  (if cfg.AD != nil)
 // 2) Salt-minion install block
 func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualDesktopOrchestratorConfig) (string, error) {
+    log := logging.GetLogger(ctx)
+    
     if cfg == nil {
         return "", errors.New("nil config")
     }
@@ -335,10 +337,15 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
         ou := stringPtrOrEmpty(cfg.AD.OrganizationalUnitPath)
         dc := firstOrEmpty(cfg.VM.DomainControllers)
 
+        strippedUser := stripADUsername(ctx, cfg.AD.DomainUsername)
+        if strippedUser == "" {
+            return "", errors.New("AD username cannot be empty after stripping domain prefix/suffix")
+        }
+
         ad := adJoinBlock
         for k, v := range map[string]string{
             "$AD_DOMAIN": cfg.AD.DomainName,
-            "$AD_USER":   stripADUsername(ctx, cfg.AD.DomainUsername),
+            "$AD_USER":   strippedUser,
             "$AD_PASS":   cfg.AD.DomainPassword,
             "$AD_OU":     ou,
             "$AD_DC":     dc,
@@ -346,6 +353,7 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
             ad = strings.ReplaceAll(ad, k, v)
         }
         sb.WriteString(ad)
+        log.DebugContext(ctx, "AD join block added to script", "Domain", cfg.AD.DomainName, "USER", strippedUser, "OU", ou, "DC", dc)
     }
 
 	// RDP setup block (always)
@@ -452,15 +460,54 @@ install_ad_packages() {
 }
 
 configure_dns() {
-  log "Setting DNS to use $AD_DC and search domain $AD_DOMAIN"
-  IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
-  if command -v resolvectl &>/dev/null; then
-    resolvectl dns "$IFACE" "$AD_DC"
-    resolvectl domain "$IFACE" "$AD_DOMAIN"
-  else
-    echo "nameserver $AD_DC" > /etc/resolv.conf
-    echo "search $AD_DOMAIN" >> /etc/resolv.conf
+  # ------------------------------------------------------------------------- #
+  # Best‑effort DNS setup – prefers systemd‑resolved (resolvectl)             #
+  # ------------------------------------------------------------------------- #
+  # • Validates / discovers $AD_DC and $AD_DOMAIN                             #
+  # • Uses resolvectl when available & active                                 #
+  # • Falls back to writing /etc/resolv.conf                                  #
+  # • Never exits the caller; only logs WARN on failure                       #
+  # ------------------------------------------------------------------------- #
+  log "Configuring DNS (prefer resolvectl) …"
+
+  # pick the first default‑route interface
+  IFACE=$(ip route | awk '/^default/ {print $5; exit}')
+  if [[ -z $IFACE ]]; then
+    log "[WARN] No default route found – skipping DNS setup"
+    return
   fi
+
+  # ----- ensure we have a DNS server ---------------------------------------
+  if [[ -z ${AD_DC:-} ]]; then
+    log "[WARN] AD_DC is empty – trying SRV discovery for ${AD_DOMAIN:-<unset>}"
+    if command -v dig &>/dev/null && [[ -n ${AD_DOMAIN:-} ]]; then
+      AD_DC=$(dig +short _ldap._tcp."$AD_DOMAIN" SRV | awk '{print $4; exit}')
+      [[ -n $AD_DC ]] && log "Discovered DC via SRV: $AD_DC"
+    fi
+  fi
+
+  # ----- try resolvectl -----------------------------------------------------
+  if command -v resolvectl &>/dev/null && systemctl is-active --quiet systemd-resolved; then
+    [[ -n $AD_DC ]]     && resolvectl dns    "$IFACE" "$AD_DC"     \
+                           && log "resolvectl: $IFACE → DNS $AD_DC" \
+                           || log "[WARN] resolvectl dns failed (AD_DC='$AD_DC')"
+    [[ -n $AD_DOMAIN ]] && resolvectl domain "$IFACE" "$AD_DOMAIN" \
+                           && log "resolvectl: $IFACE → search $AD_DOMAIN" \
+                           || log "[WARN] resolvectl domain failed (AD_DOMAIN='$AD_DOMAIN')"
+
+    # If at least one of the resolvectl calls succeeded we're done
+    [[ -n $AD_DC || -n $AD_DOMAIN ]] && return
+  else
+    log "[WARN] resolvectl unavailable or systemd‑resolved inactive – falling back to /etc/resolv.conf"
+  fi
+
+  # ----- final fallback -----------------------------------------------------
+  {
+    [[ -n $AD_DC     ]] && printf 'nameserver %s\n' "$AD_DC"
+    [[ -n $AD_DOMAIN ]] && printf 'search %s\n'     "$AD_DOMAIN"
+  } | sudo tee /etc/resolv.conf >/dev/null
+
+  log "Updated /etc/resolv.conf directly (may be overwritten by NetworkManager)"
 }
 
 join_ad_domain() {
@@ -694,7 +741,7 @@ case "$ID" in
       fi
     fi
 
-    # Enable XRDP Copr repository if needed
+    # Enable XRDP Copr repository if needed other installs failed
     if ! dnf list xrdp &>/dev/null; then
       log "xrdp not found in current repos, enabling Copr repo..."
       sudo dnf install -y 'dnf-command(copr)'
