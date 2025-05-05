@@ -336,6 +336,9 @@ func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualD
 
         ou := stringPtrOrEmpty(cfg.AD.OrganizationalUnitPath)
         dc := firstOrEmpty(cfg.VM.DomainControllers)
+        if dc == "" {
+            dc = "10.0.130.4" // FIXME: don't do this.. unless it's the night before a demo
+        }
 
         strippedUser := stripADUsername(ctx, cfg.AD.DomainUsername)
         if strippedUser == "" {
