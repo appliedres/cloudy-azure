@@ -188,7 +188,7 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 
 	script := installSaltMinionTemplate
 
-	log.DebugContext(ctx, "Generated salt minion install script using Salt Master IP/hostname '%s'", saltConfig.SaltMaster)
+	log.DebugContext(ctx, "Generated salt minion install script using Salt Master IP/hostname", "SaltMaster", saltConfig.SaltMaster)
 	replacements := map[string]string{
 		"$AZURE_SALT_MINION_URL": saltInstallerURL,
 		"$SALT_MASTER":           saltConfig.SaltMaster,
