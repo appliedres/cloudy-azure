@@ -13,7 +13,7 @@ import (
 
 const (
 	vmNameTagKey    = "Name"
-	vmIDTagKey	    = "VMID"
+	vmIDTagKey      = "VMID"
 	vmCreatorTagKey = "CreatorID"
 	vmUserTagKey    = "UserID"
 	vmTeamTagKey    = "TeamID"

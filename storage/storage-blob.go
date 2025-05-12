@@ -482,7 +482,6 @@ func (b *BlobStorage) GenDownloadURL(ctx context.Context, key string) (string, e
 	return url, nil
 }
 
-
 // common function to get User Delegation Credentials
 func getUserDelegationCredential(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName string, validFor time.Duration) (*service.UserDelegationCredential, time.Time, time.Time, error) {
 	cred, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)

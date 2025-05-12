@@ -143,7 +143,7 @@ func (avd *AzureVirtualDesktopManager) AssignUserToAppGroup(ctx context.Context,
 		log.ErrorContext(ctx, "objectIDFromUPN failure", "UPN", upn, "Error", err)
 		return cloudy.Error(ctx, "objectIDFromUPN failure: %+v", err)
 	}
-	
+
 	err = avd.AssignPrincipalToAppGroup(ctx, appGroupName, userObjectID)
 	if err != nil {
 		log.ErrorContext(ctx, "AssignPrincipalToAppGroup failure", "UPN", upn, "AppGroupName", appGroupName, "UserObjectID", userObjectID, "Error", err)
@@ -211,7 +211,7 @@ func (avd *AzureVirtualDesktopManager) RemovePrincipalFromAppGroup(ctx context.C
 
 func (avd *AzureVirtualDesktopManager) DeleteApplicationGroup(ctx context.Context, appGroupName string) error {
 	log := logging.GetLogger(ctx)
-	
+
 	log.DebugContext(ctx, "Deleting application group", "AppGroupName", appGroupName)
 	resp, err := avd.applicationGroupsClient.Delete(ctx, avd.Credentials.ResourceGroup, appGroupName, nil)
 	if err != nil {
@@ -296,20 +296,20 @@ func (avd *AzureVirtualDesktopManager) CreatePersonalDesktopApplicationGroup(ctx
 
 func (avd *AzureVirtualDesktopManager) GenerateLinuxAVDAppGroupNameFromVMID(vmID string) (string, error) {
 	if vmID == "" {
-        return "", fmt.Errorf("vmID must not be empty")
-    }
-	
+		return "", fmt.Errorf("vmID must not be empty")
+	}
+
 	return avd.getAppGroupPrefix() + vmID, nil
 }
 
 // returns the vmID embedded in the app‑group name,
 // or an error if the name doesn’t match the expected prefix.
 func (avd *AzureVirtualDesktopManager) ParseVMIDFromLinuxAVDAppGroupName(appGroupName string) (string, error) {
-    if !strings.HasPrefix(appGroupName, avd.getAppGroupPrefix()) {
-        return "", fmt.Errorf("invalid appGroupName %q: must start with %q", appGroupName, avd.getAppGroupPrefix())
-    }
-    // everything after the prefix is the VM ID
-    return appGroupName[len(avd.getAppGroupPrefix()):], nil
+	if !strings.HasPrefix(appGroupName, avd.getAppGroupPrefix()) {
+		return "", fmt.Errorf("invalid appGroupName %q: must start with %q", appGroupName, avd.getAppGroupPrefix())
+	}
+	// everything after the prefix is the VM ID
+	return appGroupName[len(avd.getAppGroupPrefix()):], nil
 }
 
 func (avd *AzureVirtualDesktopManager) getAppGroupPrefix() string {
@@ -317,17 +317,17 @@ func (avd *AzureVirtualDesktopManager) getAppGroupPrefix() string {
 }
 
 func (avd *AzureVirtualDesktopManager) objectIDFromUPN(
-    ctx context.Context, upn string) (string, error) {
+	ctx context.Context, upn string) (string, error) {
 
-    if _, err := uuid.Parse(upn); err == nil {
-        return upn, nil
-    }
+	if _, err := uuid.Parse(upn); err == nil {
+		return upn, nil
+	}
 
-    usr, err := avd.graphClient.Users().
-        ByUserId(upn).                    
-        Get(ctx, nil)
-    if err != nil {
-        return "", fmt.Errorf("graph lookup %q: %w", upn, err)
-    }
-    return *usr.GetId(), nil
+	usr, err := avd.graphClient.Users().
+		ByUserId(upn).
+		Get(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("graph lookup %q: %w", upn, err)
+	}
+	return *usr.GetId(), nil
 }

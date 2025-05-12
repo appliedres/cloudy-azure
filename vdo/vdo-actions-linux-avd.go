@@ -16,7 +16,7 @@ func (vdo *VirtualDesktopOrchestrator) createLinuxVMWithAVD(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// TODO: parallelize some of this
 
 	log.DebugContext(ctx, "Creating Linux VM")
@@ -45,7 +45,7 @@ func (vdo *VirtualDesktopOrchestrator) startLinuxAVD(ctx context.Context, vm *cm
 	err := vdo.ensureCapacity(ctx)
 	if err != nil {
 		return err
-	}	
+	}
 
 	// refresh cached NICs, so when we create the RDP app, it is pointing to the correct IP
 	// TODO: Move this into general start VM code. Start VM should renew NICs on its own
@@ -55,13 +55,13 @@ func (vdo *VirtualDesktopOrchestrator) startLinuxAVD(ctx context.Context, vm *cm
 			return err
 		}
 		vm.Nics = nics
-    }
-    _, err = vdo.linuxAVDPostCreation(ctx, *vm)
+	}
+	_, err = vdo.linuxAVDPostCreation(ctx, *vm)
 	if err != nil {
 		return err
 	}
 
-    return err
+	return err
 }
 
 func (vdo VirtualDesktopOrchestrator) stopLinuxAVD(ctx context.Context, vm *cm.VirtualMachine) error {

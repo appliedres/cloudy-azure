@@ -321,80 +321,79 @@ func stripADUsername(ctx context.Context, fullUsername string) string {
 // 1) AD join block  (if cfg.AD != nil)
 // 2) Salt-minion install block
 func GenerateInstallSaltMinionAndADJoinOnline(ctx context.Context, cfg *VirtualDesktopOrchestratorConfig) (string, error) {
-    log := logging.GetLogger(ctx)
-    
-    if cfg == nil {
-        return "", errors.New("nil config")
-    }
+	log := logging.GetLogger(ctx)
 
-    var sb strings.Builder
-    sb.WriteString(shellHeader)
+	if cfg == nil {
+		return "", errors.New("nil config")
+	}
 
-    // AD block
-    if cfg.AD != nil {
+	var sb strings.Builder
+	sb.WriteString(shellHeader)
 
-        ou := stringPtrOrEmpty(cfg.AD.OrganizationalUnitPath)
-        dc := firstOrEmpty(cfg.VM.DomainControllers)
-        if dc == "" {
-            dc = "10.0.130.4" // FIXME: don't do this.. unless it's the night before a demo
-        }
+	// AD block
+	if cfg.AD != nil {
 
-        strippedUser := stripADUsername(ctx, cfg.AD.DomainUsername)
-        if strippedUser == "" {
-            return "", errors.New("AD username cannot be empty after stripping domain prefix/suffix")
-        }
+		ou := stringPtrOrEmpty(cfg.AD.OrganizationalUnitPath)
+		dc := firstOrEmpty(cfg.VM.DomainControllers)
+		if dc == "" {
+			dc = "10.0.130.4" // FIXME: don't do this.. unless it's the night before a demo
+		}
 
-        ad := adJoinBlock
-        for k, v := range map[string]string{
-            "$AD_DOMAIN": cfg.AD.DomainName,
-            "$AD_USER":   strippedUser,
-            "$AD_PASS":   cfg.AD.DomainPassword,
-            "$AD_OU":     ou,
-            "$AD_DC":     dc,
-        } {
-            ad = strings.ReplaceAll(ad, k, v)
-        }
-        sb.WriteString(ad)
-        log.DebugContext(ctx, "AD join block added to script", "Domain", cfg.AD.DomainName, "USER", strippedUser, "OU", ou, "DC", dc)
-    }
+		strippedUser := stripADUsername(ctx, cfg.AD.DomainUsername)
+		if strippedUser == "" {
+			return "", errors.New("AD username cannot be empty after stripping domain prefix/suffix")
+		}
+
+		ad := adJoinBlock
+		for k, v := range map[string]string{
+			"$AD_DOMAIN": cfg.AD.DomainName,
+			"$AD_USER":   strippedUser,
+			"$AD_PASS":   cfg.AD.DomainPassword,
+			"$AD_OU":     ou,
+			"$AD_DC":     dc,
+		} {
+			ad = strings.ReplaceAll(ad, k, v)
+		}
+		sb.WriteString(ad)
+		log.DebugContext(ctx, "AD join block added to script", "Domain", cfg.AD.DomainName, "USER", strippedUser, "OU", ou, "DC", dc)
+	}
 
 	// RDP setup block (always)
 	sb.WriteString(rdpSetupBlock)
 
-    // Salt block
-    if cfg.SaltMinionInstall != nil && cfg.SaltMinionInstall.SaltMaster != "" {
+	// Salt block
+	if cfg.SaltMinionInstall != nil && cfg.SaltMinionInstall.SaltMaster != "" {
 		salt := strings.ReplaceAll(saltBlock, "$SALT_MASTER", cfg.SaltMinionInstall.SaltMaster)
 		sb.WriteString(salt)
-    }
+	}
 
-    sb.WriteString(shellFooter)
+	sb.WriteString(shellFooter)
 
 	script := sb.String()
 
-    // // write out to a file for testing
+	// // write out to a file for testing
 	// timestamp := time.Now().Format("20060102-150405")
-    // outPath := fmt.Sprintf("/tmp/bootstrap-%s.sh", timestamp)
+	// outPath := fmt.Sprintf("/tmp/bootstrap-%s.sh", timestamp)
 	//     if err := os.WriteFile(outPath, []byte(script), 0o700); err != nil {
-    //     return "", fmt.Errorf("failed writing bootstrap script to %s: %w", outPath, err)
-    // }
+	//     return "", fmt.Errorf("failed writing bootstrap script to %s: %w", outPath, err)
+	// }
 
-    return script, nil
+	return script, nil
 }
 
 func stringPtrOrEmpty(p *string) string {
-    if p == nil {
-        return ""
-    }
-    return *p
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func firstOrEmpty(ptrs []*string) string {
-    if len(ptrs) == 0 || ptrs[0] == nil {
-        return ""
-    }
-    return *ptrs[0]
+	if len(ptrs) == 0 || ptrs[0] == nil {
+		return ""
+	}
+	return *ptrs[0]
 }
-
 
 // ───────────────────────── shellHeader ─────────────────────────
 const shellHeader = `#!/usr/bin/env bash
@@ -843,12 +842,10 @@ fi
 log "Stage 3 – RDP setup complete."
 `
 
-
 // ───────────────────────── shellFooter ────────────────────────
 const shellFooter = `
 log "Bootstrap finished OK"
 `
-
 
 // Air-gapped install using individual packages in storage account
 var installSaltMinionLinuxTemplateOffline = `#!/usr/bin/env bash

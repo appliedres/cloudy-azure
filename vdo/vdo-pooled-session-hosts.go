@@ -22,12 +22,12 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 
 	// TODO: make session host template configurable
 	sessionHostVM := &cm.VirtualMachine{
-		ID: 			sessionHostID,
-		Name: 			sessionHostName,
-		Description: 	"a session host VM for pooled AVD'",
+		ID:          sessionHostID,
+		Name:        sessionHostName,
+		Description: "a session host VM for pooled AVD'",
 		Template: &cm.VirtualMachineTemplate{
 			OperatingSystem:      "windows",
-			OsBaseImageID: "marketplace::microsoftwindowsdesktop::windows-11::win11-22h2-avd::latest",
+			OsBaseImageID:        "marketplace::microsoftwindowsdesktop::windows-11::win11-22h2-avd::latest",
 			LocalAdministratorID: "salt",
 			Size: &cm.VirtualMachineSize{
 				ID: "Standard_D2s_v4",
@@ -39,7 +39,7 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 		Tags: map[string]*string{
 			"arkloud-created-by": to.Ptr("cloudy-azure: vdo orchestrator - CreateSessionHost"),
 		},
-		UserID: "system",  // TODO: what to use for UserID? Does this need to be a valid entra UPN?
+		UserID: "system", // TODO: what to use for UserID? Does this need to be a valid entra UPN?
 	}
 
 	// TODO: do we need a separate CreateSessionHostVirtualMachine function? vs CreateUserVirtualMachine?

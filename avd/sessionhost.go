@@ -14,94 +14,94 @@ import (
 
 // WaitForSessionHost waits for a VM to appear as a session host in a specified host pool and ensures its status is 'Available'.
 func (avd *AzureVirtualDesktopManager) WaitForSessionHost(
-    ctx context.Context,
-    hpName, vmID string,
-    timeout time.Duration,
+	ctx context.Context,
+	hpName, vmID string,
+	timeout time.Duration,
 ) (*armdesktopvirtualization.SessionHost, error) {
-    log := logging.GetLogger(ctx)
-    log.DebugContext(ctx, "WaitForSessionHost start",
-        "HostPool", hpName,
-        "VMID", vmID,
-        "Timeout", timeout,
-    )
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "WaitForSessionHost start",
+		"HostPool", hpName,
+		"VMID", vmID,
+		"Timeout", timeout,
+	)
 
-    deadline := time.Now().Add(timeout)
-    ticker := time.NewTicker(10 * time.Second) // TODO: switch to exponential backoff
-    defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(10 * time.Second) // TODO: switch to exponential backoff
+	defer ticker.Stop()
 
-    for {
-        log.DebugContext(ctx, "Polling for session host", "HostPool", hpName, "VMID", vmID)
+	for {
+		log.DebugContext(ctx, "Polling for session host", "HostPool", hpName, "VMID", vmID)
 
-        sessionHost, err := avd.FindSessionHostByVMNameInHostPool(ctx, hpName, vmID)
-        if err != nil {
-            log.ErrorContext(ctx, "Error finding session host", "error", err)
-            return nil, fmt.Errorf("error finding session host: %w", err)
-        }
+		sessionHost, err := avd.FindSessionHostByVMNameInHostPool(ctx, hpName, vmID)
+		if err != nil {
+			log.ErrorContext(ctx, "Error finding session host", "error", err)
+			return nil, fmt.Errorf("error finding session host: %w", err)
+		}
 
-        if sessionHost == nil {
-            log.DebugContext(ctx, "Session host not yet registered", "HostPool", hpName, "VMID", vmID)
-        } else if sessionHost.Properties == nil || sessionHost.Properties.Status == nil {
-            log.DebugContext(ctx, "Session host found but status is unknown", "SessionHost", *sessionHost.Name)
-        } else {
-            status := *sessionHost.Properties.Status
-            log.DebugContext(ctx, "Session host status", "SessionHost", *sessionHost.Name, "Status", status)
-            if status == armdesktopvirtualization.StatusAvailable {
-                log.DebugContext(ctx, "Session host is now available", "SessionHost", *sessionHost.Name)
-                return sessionHost, nil
-            }
-        }
+		if sessionHost == nil {
+			log.DebugContext(ctx, "Session host not yet registered", "HostPool", hpName, "VMID", vmID)
+		} else if sessionHost.Properties == nil || sessionHost.Properties.Status == nil {
+			log.DebugContext(ctx, "Session host found but status is unknown", "SessionHost", *sessionHost.Name)
+		} else {
+			status := *sessionHost.Properties.Status
+			log.DebugContext(ctx, "Session host status", "SessionHost", *sessionHost.Name, "Status", status)
+			if status == armdesktopvirtualization.StatusAvailable {
+				log.DebugContext(ctx, "Session host is now available", "SessionHost", *sessionHost.Name)
+				return sessionHost, nil
+			}
+		}
 
-        if time.Now().After(deadline) {
-            log.WarnContext(ctx, "Timed out waiting for session host to become available",
-                "HostPool", hpName,
-                "VMID", vmID,
-                "Deadline", deadline,
-            )
-            return nil, fmt.Errorf("timed out waiting for session host to become available")
-        }
+		if time.Now().After(deadline) {
+			log.WarnContext(ctx, "Timed out waiting for session host to become available",
+				"HostPool", hpName,
+				"VMID", vmID,
+				"Deadline", deadline,
+			)
+			return nil, fmt.Errorf("timed out waiting for session host to become available")
+		}
 
-        select {
-        case <-ctx.Done():
-            log.WarnContext(ctx, "Context cancelled while waiting for session host", "error", ctx.Err())
-            return nil, ctx.Err()
-        case <-ticker.C:
-            log.DebugContext(ctx, "Retrying WaitForSessionHost loop", "HostPool", hpName, "VMID", vmID)
-        }
-    }
+		select {
+		case <-ctx.Done():
+			log.WarnContext(ctx, "Context cancelled while waiting for session host", "error", ctx.Err())
+			return nil, ctx.Err()
+		case <-ticker.C:
+			log.DebugContext(ctx, "Retrying WaitForSessionHost loop", "HostPool", hpName, "VMID", vmID)
+		}
+	}
 }
 
 // FindSessionHostByVMNameInHostPool searches for a session host whose ResourceID contains the VM's ID.
 func (avd *AzureVirtualDesktopManager) FindSessionHostByVMNameInHostPool(
-    ctx context.Context,
-    hostPoolName, vmID string,
+	ctx context.Context,
+	hostPoolName, vmID string,
 ) (*armdesktopvirtualization.SessionHost, error) {
-    log := logging.GetLogger(ctx)
-    log.DebugContext(ctx, "FindSessionHostByVMNameInHostPool start",
-        "HostPool", hostPoolName,
-        "VMID", vmID,
-    )
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "FindSessionHostByVMNameInHostPool start",
+		"HostPool", hostPoolName,
+		"VMID", vmID,
+	)
 
-    allSessionHosts, err := avd.ListSessionHosts(ctx, hostPoolName)
-    if err != nil {
-        log.ErrorContext(ctx, "Failed to list session hosts", "HostPool", hostPoolName, "error", err)
-        return nil, fmt.Errorf("failed to list session hosts: %w", err)
-    }
-    log.DebugContext(ctx, "Listed session hosts count", "HostPool", hostPoolName, "Count", len(allSessionHosts))
+	allSessionHosts, err := avd.ListSessionHosts(ctx, hostPoolName)
+	if err != nil {
+		log.ErrorContext(ctx, "Failed to list session hosts", "HostPool", hostPoolName, "error", err)
+		return nil, fmt.Errorf("failed to list session hosts: %w", err)
+	}
+	log.DebugContext(ctx, "Listed session hosts count", "HostPool", hostPoolName, "Count", len(allSessionHosts))
 
-    for _, sessionHost := range allSessionHosts {
-        rid := ""
-        if sessionHost.Properties != nil && sessionHost.Properties.ResourceID != nil {
-            rid = *sessionHost.Properties.ResourceID
-        }
+	for _, sessionHost := range allSessionHosts {
+		rid := ""
+		if sessionHost.Properties != nil && sessionHost.Properties.ResourceID != nil {
+			rid = *sessionHost.Properties.ResourceID
+		}
 
-        if strings.Contains(rid, vmID) {
-            log.DebugContext(ctx, "Found matching session host", "HostPool", hostPoolName, "VMID", vmID, "SessionHost", *sessionHost.Name)
-            return sessionHost, nil
-        }
-    }
+		if strings.Contains(rid, vmID) {
+			log.DebugContext(ctx, "Found matching session host", "HostPool", hostPoolName, "VMID", vmID, "SessionHost", *sessionHost.Name)
+			return sessionHost, nil
+		}
+	}
 
-    log.DebugContext(ctx, "No session host found matching VMID", "HostPool", hostPoolName, "VMID", vmID)
-    return nil, nil
+	log.DebugContext(ctx, "No session host found matching VMID", "HostPool", hostPoolName, "VMID", vmID)
+	return nil, nil
 }
 
 func (avd *AzureVirtualDesktopManager) ListSessionHosts(ctx context.Context, hostPoolName string) ([]*armdesktopvirtualization.SessionHost, error) {
@@ -181,34 +181,37 @@ func (avd *AzureVirtualDesktopManager) DeleteSessionHost(ctx context.Context, ho
 
 // Parses session host name, VM name, and host pool name from a session host object.
 // example:
-//   sessionHost.Name = "E2E-TEST-JDUPRAS-HP-Pooled-_root/shvm-0m9rf333q1.dev.arkloud-pvf.local"
+//
+//	sessionHost.Name = "E2E-TEST-JDUPRAS-HP-Pooled-_root/shvm-0m9rf333q1.dev.arkloud-pvf.local"
+//
 // returns:
-//   hostPoolName     = "E2E-TEST-JDUPRAS-HP-Pooled-_root"
-//   sessionHostName  = "shvm-0m9rf333q1.dev.arkloud-pvf.local"
-//   vmName           = "shvm-0m9rf333q1"
+//
+//	hostPoolName     = "E2E-TEST-JDUPRAS-HP-Pooled-_root"
+//	sessionHostName  = "shvm-0m9rf333q1.dev.arkloud-pvf.local"
+//	vmName           = "shvm-0m9rf333q1"
 func (avd *AzureVirtualDesktopManager) ParseSessionHostName(
-    ctx context.Context,
-    sessionHost *armdesktopvirtualization.SessionHost,
+	ctx context.Context,
+	sessionHost *armdesktopvirtualization.SessionHost,
 ) (hostPoolName, sessionHostName, VMID string, err error) {
-    log := logging.GetLogger(ctx)
+	log := logging.GetLogger(ctx)
 
-    // Expect Name like "hostPoolName/shvm-0123456789.domain.local"
-    parts := strings.SplitN(*sessionHost.Name, "/", 2)
-    if len(parts) != 2 {
-        err = fmt.Errorf("could not split sessionHost.Name: %s", *sessionHost.Name)
-        return "", "", "", err
-    }
+	// Expect Name like "hostPoolName/shvm-0123456789.domain.local"
+	parts := strings.SplitN(*sessionHost.Name, "/", 2)
+	if len(parts) != 2 {
+		err = fmt.Errorf("could not split sessionHost.Name: %s", *sessionHost.Name)
+		return "", "", "", err
+	}
 
-    // 1) host pool name is everything before the slash
-    hostPoolName = parts[0]
+	// 1) host pool name is everything before the slash
+	hostPoolName = parts[0]
 
-    // 2) session host full DNS name is everything after the slash
-    sessionHostName = parts[1]
+	// 2) session host full DNS name is everything after the slash
+	sessionHostName = parts[1]
 
-    // 3) vmName is the hostname without domain suffix
-    nameParts := strings.SplitN(sessionHostName, ".", 2)
-    VMID = nameParts[0]
+	// 3) vmName is the hostname without domain suffix
+	nameParts := strings.SplitN(sessionHostName, ".", 2)
+	VMID = nameParts[0]
 
 	log.DebugContext(ctx, "parsed session host name", "pool", hostPoolName, "host", sessionHostName, "vmid", VMID)
-    return hostPoolName, sessionHostName, VMID, nil
+	return hostPoolName, sessionHostName, VMID, nil
 }

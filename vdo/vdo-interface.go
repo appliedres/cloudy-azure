@@ -18,7 +18,7 @@ func (vdo *VirtualDesktopOrchestrator) CreateVirtualMachine(ctx context.Context,
 	defer log.InfoContext(ctx, "VM Orchestrator - CreateVirtualMachine complete")
 
 	switch vm.Template.OperatingSystem {
-	case models.VirtualMachineTemplateOperatingSystemWindows: 
+	case models.VirtualMachineTemplateOperatingSystemWindows:
 		return vdo.createWindowsVM(ctx, vm)
 	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
 		if linuxAVDEnabled {
@@ -42,12 +42,12 @@ func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, 
 		return logging.LogAndWrapErr(ctx, log, err, "StartVirtualMachine failed")
 	}
 
-    switch vm.Template.OperatingSystem {
-    case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
-        if linuxAVDEnabled {
-            return vdo.startLinuxAVD(ctx, vm)
-        }
-    }
+	switch vm.Template.OperatingSystem {
+	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
+		if linuxAVDEnabled {
+			return vdo.startLinuxAVD(ctx, vm)
+		}
+	}
 
 	return nil
 }
@@ -63,10 +63,10 @@ func (vdo *VirtualDesktopOrchestrator) StopVirtualMachine(ctx context.Context, v
 		return logging.LogAndWrapErr(ctx, log, err, "StopVirtualMachine failed to stop VM")
 	}
 
-    if linuxAVDEnabled && 
+	if linuxAVDEnabled &&
 		(vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxDeb ||
-		vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxRhel) {
-        return vdo.cleanupLinuxAVD(ctx, vm)
+			vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxRhel) {
+		return vdo.cleanupLinuxAVD(ctx, vm)
 
 		// TODO: remove the connection info from the VM object? Or save it for auto-start?
 	}
@@ -79,11 +79,11 @@ func (vdo *VirtualDesktopOrchestrator) DeleteVirtualMachine(ctx context.Context,
 	log.InfoContext(ctx, "DeleteVirtualMachine starting")
 	defer log.InfoContext(ctx, "DeleteVirtualMachine complete")
 
-    if linuxAVDEnabled && 
+	if linuxAVDEnabled &&
 		(vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxDeb ||
-		vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxRhel) {
+			vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxRhel) {
 		_ = vdo.cleanupLinuxAVD(ctx, vm)
-    }
+	}
 
 	err := vdo.vmManager.DeleteVirtualMachine(ctx, vm.ID)
 	if err != nil {

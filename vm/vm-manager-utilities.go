@@ -70,7 +70,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 	azVM.Properties.OSProfile = &armcompute.OSProfile{
 		ComputerName:  to.Ptr(cloudyVM.ID),
 		AdminUsername: &cloudyVM.Template.LocalAdministratorID,
-		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),  // TODO: we need to store this somewhere
+		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)), // TODO: we need to store this somewhere
 	}
 
 	// OS-specific items
@@ -135,7 +135,7 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 
 		if azVM.Properties.StorageProfile != nil {
 			if azVM.Properties.StorageProfile.OSDisk != nil {
-				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType)  // FIXME: this doesn't properly fit into the enum. How to detect rhel vs debian?
+				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType) // FIXME: this doesn't properly fit into the enum. How to detect rhel vs debian?
 
 				if azVM.Properties.StorageProfile.OSDisk.ManagedDisk != nil &&
 					azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID != nil {
@@ -381,7 +381,7 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 			return models.VirtualMachineCloudStateRunning
 		case string(models.VirtualMachineCloudStateStopped):
 			// we avoid 'stopped' state in azure as this incurs costs, but a user shutdown can result in this state
-			return models.VirtualMachineCloudStateStopped  
+			return models.VirtualMachineCloudStateStopped
 		case "deallocated":
 			// we intend to always 'deallocate' VMs for the 'stop' action
 			return models.VirtualMachineCloudStateStopped
@@ -418,10 +418,11 @@ const mpPrefix = "marketplace::" // shorthand for marketplace
 
 // translateImageID builds the ImageReference and optional Plan from the encoded ID.
 // Format:
-//   marketplace:
-//		"marketplace::<Publisher>::<Offer>::<SKU>::<Version>[::PlanName]"
-//   gallery: 
-//		"/subscriptions/<SubscriptionID/resourceGroups/<ResourceGroup>/providers/Microsoft.Compute/galleries/<ImageGalleryName/images/<ImageName>/versions/<version>"
+//
+//	  marketplace:
+//			"marketplace::<Publisher>::<Offer>::<SKU>::<Version>[::PlanName]"
+//	  gallery:
+//			"/subscriptions/<SubscriptionID/resourceGroups/<ResourceGroup>/providers/Microsoft.Compute/galleries/<ImageGalleryName/images/<ImageName>/versions/<version>"
 func translateImageID(ctx context.Context, imageID string) (*armcompute.ImageReference, *armcompute.Plan, error) {
 	log := logging.GetLogger(ctx)
 

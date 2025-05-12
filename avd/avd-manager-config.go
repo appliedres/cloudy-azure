@@ -16,7 +16,7 @@ type AzureVirtualDesktopManagerConfig struct {
 	PooledAppGroupNamePrefix     string
 
 	// optional
-	RDAgentURI                     *string
-	BootLoaderURI                  *string
-	DesktopNamePrefix              *string
+	RDAgentURI        *string
+	BootLoaderURI     *string
+	DesktopNamePrefix *string
 }

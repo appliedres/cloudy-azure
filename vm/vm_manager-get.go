@@ -72,33 +72,33 @@ func (vmm *AzureVirtualMachineManager) getAllVirtualMachinesWithPrefix(ctx conte
 		log.WarnContext(ctx, "Querying VMs without a filter. This could return critical infrastructure VMs")
 	}
 
-    vmList := []models.VirtualMachine{}
+	vmList := []models.VirtualMachine{}
 
-    statusOnlyString := strconv.FormatBool(includeState)
+	statusOnlyString := strconv.FormatBool(includeState)
 
-    options := &armcompute.VirtualMachinesClientListAllOptions{
-        StatusOnly: &statusOnlyString,
-    }
-    pager := vmm.vmClient.NewListAllPager(options)
+	options := &armcompute.VirtualMachinesClientListAllOptions{
+		StatusOnly: &statusOnlyString,
+	}
+	pager := vmm.vmClient.NewListAllPager(options)
 
-    for pager.More() {
-        resp, err := pager.NextPage(ctx)
-        if err != nil {
-            return &vmList, err
-        }
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return &vmList, err
+		}
 
-        for _, armVM := range resp.Value {
-            // If a prefix filter was provided, skip any VM that doesn't match
-            if filterPrefix != "" {
-                if armVM.Name == nil || !strings.HasPrefix(*armVM.Name, filterPrefix) {
-                    continue
-                }
-            }
+		for _, armVM := range resp.Value {
+			// If a prefix filter was provided, skip any VM that doesn't match
+			if filterPrefix != "" {
+				if armVM.Name == nil || !strings.HasPrefix(*armVM.Name, filterPrefix) {
+					continue
+				}
+			}
 
-            cloudyVM := ToCloudyVirtualMachine(ctx, armVM)
-            vmList = append(vmList, *cloudyVM)
-        }
-    }
+			cloudyVM := ToCloudyVirtualMachine(ctx, armVM)
+			vmList = append(vmList, *cloudyVM)
+		}
+	}
 
-    return &vmList, nil
+	return &vmList, nil
 }

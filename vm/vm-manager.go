@@ -28,7 +28,7 @@ const (
 )
 
 type AzureVirtualMachineManager struct {
-	name		string
+	name string
 
 	Credentials *cloudyazure.AzureCredentials
 	Config      *VirtualMachineManagerConfig
@@ -47,17 +47,17 @@ type AzureVirtualMachineManager struct {
 }
 
 func NewAzureVirtualMachineManager(
-	ctx context.Context, name string, 
+	ctx context.Context, name string,
 	credentials *cloudyazure.AzureCredentials,
 	config *VirtualMachineManagerConfig,
-	) (*AzureVirtualMachineManager, error) {
+) (*AzureVirtualMachineManager, error) {
 
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "NewAzureVirtualMachineManager started")
 	defer log.DebugContext(ctx, "NewAzureVirtualMachineManager complete")
 
 	vmm := &AzureVirtualMachineManager{
-		name:        name,
+		name: name,
 
 		Credentials: credentials,
 		Config:      config,

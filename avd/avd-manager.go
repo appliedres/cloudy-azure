@@ -18,8 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
 
-	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 	msgraphauth "github.com/microsoft/kiota-authentication-azure-go"
+	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 
 	"github.com/pkg/errors"
 
@@ -43,9 +43,8 @@ type AzureVirtualDesktopManager struct {
 	applicationsClient      *armdesktopvirtualization.ApplicationsClient
 	desktopsClient          *armdesktopvirtualization.DesktopsClient
 
-	roleAssignmentsClient   *armauthorization.RoleAssignmentsClient
-	graphClient		  	    *msgraphsdk.GraphServiceClient
-	
+	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
+	graphClient           *msgraphsdk.GraphServiceClient
 
 	stackMutex sync.Mutex // blocks concurrent host pool creation/deletion
 	lockMap    sync.Map   // used to block a user from having concurrent registrations in a single host pool
@@ -77,11 +76,12 @@ func NewAzureVirtualDesktopManager(ctx context.Context, name string, credentials
 // until the SDK is updated, this injects the header that ARM now requires for list calls.
 // TODO: remove custom header when SDK fixes this issue
 type addTargetLocations struct {
-    value string
+	value string
 }
+
 func (p addTargetLocations) Do(req *policy.Request) (*http.Response, error) {
-    req.Raw().Header.Set("x-ms-arm-resource-list-target-locations", p.value)
-    return req.Next()
+	req.Raw().Header.Set("x-ms-arm-resource-list-target-locations", p.value)
+	return req.Next()
 }
 
 // Handles the configuration of the Azure Virtual Desktop Manager
@@ -99,7 +99,7 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 		ClientOptions: policy.ClientOptions{
 			Cloud: cloud.AzureGovernment,
 			PerCallPolicies: []policy.Policy{
-				addTargetLocations{value: avd.Credentials.Region},  // TODO: remove when SDK fixes this
+				addTargetLocations{value: avd.Credentials.Region}, // TODO: remove when SDK fixes this
 			},
 		},
 	}
@@ -136,7 +136,7 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	
+
 	adapter, err := msgraphsdk.NewGraphRequestAdapter(authProv)
 	if err != nil {
 		return err
