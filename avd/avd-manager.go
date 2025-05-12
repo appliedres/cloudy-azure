@@ -14,8 +14,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/desktopvirtualization/armdesktopvirtualization/v2"
+
+	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
+	msgraphauth "github.com/microsoft/kiota-authentication-azure-go"
 
 	"github.com/pkg/errors"
 
@@ -39,7 +43,9 @@ type AzureVirtualDesktopManager struct {
 	applicationsClient      *armdesktopvirtualization.ApplicationsClient
 	desktopsClient          *armdesktopvirtualization.DesktopsClient
 
-	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
+	roleAssignmentsClient   *armauthorization.RoleAssignmentsClient
+	graphClient		  	    *msgraphsdk.GraphServiceClient
+	
 
 	stackMutex sync.Mutex // blocks concurrent host pool creation/deletion
 	lockMap    sync.Map   // used to block a user from having concurrent registrations in a single host pool
@@ -117,6 +123,28 @@ func (avd *AzureVirtualDesktopManager) Configure(ctx context.Context) error {
 	}
 	avd.roleAssignmentsClient = roleassignmentsclient
 
+	// Setup MS Graph client
+	credGraph, err := azidentity.NewClientSecretCredential(avd.Credentials.TenantID, avd.Credentials.ClientID, avd.Credentials.ClientSecret, nil)
+	if err != nil {
+		return err
+	}
+
+	authProv, err := msgraphauth.NewAzureIdentityAuthenticationProviderWithScopes(
+		credGraph,
+		[]string{"https://graph.microsoft.us/.default"}, // Gov Graph
+	)
+	if err != nil {
+		return err
+	}
+	
+	adapter, err := msgraphsdk.NewGraphRequestAdapter(authProv)
+	if err != nil {
+		return err
+	}
+	adapter.SetBaseUrl("https://graph.microsoft.us/v1.0")
+	avd.graphClient = msgraphsdk.NewGraphServiceClient(adapter)
+
+	// AVD resource Naming conventions
 	avd.Config.PersonalHostPoolNamePrefix = avd.Config.PrefixBase + "-HP-Personal-"
 	avd.Config.PersonalWorkspaceNamePrefix = avd.Config.PrefixBase + "-WS-Personal-"
 	avd.Config.PersonalAppGroupNamePrefix = avd.Config.PrefixBase + "-AG-Personal-"

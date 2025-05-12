@@ -46,19 +46,6 @@ func (vdo *VirtualDesktopOrchestrator) reservationCount(pool string) int {
     return count
 }
 
-// reservationVMs returns the list of reserved VMIDs in pool
-func (vdo *VirtualDesktopOrchestrator) reservationVMs(pool string) []string {
-    var ids []string
-    if m, ok := reservations.Load(pool); ok {
-        vmMap := m.(*sync.Map)
-        vmMap.Range(func(k, _ interface{}) bool {
-            ids = append(ids, k.(string))
-            return true
-        })
-    }
-    return ids
-}
-
 // purgeStaleHost deletes both the AVD session‐host record and its VM
 func (vdo *VirtualDesktopOrchestrator) purgeStaleHost(ctx context.Context, host *armdesktopvirtualization.SessionHost) {
     log := logging.GetLogger(ctx)

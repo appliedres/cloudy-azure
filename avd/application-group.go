@@ -135,6 +135,25 @@ func (avd *AzureVirtualDesktopManager) GetAppGroupByName(ctx context.Context, ap
 	return &appGroup, nil
 }
 
+func (avd *AzureVirtualDesktopManager) AssignUserToAppGroup(ctx context.Context, upn, appGroupName string) error {
+	log := logging.GetLogger(ctx)
+
+	userObjectID, err := avd.objectIDFromUPN(ctx, upn)
+	if err != nil {
+		log.ErrorContext(ctx, "objectIDFromUPN failure", "UPN", upn, "Error", err)
+		return cloudy.Error(ctx, "objectIDFromUPN failure: %+v", err)
+	}
+	
+	err = avd.AssignPrincipalToAppGroup(ctx, appGroupName, userObjectID)
+	if err != nil {
+		log.ErrorContext(ctx, "AssignPrincipalToAppGroup failure", "UPN", upn, "AppGroupName", appGroupName, "UserObjectID", userObjectID, "Error", err)
+		return cloudy.Error(ctx, "AssignPrincipalToAppGroup failure: %+v", err)
+	}
+
+	log.DebugContext(ctx, "Assigned user group to application group", "UPN", upn, "AppGroupName", appGroupName, "UserObjectID", userObjectID)
+	return nil
+}
+
 func (avd *AzureVirtualDesktopManager) AssignAVDUserGroupToAppGroup(ctx context.Context, appGroupName string) error {
 	err := avd.AssignPrincipalToAppGroup(ctx, appGroupName, string(avd.Config.AvdUsersGroupId))
 	if err != nil {
@@ -295,4 +314,20 @@ func (avd *AzureVirtualDesktopManager) ParseVMIDFromLinuxAVDAppGroupName(appGrou
 
 func (avd *AzureVirtualDesktopManager) getAppGroupPrefix() string {
 	return avd.Config.PooledAppGroupNamePrefix + avd.Name + "-"
+}
+
+func (avd *AzureVirtualDesktopManager) objectIDFromUPN(
+    ctx context.Context, upn string) (string, error) {
+
+    if _, err := uuid.Parse(upn); err == nil {
+        return upn, nil
+    }
+
+    usr, err := avd.graphClient.Users().
+        ByUserId(upn).                    
+        Get(ctx, nil)
+    if err != nil {
+        return "", fmt.Errorf("graph lookup %q: %w", upn, err)
+    }
+    return *usr.GetId(), nil
 }

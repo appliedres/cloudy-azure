@@ -47,8 +47,14 @@ func (vdo *VirtualDesktopOrchestrator) startLinuxAVD(ctx context.Context, vm *cm
 		return err
 	}	
 
+	// refresh cached NICs, so when we create the RDP app, it is pointing to the correct IP
+	// TODO: Move this into general start VM code. Start VM should renew NICs on its own
 	if len(vm.Nics) == 0 {
-        if n, e := vdo.vmManager.GetNics(ctx, vm.ID); e == nil { vm.Nics = n } else { return e }
+		nics, err := vdo.vmManager.GetNics(ctx, vm.ID)
+		if err != nil {
+			return err
+		}
+		vm.Nics = nics
     }
     _, err = vdo.linuxAVDPostCreation(ctx, *vm)
 	if err != nil {
@@ -69,6 +75,7 @@ func (vdo VirtualDesktopOrchestrator) deleteLinuxAVD(ctx context.Context, vm *cm
 // Called for both stop and delete actions
 func (vdo *VirtualDesktopOrchestrator) cleanupLinuxAVD(ctx context.Context, vm *cm.VirtualMachine) error {
 	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Cleaning up Linux AVD resources")
 
 	suffix := vm.ID + "-linux-avd"
 	ag := vdo.avdManager.Config.PooledAppGroupNamePrefix + suffix

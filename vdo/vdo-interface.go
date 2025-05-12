@@ -31,23 +31,15 @@ func (vdo *VirtualDesktopOrchestrator) CreateVirtualMachine(ctx context.Context,
 	}
 }
 
-func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, vmName string) error {
-	log := logging.GetLogger(ctx).With("vmName", vmName)
+func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, vm *models.VirtualMachine) error {
+	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, "StartVirtualMachine starting")
 	defer log.InfoContext(ctx, "StartVirtualMachine complete")
 
 	// Physically start the VM first
-	err := vdo.vmManager.StartVirtualMachine(ctx, vmName)
+	err := vdo.vmManager.StartVirtualMachine(ctx, vm.ID)
 	if err != nil {
 		return logging.LogAndWrapErr(ctx, log, err, "StartVirtualMachine failed")
-	}
-
-	// Retrieve the VM to check if it’s Linux AVD
-	// TODO: pass VM obj as param instead?
-	vm, err := vdo.vmManager.GetVirtualMachine(ctx, vmName, false)
-	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err,
-			"StartVirtualMachine failed to retrieve VM for AVD check")
 	}
 
     switch vm.Template.OperatingSystem {
@@ -60,22 +52,15 @@ func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, 
 	return nil
 }
 
-func (vdo *VirtualDesktopOrchestrator) StopVirtualMachine(ctx context.Context, vmName string) error {
-	log := logging.GetLogger(ctx).With("vmName", vmName)
+func (vdo *VirtualDesktopOrchestrator) StopVirtualMachine(ctx context.Context, vm *models.VirtualMachine) error {
+	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, "StopVirtualMachine starting")
 	defer log.InfoContext(ctx, "StopVirtualMachine complete")
 
 	// First stop the VM
-	err := vdo.vmManager.StopVirtualMachine(ctx, vmName)
+	err := vdo.vmManager.StopVirtualMachine(ctx, vm.ID)
 	if err != nil {
 		return logging.LogAndWrapErr(ctx, log, err, "StopVirtualMachine failed to stop VM")
-	}
-
-	// Retrieve VM to check if Linux AVD
-	vm, err := vdo.vmManager.GetVirtualMachine(ctx, vmName, false)
-	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err,
-			"StopVirtualMachine failed to retrieve VM for AVD check")
 	}
 
     if linuxAVDEnabled && 
@@ -89,16 +74,10 @@ func (vdo *VirtualDesktopOrchestrator) StopVirtualMachine(ctx context.Context, v
 	return nil
 }
 
-func (vdo *VirtualDesktopOrchestrator) DeleteVirtualMachine(ctx context.Context, vmName string) error {
-	log := logging.GetLogger(ctx).With("vmName", vmName)
+func (vdo *VirtualDesktopOrchestrator) DeleteVirtualMachine(ctx context.Context, vm *models.VirtualMachine) error {
+	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, "DeleteVirtualMachine starting")
 	defer log.InfoContext(ctx, "DeleteVirtualMachine complete")
-
-	vm, err := vdo.vmManager.GetVirtualMachine(ctx, vmName, false)
-	if err != nil {
-		// If we cannot even retrieve it, proceed with VM Manager deletion but warn
-		log.WarnContext(ctx, "Cannot retrieve VM to check OS; will try to delete anyway", "Error", err)
-	}
 
     if linuxAVDEnabled && 
 		(vm.Template.OperatingSystem == models.VirtualMachineTemplateOperatingSystemLinuxDeb ||
@@ -106,7 +85,7 @@ func (vdo *VirtualDesktopOrchestrator) DeleteVirtualMachine(ctx context.Context,
 		_ = vdo.cleanupLinuxAVD(ctx, vm)
     }
 
-	err = vdo.vmManager.DeleteVirtualMachine(ctx, vmName)
+	err := vdo.vmManager.DeleteVirtualMachine(ctx, vm.ID)
 	if err != nil {
 		return logging.LogAndWrapErr(ctx, log, err, "DeleteVirtualMachine failed during deletion")
 	}

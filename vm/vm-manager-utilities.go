@@ -135,7 +135,7 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 
 		if azVM.Properties.StorageProfile != nil {
 			if azVM.Properties.StorageProfile.OSDisk != nil {
-				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType)
+				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType)  // FIXME: this doesn't properly fit into the enum. How to detect rhel vs debian?
 
 				if azVM.Properties.StorageProfile.OSDisk.ManagedDisk != nil &&
 					azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID != nil {

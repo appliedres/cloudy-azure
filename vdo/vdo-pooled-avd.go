@@ -59,8 +59,8 @@ func (vdo *VirtualDesktopOrchestrator) linuxAVDPostCreation(ctx context.Context,
 	)
 	vm.Connect = &cm.VirtualMachineConnection{RemoteDesktopProvider: "AVD", URL: url}
 
-	// Assign principal (group for now)
-	vdo.avdManager.AssignAVDUserGroupToAppGroup(ctx, *appGroup.Name) // FIXME: per‑user
+	// Assign just the VM user to the app group
+	vdo.avdManager.AssignUserToAppGroup(ctx, vm.UserID, *appGroup.Name)
 
 	log.InfoContext(ctx, "LinuxAVDPostCreateSetup - Completed successfully")
 	return &vm, nil
