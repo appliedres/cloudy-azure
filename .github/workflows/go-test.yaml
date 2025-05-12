@@ -1,0 +1,183 @@
+name: Go Testing
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  check-go-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Go version from go.mod
+        id: go-version
+        run: |
+          GO_VERSION=$(awk '/^go / {print $2}' go.mod)
+          echo "GO_VERSION=$GO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Fetch latest stable Go version
+        run: |
+          LATEST_GO_VERSION=$(curl -s https://go.dev/dl/ | \
+                              grep -oP 'go\d+\.\d+\.\d+' | head -n 1)
+          echo "LATEST_GO_VERSION=$LATEST_GO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Compare with latest stable
+        run: |
+          echo "Declared: $GO_VERSION"
+          echo "Latest:   $LATEST_GO_VERSION"
+          if [[ "${GO_VERSION#go}" != "${LATEST_GO_VERSION#go}" ]]; then
+            echo "Using an older/newer prerelease Go; that's OK for now."
+          else
+            echo "Up-to-date"
+          fi
+
+  go-vet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk '/^go / {print $2}' go.mod)
+          echo "GO_VERSION=$GO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Go
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$GO_VERSION"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]] && VERSION="${VERSION}.0"
+          ARCHIVE="go${VERSION}.linux-amd64.tar.gz"
+          curl -sSfLO "https://go.dev/dl/${ARCHIVE}"
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf "${ARCHIVE}"
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+          go version
+
+      - run: go vet ./...
+
+  go-fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Go version
+        run: |
+          GO_VERSION=$(awk '/^go / {print $2}' go.mod)
+          echo "GO_VERSION=$GO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Go
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$GO_VERSION"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]] && VERSION="${VERSION}.0"
+          ARCHIVE="go${VERSION}.linux-amd64.tar.gz"
+          curl -sSfLO "https://go.dev/dl/${ARCHIVE}"
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf "${ARCHIVE}"
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+          go version
+
+      - name: Check gofmt
+        shell: bash
+        run: |
+          EXCLUDE_DIRS=("client" "models" "restapi" "clientmtls")
+          PAT=$(printf "|%s" "${EXCLUDE_DIRS[@]}"); PAT=${PAT:1}
+          FILES=$(find . -type f -name '*.go' | grep -vE "($PAT)")
+          UNFMT=$(echo "$FILES" | xargs gofmt -l || true)
+          if [[ -n "$UNFMT" ]]; then
+            echo "Unformatted files:"; echo "$UNFMT"; exit 1
+          fi
+          echo "gofmt clean"
+
+  go-vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Go version
+        run: |
+          GO_VERSION=$(awk '/^go / {print $2}' go.mod)
+          echo "GO_VERSION=$GO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Go
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$GO_VERSION"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]] && VERSION="${VERSION}.0"
+          ARCHIVE="go${VERSION}.linux-amd64.tar.gz"
+          curl -sSfLO "https://go.dev/dl/${ARCHIVE}"
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf "${ARCHIVE}"
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+          go version
+
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-package: ./...
+
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Go version
+        run: |
+          GO_VERSION=$(awk '/^go / {print $2}' go.mod)
+          echo "GO_VERSION=$GO_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Go
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$GO_VERSION"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]] && VERSION="${VERSION}.0"
+          ARCHIVE="go${VERSION}.linux-amd64.tar.gz"
+          curl -sSfLO "https://go.dev/dl/${ARCHIVE}"
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf "${ARCHIVE}"
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+          go version
+
+      - name: go mod tidy (fail on diff)
+        run: go mod tidy && git diff --exit-code
+      - run: go mod download
+      - run: go mod verify
+      - run: go build -o /dev/null ./...
+
+      - name: Install gotestsum
+        shell: bash
+        run: |
+          go install gotest.tools/gotestsum@latest
+          # make sure the install location is on PATH
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Go test with coverage & JUnit
+        run: |
+          gotestsum --junitfile junit-report.xml \
+            -- -v -count=1 -shuffle=on -coverprofile=coverage.txt ./...
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-report
+          path: junit-report.xml
+
+      - uses: EnricoMi/publish-unit-test-result-action/macos@v2
+        if: always()
+        with:
+          files: junit-report.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.txt
