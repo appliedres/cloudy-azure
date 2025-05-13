@@ -10,6 +10,7 @@ type VirtualDesktopOrchestratorConfig struct {
 	AVD                             *AVDConfig                    // optional, nil disables AVD install / configuration
 	AD                              *ADJoinConfig                 // optional, nil disables AD join
 	SaltMinionInstall               *SaltMinionInstallConfig      // optional, nil disables Salt Minion install
+	ArkloudAgentInstall             *ArkloudAgentConfig           // optional, nil disables Arkloud Agent install
 	BinaryStorage                   *InstallerBinaryStorageConfig // optional, nil disables all software installation (AVD / Salt Minion)
 	RestartVirtualMachineAfterSetup bool                          // Whether to restart the VM after setup
 }
@@ -39,6 +40,16 @@ type SaltMinionInstallConfig struct {
 	NcalDebFilename       string
 }
 
+// ArkloudAgentConfig defines the settings required for Arkloud Agent installation
+type ArkloudAgentConfig struct {
+	ArkloudAgentInstallerFilename string
+
+	// TODO: deb/rhel installers
+
+	ArkloudApiUrl string
+	ArkloudApiKey string
+}
+	
 // InstallerBinaryStorageConfig defines the settings required for storing installer binaries
 type InstallerBinaryStorageConfig struct {
 	BlobStorageAccount string

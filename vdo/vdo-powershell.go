@@ -52,6 +52,15 @@ func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(ctx context.Contex
 		scriptBuilder.WriteString(saltScript + "\n")
 	}
 
+	// Agent Installation section
+	if config.ArkloudAgentInstall != nil {
+		agentScript, err := GenerateInstallArkloudAgentScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.ArkloudAgentInstall)
+		if err != nil {
+			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating Agent Install script component")
+		}
+		scriptBuilder.WriteString(agentScript + "\n")
+	}
+
 	// Restart system
 	scriptBuilder.WriteString(GenerateRestartScript() + "\n")
 
@@ -202,7 +211,36 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 	return script, nil
 }
 
-//go:embed vm-setup-powershell/4_restart.ps1
+//go:embed vm-setup-powershell/4_installArkloudAgent.ps1
+var installArkloudAgentTemplate string
+
+func GenerateInstallArkloudAgentScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, agentConfig *ArkloudAgentConfig) (string, error) {
+	log := logging.GetLogger(ctx)
+
+	validFor := 1 * time.Hour
+
+	agentInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, agentConfig.ArkloudAgentInstallerFilename, validFor, sas.BlobPermissions{Read: true})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate SAS for Salt Minion Installer: %w", err)
+	}
+
+	script := installSaltMinionTemplate
+
+	replacements := map[string]string{
+		"AZURE_ARKLOUD_AGENT_URL": agentInstallerURL,
+		"$ARKLOUD_API_URL": 	   agentConfig.ArkloudApiUrl,
+		"$ARKLOUD_API_KEY":        agentConfig.ArkloudApiKey,
+	}
+
+	for key, value := range replacements {
+		script = strings.ReplaceAll(script, key, value)
+	}
+
+	log.DebugContext(ctx, fmt.Sprintf("Generated arkloud agent install script", "ArkloudApiUrl", agentConfig.ArkloudApiUrl))
+	return script, nil
+}
+
+//go:embed vm-setup-powershell/5_restart.ps1
 var restartScriptTemplate string
 
 const restartDelay = "5" // 5 seconds default delay, to allow script log to close
@@ -211,7 +249,7 @@ func GenerateRestartScript() string {
 	return script
 }
 
-//go:embed vm-setup-powershell/5_scriptEnd.ps1
+//go:embed vm-setup-powershell/6_scriptEnd.ps1
 var scriptEnd string
 
 func GenerateScriptEnd() string {
