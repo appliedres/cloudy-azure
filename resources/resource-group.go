@@ -25,6 +25,8 @@ type ResourceGroupManager struct {
 }
 
 func NewResourceGroupManager(ctx context.Context, config *ResourceGroupConfig, creds *cloudyazure.AzureCredentials) (*ResourceGroupManager, error) {
+	log := logging.GetLogger(ctx)
+
 	resourceGroup := &ResourceGroupManager{
 		credentials: creds,
 	}
@@ -33,6 +35,7 @@ func NewResourceGroupManager(ctx context.Context, config *ResourceGroupConfig, c
 
 	cred, err := cloudyazure.NewAzureCredentials(creds)
 	if err != nil {
+		log.ErrorContext(ctx, "Failed to create azure token", logging.WithError(err))
 		return nil, err
 	}
 
