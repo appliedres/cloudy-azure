@@ -25,6 +25,11 @@ require (
 	github.com/testcontainers/testcontainers-go v0.35.0
 )
 
+require (
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
+)
+
 require github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.1.1 // indirect
 
 require (
