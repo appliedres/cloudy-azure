@@ -31,7 +31,7 @@ func NewResourceGroupManager(ctx context.Context, config *ResourceGroupConfig, c
 		credentials: creds,
 	}
 
-	resourceGroup.config = setConfig(config, creds)
+	resourceGroup.config = setConfig(config)
 
 	cred, err := cloudyazure.NewAzureCredentials(creds)
 	if err != nil {
@@ -176,7 +176,7 @@ func (rsg *ResourceGroupManager) ListResourceGroups(ctx context.Context, subscri
 	return resourceGroups, nil
 }
 
-func setConfig(rsg *ResourceGroupConfig, creds *cloudyazure.AzureCredentials) *ResourceGroupConfig {
+func setConfig(rsg *ResourceGroupConfig) *ResourceGroupConfig {
 	if rsg.PollingTimeoutDuration == "" {
 		rsg.PollingTimeoutDuration = "30"
 	}

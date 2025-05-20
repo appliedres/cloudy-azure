@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -58,59 +59,169 @@ func NewArmManager(ctx context.Context, config *ArmConfig, creds *cloudyazure.Az
 	}, nil
 }
 
-func (arm *ArmManager) ExecuteArmTemplate(ctx context.Context, name string, templateData []byte, paramsData []byte) error {
-	var template map[string]interface{}
-	var params map[string]interface{}
-
+func (arm *ArmManager) ValidateArmTemplate(ctx context.Context, name string, templateData []byte, paramsData []byte) (map[string]interface{}, map[string]interface{}, error) {
 	log := logging.GetLogger(ctx)
 
-	err := json.Unmarshal(templateData, &template)
-	if err != nil {
-		log.ErrorContext(ctx, "Failed to unmarshall arm template data", logging.WithError(err))
-		return err
+	// Unmarshal ARM template
+	var template map[string]interface{}
+	if err := json.Unmarshal(templateData, &template); err != nil {
+		log.ErrorContext(ctx, "Failed to unmarshal ARM template", logging.WithError(err))
+		return nil, nil, err
 	}
 
-	err = json.Unmarshal(paramsData, &params)
-	if err != nil {
-		log.ErrorContext(ctx, "Failed to unmarshall arm template data", logging.WithError(err))
-		return err
+	// Unmarshal and extract the parameters object
+	var fullParams map[string]interface{}
+	if err := json.Unmarshal(paramsData, &fullParams); err != nil {
+		log.ErrorContext(ctx, "Failed to unmarshal ARM parameters", logging.WithError(err))
+		return nil, nil, err
 	}
 
+	paramsRaw, ok := fullParams["parameters"]
+	if !ok {
+		err := fmt.Errorf("missing 'parameters' key in parameters JSON")
+		log.ErrorContext(ctx, "Invalid ARM parameters format", logging.WithError(err))
+		return nil, nil, err
+	}
+
+	params, ok := paramsRaw.(map[string]interface{})
+	if !ok {
+		err := fmt.Errorf("'parameters' is not a valid object")
+		log.ErrorContext(ctx, "Invalid ARM parameters format", logging.WithError(err))
+		return nil, nil, err
+	}
+
+	deployment := armresources.Deployment{
+		Properties: &armresources.DeploymentProperties{
+			Mode:       toPtr(armresources.DeploymentModeIncremental),
+			Template:   template,
+			Parameters: params,
+		},
+	}
+
+	// TODO: Handle location for resource group scope
+	// if arm.config.Scope != "resourceGroup" {
+	// 	deployment.Location = toPtr(arm.config.Location)
+	// }
+
+	// Parse timeout and preserve caller context
 	timeout, err := time.ParseDuration(arm.config.PollingTimeoutDuration + "m")
 	if err != nil {
-		log.ErrorContext(ctx, "Failed to convert polling timeout to int", logging.WithError(err))
-		return err
+		log.ErrorContext(ctx, "Failed to parse polling timeout duration", logging.WithError(err))
+		return nil, nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	poller, err := arm.client.BeginCreateOrUpdate(
-		ctx,
-		arm.config.ResourceGroup,
-		name,
-		armresources.Deployment{
-			Location: &arm.config.Location,
-			Properties: &armresources.DeploymentProperties{
-				Mode:       toPtr(armresources.DeploymentModeIncremental),
-				Template:   template,
-				Parameters: params,
-			},
-		},
-		nil,
-	)
+	// Validate the ARM template
+	poller, err := arm.client.BeginValidate(ctx, arm.config.ResourceGroup, name, deployment, nil)
 	if err != nil {
-		log.ErrorContext(ctx, "Failed to create deployment", logging.WithError(err))
-		return err
+		log.ErrorContext(ctx, "ARM template validation failed", logging.WithError(err))
+		return nil, nil, err
 	}
 
+	// Wait for deployment completion
 	resp, err := poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		log.ErrorContext(ctx, "Failed to unmarshall arm template data", logging.WithError(err))
+		log.ErrorContext(ctx, "ARM validation failed during polling", logging.WithError(err))
+
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) {
+			log.ErrorContext(ctx, fmt.Sprintf("StatusCode: %d, ErrorCode: %s, Message: %s", respErr.StatusCode, respErr.ErrorCode, respErr.Error()))
+		}
+
+		return template, params, err
+	}
+
+	// Log final provisioning state
+	if resp.Properties != nil {
+		state := "unknown"
+		if resp.Properties.ProvisioningState != nil {
+			state = string(*resp.Properties.ProvisioningState)
+		}
+		log.InfoContext(ctx, fmt.Sprintf("ARM Validation '%s' completed with state: %s", name, state))
+	}
+
+	return template, params, nil
+}
+
+func (arm *ArmManager) ExecuteValidArmTemplate(ctx context.Context, name string, templateData map[string]interface{}, paramsData map[string]interface{}) error {
+	return arm.Deploy(ctx, name, templateData, paramsData)
+}
+
+func (arm *ArmManager) ExecuteArmTemplate(ctx context.Context, name string, templateData []byte, paramsData []byte) error {
+	log := logging.GetLogger(ctx)
+
+	template, params, err := arm.ValidateArmTemplate(ctx, name, templateData, paramsData)
+	if err != nil {
+		log.ErrorContext(ctx, "ARM template validation failed", logging.WithError(err))
 		return err
 	}
 
-	log.InfoContext(ctx, fmt.Sprintf("ARM Deployment %v %v completed successfully", name, resp.ID))
+	return arm.Deploy(ctx, name, template, params)
+}
+
+func (arm *ArmManager) Deploy(ctx context.Context, name string, template map[string]interface{}, params map[string]interface{}) error {
+	log := logging.GetLogger(ctx)
+
+	// Parse timeout in minutes and preserve caller context
+	timeout, err := time.ParseDuration(arm.config.PollingTimeoutDuration + "m")
+	if err != nil {
+		timeout = 30 * time.Minute
+		log.DebugContext(ctx, "Failed to parse polling timeout duration, using default", logging.WithError(err))
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	log.InfoContext(ctx, fmt.Sprintf("Starting ARM deployment '%s' with timeout: %.0f minutes", name, timeout.Minutes()))
+	log.InfoContext(ctx, fmt.Sprintf("Using deployment location: %s", arm.config.Location))
+
+	// Prepare deployment payload
+	deployment := armresources.Deployment{
+		Properties: &armresources.DeploymentProperties{
+			Mode:       toPtr(armresources.DeploymentModeIncremental),
+			Template:   template,
+			Parameters: params,
+		},
+	}
+
+	// TODO: Handle location for resource group scope
+	// if arm.config.Scope != "resourceGroup" {
+	// 	deployment.Location = toPtr(arm.config.Location)
+	// }
+
+	// Begin deployment
+	poller, err := arm.client.BeginCreateOrUpdate(ctx, arm.config.ResourceGroup, name, deployment, nil)
+	if err != nil {
+		log.ErrorContext(ctx, "Failed to start ARM deployment", logging.WithError(err))
+		return err
+	}
+
+	// Wait for deployment completion
+	resp, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		log.ErrorContext(ctx, "ARM deployment failed during polling", logging.WithError(err))
+
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) {
+			log.ErrorContext(ctx, fmt.Sprintf("StatusCode: %d, ErrorCode: %s, Message: %s", respErr.StatusCode, respErr.ErrorCode, respErr.Error()))
+		}
+
+		return err
+	}
+
+	// Log final provisioning state and deployment ID
+	if resp.Properties != nil {
+		state := "unknown"
+		if resp.Properties.ProvisioningState != nil {
+			state = string(*resp.Properties.ProvisioningState)
+		}
+		log.InfoContext(ctx, fmt.Sprintf("ARM Deployment '%s' completed with state: %s", name, state))
+	}
+	if resp.ID != nil {
+		log.InfoContext(ctx, fmt.Sprintf("Deployment ID: %s", *resp.ID))
+	}
+
 	return nil
 }
 

@@ -52,68 +52,48 @@ func TestCreateArm(t *testing.T) {
 	ctx := cloudy.StartContext()
 
 	armTemplate := `{
-   "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-   "contentVersion":"1.0.0.0",
-   "parameters":{
-      "storageAccountName":{
-         "type":"string",
-         "minLength":3,
-         "maxLength":24
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "simplestorageacct123",
+      "minLength": 3,
+      "maxLength": 24
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2019-06-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "usgovvirginia",
+      "sku": {
+        "name": "Standard_LRS"
       },
-      "location":{
-         "type":"string",
-         "defaultValue":"eastus"
-      },
-      "sku":{
-         "type":"string",
-         "defaultValue":"Standard_LRS",
-         "allowedValues":[
-            "Standard_LRS",
-            "Standard_GRS",
-            "Standard_ZRS",
-            "Premium_LRS"
-         ]
-      }
-   },
-   "resources":[
-      {
-         "type":"Microsoft.Storage/storageAccounts",
-         "apiVersion":"2022-09-01",
-         "name":"[parameters('storageAccountName')]",
-         "location":"[parameters('location')]",
-         "sku":{
-            "name":"[parameters('sku')]"
-         },
-         "kind":"StorageV2",
-         "properties":{
-            
-         }
-      }
-   ],
-   "outputs":{
-      "storageAccountEndpoint":{
-         "type":"string",
-         "value":"[reference(parameters('storageAccountName')).primaryEndpoints.blob]"
-      }
-   }
-}`
+      "kind": "StorageV2",
+      "properties": {}
+    }
+  ]
+}
+`
 
 	params := `{
-   "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-   "contentVersion":"1.0.0.0",
-   "parameters":{
-      "storageAccountName":{
-         "value":"teststorageacct01"
-      },
-      "location":{
-         "value":"usgovvirginia"
-      },
-      "sku":{
-         "value":"Standard_LRS"
-      }
-   }
-}`
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "storageAccountName": {
+      "value": "simplestorageacct123"
+    }
+  }
+}
+`
+	var template map[string]interface{}
+	var paramsObj map[string]interface{}
 
-	err = arm.ExecuteArmTemplate(ctx, "TestCreateArm", []byte(armTemplate), []byte(params))
+	template, paramsObj, err = arm.ValidateArmTemplate(ctx, "TestCreateArm", []byte(armTemplate), []byte(params))
+	assert.NoError(t, err)
+
+	err = arm.Deploy(ctx, "TestCreateArm", template, paramsObj)
 	assert.NoError(t, err)
 }
