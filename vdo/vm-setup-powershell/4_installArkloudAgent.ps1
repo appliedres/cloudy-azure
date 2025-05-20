@@ -1,43 +1,32 @@
 # -------------------------------------------------------------------------
 # CONFIGURE ARKLOUD ENDPOINT & API KEY
 # -------------------------------------------------------------------------
-param(
-    [string]$ApiUrl = $env:ARKLOUD_API_URL,
-    [string]$ApiKey = $env:ARKLOUD_API_KEY,
-    [string]$agentExeUrl = $env:AZURE_ARKLOUD_AGENT_URL
-)
 
-if (-not $ApiUrl) {
-    $ApiUrl = Read-Host "Enter Arkloud API URL (e.g. https://arkloud.example.com)"
+$AZURE_ARKLOUD_AGENT_URL = "!!AZURE_ARKLOUD_AGENT_URL"
+$ARKLOUD_API_URL         = "!!ARKLOUD_API_URL"
+$ARKLOUD_API_KEY         = "!!ARKLOUD_API_KEY"
+
+if (-not $ARKLOUD_API_URL) {
+    $ARKLOUD_API_URL = Read-Host "Enter Arkloud API URL (e.g. arkloud.example.com)"
 }
-if (-not $ApiKey) {
-    $ApiKey = Read-Host "Enter Arkloud API Key" -AsSecureString | ConvertFrom-SecureString -AsPlainText
+if (-not $ARKLOUD_API_KEY) {
+    $ARKLOUD_API_KEY = Read-Host "Enter Arkloud API Key" -AsSecureString | ConvertFrom-SecureString -AsPlainText
 }
 
 # 1) Set user-level environment variables (persist in HKCU\Environment)
 try {
     $envPath = "HKCU:\Environment"
-    Set-ItemProperty -Path $envPath -Name "ARKLOUD_API_URL" -Value $ApiUrl
-    Set-ItemProperty -Path $envPath -Name "ARKLOUD_API_KEY" -Value $ApiKey
+    Set-ItemProperty -Path $envPath -Name "ARKLOUD_API_URL" -Value $ARKLOUD_API_URL
+    Set-ItemProperty -Path $envPath -Name "ARKLOUD_API_KEY" -Value $ARKLOUD_API_KEY
     # make them available to the current session too:
-    [Environment]::SetEnvironmentVariable("ARKLOUD_API_URL", $ApiUrl, "Process")
-    [Environment]::SetEnvironmentVariable("ARKLOUD_API_KEY", $ApiKey, "Process")
+    [Environment]::SetEnvironmentVariable("ARKLOUD_API_URL", $ARKLOUD_API_URL, "Process")
+    [Environment]::SetEnvironmentVariable("ARKLOUD_API_KEY", $ARKLOUD_API_KEY, "Process")
     Write-Host "Stored API URL and Key as user-level environment variables"
 } catch {
     Exit-OnFailure "Failed to write environment variables: $_"
 }
 
-# 2) Write fallback files beside the agent exe
-try {
-    $installDir = "C:\Program Files\ArkloudAgent"
-    Set-Content -Path (Join-Path $installDir "api_url.txt") -Value $ApiUrl -Encoding UTF8
-    Set-Content -Path (Join-Path $installDir "api_key.txt") -Value $ApiKey -Encoding UTF8
-    Write-Host "Wrote api_url.txt and api_key.txt for filesystem fallback"
-} catch {
-    Exit-OnFailure "Failed to write api_url.txt/api_key.txt: $_"
-}
-
-Write-Host "Arkloud API configuration saved.  Restart the agent (or log out/in) for changes to take effect."
+Write-Host "Arkloud Agent configuration completed successfully!"
 
 # --------------------------------------------------------------------------------
 # DOWNLOAD ARKLOUD AGENT EXECUTABLE FROM STORAGE
@@ -49,12 +38,12 @@ if (-not (Test-Path $downloadFolder)) {
     New-Item -ItemType Directory -Path $downloadFolder | Out-Null
 }
 
-# You must set $agentExeUrl to point at your arkloudagent.exe blob
+# You must set $AZURE_ARKLOUD_AGENT_URL to point at your arkloudagent.exe blob
 $agentExePath = Join-Path $downloadFolder "arkloudagent.exe"
 
 Write-Host "Downloading Arkloud Agent..."
 try {
-    Invoke-WebRequest -Uri "$agentExeUrl" -OutFile $agentExePath -UseBasicParsing
+    Invoke-WebRequest -Uri "$AZURE_ARKLOUD_AGENT_URL" -OutFile $agentExePath -UseBasicParsing
     Write-Host "Successfully downloaded Arkloud Agent to $agentExePath"
 } catch {
     Exit-OnFailure "Failed to download Arkloud Agent executable. Error: $_"
@@ -84,9 +73,11 @@ Unblock-File -Path (Join-Path $installDir "arkloudagent.exe")
 # --------------------------------------------------------------------------------
 # REGISTER AUTO-START (STARTUP FOLDER + RUN KEY FALLBACK)
 # --------------------------------------------------------------------------------
-# 1) Create a shortcut in the user's Startup folder
-$startupFolder = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup"
-$shortcutPath  = Join-Path $startupFolder "ArkloudAgent.lnk"
+# Create a shortcut in the user's Startup folder
+$startupFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+if (-not (Test-Path $startupFolder)) {
+    New-Item -ItemType Directory -Path $startupFolder -Force | Out-Null
+}$shortcutPath  = Join-Path $startupFolder "ArkloudAgent.lnk"
 
 try {
     $shell    = New-Object -ComObject WScript.Shell
@@ -97,15 +88,6 @@ try {
     Write-Host "Startup shortcut created at $shortcutPath"
 } catch {
     Exit-OnFailure "Failed to create startup shortcut. Error: $_"
-}
-
-# 2) Also register the Run key as a fallback
-try {
-    $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-    Set-ItemProperty -Path $runKey -Name "ArkloudAgent" -Value "`"$installDir\arkloudagent.exe`""
-    Write-Host "Registered ArkloudAgent in HKCU Run key"
-} catch {
-    Exit-OnFailure "Failed to write Run-key for ArkloudAgent. Error: $_"
 }
 
 # --------------------------------------------------------------------------------

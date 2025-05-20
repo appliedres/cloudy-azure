@@ -47,7 +47,7 @@ type ArkloudAgentConfig struct {
 	// TODO: deb/rhel installers
 
 	ArkloudApiUrl string
-	ArkloudApiKey string
+	// ArkloudApiKey string
 }
 	
 // InstallerBinaryStorageConfig defines the settings required for storing installer binaries

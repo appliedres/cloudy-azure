@@ -12,14 +12,14 @@ const (
 	linuxAVDEnabled = true // TODO: config for Linux AVD disable
 )
 
-func (vdo *VirtualDesktopOrchestrator) CreateVirtualMachine(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vdo *VirtualDesktopOrchestrator) CreateVirtualMachine(ctx context.Context, vm *models.VirtualMachine, apiKeySecret *string) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx).With("vmName", vm.Name, "os", vm.Template.OperatingSystem)
 	log.InfoContext(ctx, "VM Orchestrator - CreateVirtualMachine starting")
 	defer log.InfoContext(ctx, "VM Orchestrator - CreateVirtualMachine complete")
 
 	switch vm.Template.OperatingSystem {
 	case models.VirtualMachineTemplateOperatingSystemWindows:
-		return vdo.createWindowsVM(ctx, vm)
+		return vdo.createWindowsVM(ctx, vm, apiKeySecret)
 	case models.VirtualMachineTemplateOperatingSystemLinuxDeb, models.VirtualMachineTemplateOperatingSystemLinuxRhel:
 		if linuxAVDEnabled {
 			return vdo.createLinuxVMWithAVD(ctx, vm)

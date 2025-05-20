@@ -14,7 +14,7 @@ import (
 	"github.com/appliedres/cloudy/models"
 )
 
-func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Context, vm *models.VirtualMachine) (*models.VirtualMachine, error) {
+func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Context, vm *models.VirtualMachine, apiKeySecret *string) (*models.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "virtualMachineSetupWindows started")
 	defer log.DebugContext(ctx, "virtualMachineSetupWindows finished")
@@ -28,7 +28,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
-		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken)
+		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken, apiKeySecret)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
@@ -45,7 +45,7 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 
 	} else {
 		log.InfoContext(ctx, "Initial VM setup - AVD disabled")
-		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, nil)
+		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, nil, apiKeySecret)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
 		}
