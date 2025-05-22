@@ -90,10 +90,11 @@ func TestCreateArm(t *testing.T) {
 `
 	var template map[string]interface{}
 	var paramsObj map[string]interface{}
+	var scope string = "resourceGroup"
 
-	template, paramsObj, err = arm.ValidateArmTemplate(ctx, "TestCreateArm", []byte(armTemplate), []byte(params))
+	template, paramsObj, err = arm.ValidateArmTemplate(ctx, "TestCreateArm", scope, []byte(armTemplate), []byte(params))
 	assert.NoError(t, err)
 
-	err = arm.Deploy(ctx, "TestCreateArm", template, paramsObj)
+	err = arm.DeployValidArmTemplate(ctx, "TestCreateArm", scope, template, paramsObj)
 	assert.NoError(t, err)
 }

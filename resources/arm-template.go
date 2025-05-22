@@ -59,7 +59,7 @@ func NewArmManager(ctx context.Context, config *ArmConfig, creds *cloudyazure.Az
 	}, nil
 }
 
-func (arm *ArmManager) ValidateArmTemplate(ctx context.Context, name string, templateData []byte, paramsData []byte) (map[string]interface{}, map[string]interface{}, error) {
+func (arm *ArmManager) ValidateArmTemplate(ctx context.Context, name string, scope string, templateData []byte, paramsData []byte) (map[string]interface{}, map[string]interface{}, error) {
 	log := logging.GetLogger(ctx)
 
 	// Unmarshal ARM template
@@ -98,10 +98,9 @@ func (arm *ArmManager) ValidateArmTemplate(ctx context.Context, name string, tem
 		},
 	}
 
-	// TODO: Handle location for resource group scope
-	// if arm.config.Scope != "resourceGroup" {
-	// 	deployment.Location = toPtr(arm.config.Location)
-	// }
+	if scope != "resourceGroup" {
+		deployment.Location = toPtr(arm.config.Location)
+	}
 
 	// Parse timeout and preserve caller context
 	timeout, err := time.ParseDuration(arm.config.PollingTimeoutDuration + "m")
@@ -145,23 +144,23 @@ func (arm *ArmManager) ValidateArmTemplate(ctx context.Context, name string, tem
 	return template, params, nil
 }
 
-func (arm *ArmManager) ExecuteValidArmTemplate(ctx context.Context, name string, templateData map[string]interface{}, paramsData map[string]interface{}) error {
-	return arm.Deploy(ctx, name, templateData, paramsData)
+func (arm *ArmManager) DeployValidArmTemplate(ctx context.Context, name string, scope string, templateData map[string]interface{}, paramsData map[string]interface{}) error {
+	return arm.deploy(ctx, name, scope, templateData, paramsData)
 }
 
-func (arm *ArmManager) ExecuteArmTemplate(ctx context.Context, name string, templateData []byte, paramsData []byte) error {
+func (arm *ArmManager) DeployArmTemplate(ctx context.Context, name string, scope string, templateData []byte, paramsData []byte) error {
 	log := logging.GetLogger(ctx)
 
-	template, params, err := arm.ValidateArmTemplate(ctx, name, templateData, paramsData)
+	template, params, err := arm.ValidateArmTemplate(ctx, name, scope, templateData, paramsData)
 	if err != nil {
 		log.ErrorContext(ctx, "ARM template validation failed", logging.WithError(err))
 		return err
 	}
 
-	return arm.Deploy(ctx, name, template, params)
+	return arm.deploy(ctx, name, scope, template, params)
 }
 
-func (arm *ArmManager) Deploy(ctx context.Context, name string, template map[string]interface{}, params map[string]interface{}) error {
+func (arm *ArmManager) deploy(ctx context.Context, name string, scope string, template map[string]interface{}, params map[string]interface{}) error {
 	log := logging.GetLogger(ctx)
 
 	// Parse timeout in minutes and preserve caller context
@@ -185,10 +184,9 @@ func (arm *ArmManager) Deploy(ctx context.Context, name string, template map[str
 		},
 	}
 
-	// TODO: Handle location for resource group scope
-	// if arm.config.Scope != "resourceGroup" {
-	// 	deployment.Location = toPtr(arm.config.Location)
-	// }
+	if scope != "resourceGroup" {
+		deployment.Location = toPtr(arm.config.Location)
+	}
 
 	// Begin deployment
 	poller, err := arm.client.BeginCreateOrUpdate(ctx, arm.config.ResourceGroup, name, deployment, nil)
