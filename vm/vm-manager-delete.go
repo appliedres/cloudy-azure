@@ -9,14 +9,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) error {
+// Delete a VM, first by deallocating it, then deleting it and its associated resources
+func (vmm *AzureVirtualMachineManager) DeleteVirtualMachine(ctx context.Context, vmId string) error {
 	log := logging.GetLogger(ctx)
 
 	if vmm.vmClient == nil {
 		return errors.New("vmm.Delete: VM Client not initialized")
 	}
 
-	if vmm.credentials == nil || vmm.credentials.ResourceGroup == "" {
+	if vmm.Credentials == nil || vmm.Credentials.ResourceGroup == "" {
 		return errors.New("vmm.Delete: credentials == nil or Resource Group not set")
 	}
 
@@ -25,13 +26,13 @@ func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) 
 	}
 
 	log.InfoContext(ctx, "DeleteVM Starting Deallocate")
-	err := vmm.Deallocate(ctx, vmId)
+	err := vmm.deallocateVirtualMachine(ctx, vmId)
 	if err != nil {
 		return err
 	}
 
 	log.InfoContext(ctx, "DeleteVM Starting BeginDelete")
-	poller, err := vmm.vmClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, vmId, &armcompute.VirtualMachinesClientBeginDeleteOptions{})
+	poller, err := vmm.vmClient.BeginDelete(ctx, vmm.Credentials.ResourceGroup, vmId, &armcompute.VirtualMachinesClientBeginDeleteOptions{})
 	if err != nil {
 		if cloudyazure.Is404(err) {
 			log.InfoContext(ctx, "BeginDelete vm not found")
@@ -45,7 +46,7 @@ func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) 
 		}
 	}
 
-	status, err := vmm.GetById(ctx, vmId, true)
+	status, err := vmm.GetVirtualMachine(ctx, vmId, true)
 	if err != nil {
 		return errors.Wrap(err, "VM Delete: Validate deleted")
 	}
@@ -83,13 +84,6 @@ func (vmm *AzureVirtualMachineManager) Delete(ctx context.Context, vmId string) 
 		}
 	} else {
 		log.InfoContext(ctx, "No Nics found")
-	}
-
-	if vmm.avdManager != nil {
-		err = vmm.avdManager.Cleanup(ctx, vmId)
-		if err != nil {
-			return logging.LogAndWrapErr(ctx, log, err, "VM Delete")
-		}
 	}
 
 	return nil

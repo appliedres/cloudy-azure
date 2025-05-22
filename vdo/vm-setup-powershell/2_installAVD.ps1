@@ -28,10 +28,7 @@ try {
 }
 Write-Host "AVD Bootloader installer downloaded successfully."
 
-# --------------------------------------------------------------------------------
 # INSTALL AVD AGENT + BOOTLOADER
-# --------------------------------------------------------------------------------
-
 if (!(Test-Path $avdAgentInstallerPath)) {
     Exit-OnFailure "Could not find AVD Agent installer in $downloadFolder"
 }
@@ -39,23 +36,21 @@ if (!(Test-Path $avdBootLoaderInstallerPath)) {
     Exit-OnFailure "Could not find AVD BootLoader installer in $downloadFolder"
 }
 
-Wait-ForInstaller -timeoutSeconds $InstallTimeoutSeconds
 Write-Host "Installing AVD RDAgent..."
 try {
     Unblock-File -Path $avdAgentInstallerPath
     $rdArgs = @("/i", $avdAgentInstallerPath, "REGISTRATIONTOKEN=$REGISTRATION_TOKEN", "/quiet", "/norestart")
-    Start-Process msiexec.exe -ArgumentList $rdArgs -Wait -Verbose -Verb RunAs
+    Install-MSIWithRetry -InstallerPath $avdAgentInstallerPath -ArgumentList $rdArgs -TimeoutSeconds $InstallTimeoutSeconds -Description "AVD RDAgent"
 } catch {
     Exit-OnFailure "Error installing RDAgent: $_"
 }
 Write-Host "AVD Agent installation completed successfully."
 
-Wait-ForInstaller -timeoutSeconds $InstallTimeoutSeconds
 Write-Host "Installing AVD BootLoader Agent..."
 try {
     Unblock-File -Path $avdBootLoaderInstallerPath
     $blArgs = @("/i", $avdBootLoaderInstallerPath, "/quiet", "/norestart")
-    Start-Process msiexec.exe -ArgumentList $blArgs -Wait -Verbose -Verb RunAs
+    Install-MSIWithRetry -InstallerPath $avdBootLoaderInstallerPath -ArgumentList $blArgs -TimeoutSeconds $InstallTimeoutSeconds -Description "AVD BootLoader"
 } catch {
     Exit-OnFailure "Error installing BootLoader Agent: $_"
 }

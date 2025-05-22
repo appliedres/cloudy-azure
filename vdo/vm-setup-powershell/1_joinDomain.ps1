@@ -20,8 +20,9 @@ if ($computerDomain -eq "$DOMAIN_NAME") {
             Add-Computer -DomainName "$DOMAIN_NAME" -Credential $credential -Force -Verbose
         }
 
-        Write-Host "Successfully joined the domain."
     } catch {
         Exit-OnFailure "Error joining the domain: $_"
     }
+    Write-Host "Successfully joined the domain."
+
 }

@@ -45,7 +45,7 @@ func (vmm *AzureVirtualMachineManager) GetAllDisks(ctx context.Context) ([]*mode
 func (vmm *AzureVirtualMachineManager) DeleteDisk(ctx context.Context, diskName string) error {
 	log := logging.GetLogger(ctx)
 
-	pollerResponse, err := vmm.diskClient.BeginDelete(ctx, vmm.credentials.ResourceGroup, diskName, nil)
+	pollerResponse, err := vmm.diskClient.BeginDelete(ctx, vmm.Credentials.ResourceGroup, diskName, nil)
 	if err != nil {
 		if cloudyazure.Is404(err) {
 			log.InfoContext(ctx, fmt.Sprintf("Cannot delete, disk not found: %s", diskName))

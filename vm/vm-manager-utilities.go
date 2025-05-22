@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,13 +12,6 @@ import (
 	"github.com/appliedres/cloudy"
 	"github.com/appliedres/cloudy/logging"
 	"github.com/appliedres/cloudy/models"
-)
-
-const (
-	vmNameTagKey    = "Name"
-	vmCreatorTagKey = "CreatorID"
-	vmUserTagKey    = "UserID"
-	vmTeamTagKey    = "TeamID"
 )
 
 func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachine) (*armcompute.VirtualMachine, error) {
@@ -34,38 +28,11 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		},
 	}
 
-	if cloudyVM.Tags != nil {
-		azVM.Tags = cloudyVM.Tags
-	} else {
-		azVM.Tags = make(map[string]*string)
-	}
-
-	azVM.Tags[vmNameTagKey] = &cloudyVM.Name
-
-	// Add creator, user, and team tags
-	if cloudyVM.CreatorID != "" {
-		azVM.Tags[vmCreatorTagKey] = &cloudyVM.CreatorID
-	}
-	if cloudyVM.UserID != "" {
-		azVM.Tags[vmUserTagKey] = &cloudyVM.UserID
-	}
-	if cloudyVM.TeamID != "" {
-		azVM.Tags[vmTeamTagKey] = &cloudyVM.TeamID
-	}
-
 	if cloudyVM.Template == nil {
 		cloudyVM.Template = &models.VirtualMachineTemplate{}
 	}
-	if cloudyVM.Template.Tags != nil {
-		for k, v := range cloudyVM.Template.Tags {
-			_, ok := azVM.Tags[k]
 
-			// Will not overwrite tags already in the VM object
-			if !ok {
-				azVM.Tags[k] = v
-			}
-		}
-	}
+	azVM.Tags = generateAzureTagsForVM(cloudyVM)
 
 	imgRef, imgPlan, err := translateImageID(ctx, cloudyVM.Template.OsBaseImageID)
 	if err != nil {
@@ -103,7 +70,7 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 	azVM.Properties.OSProfile = &armcompute.OSProfile{
 		ComputerName:  to.Ptr(cloudyVM.ID),
 		AdminUsername: &cloudyVM.Template.LocalAdministratorID,
-		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)),
+		AdminPassword: to.Ptr(cloudy.GeneratePassword(15, 2, 2, 2)), // TODO: we need to store this somewhere
 	}
 
 	// OS-specific items
@@ -115,12 +82,12 @@ func FromCloudyVirtualMachine(ctx context.Context, cloudyVM *models.VirtualMachi
 		azVM.Properties.StorageProfile.OSDisk.OSType = to.Ptr(armcompute.OperatingSystemTypesLinux)
 		azVM.Properties.OSProfile.LinuxConfiguration = &armcompute.LinuxConfiguration{
 			DisablePasswordAuthentication: to.Ptr(false),
-			// TODO: linux SSH key management
+			// TODO: add SSH key support
 			// SSH: &armcompute.SSHConfiguration{
 			// 	PublicKeys: []*armcompute.SSHPublicKey{
 			// 		{
 			// 			Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", cloudyVM.Template.LocalAdministratorID)),
-			// 			KeyData: to.Ptr(),
+			// 			KeyData: to.Ptr(pubSSH),
 			// 		},
 			// 	},
 			// },
@@ -168,7 +135,7 @@ func ToCloudyVirtualMachine(ctx context.Context, azVM *armcompute.VirtualMachine
 
 		if azVM.Properties.StorageProfile != nil {
 			if azVM.Properties.StorageProfile.OSDisk != nil {
-				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType)
+				cloudyVm.Template.OperatingSystem = string(*azVM.Properties.StorageProfile.OSDisk.OSType) // FIXME: this doesn't properly fit into the enum. How to detect rhel vs debian?
 
 				if azVM.Properties.StorageProfile.OSDisk.ManagedDisk != nil &&
 					azVM.Properties.StorageProfile.OSDisk.ManagedDisk.ID != nil {
@@ -413,9 +380,11 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 		case string(models.VirtualMachineCloudStateRunning):
 			return models.VirtualMachineCloudStateRunning
 		case string(models.VirtualMachineCloudStateStopped):
+			// we avoid 'stopped' state in azure as this incurs costs, but a user shutdown can result in this state
 			return models.VirtualMachineCloudStateStopped
 		case "deallocated":
-			return models.VirtualMachineCloudStateDeleted // TODO: Should VM ever be left in deallocated state?
+			// we intend to always 'deallocate' VMs for the 'stop' action
+			return models.VirtualMachineCloudStateStopped
 		default:
 			return models.VirtualMachineCloudStateUnknown
 		}
@@ -424,8 +393,10 @@ func mapCloudState(provState, powerState string) models.VirtualMachineCloudState
 		case string(models.VirtualMachineCloudStateStarting):
 			return models.VirtualMachineCloudStateStarting
 		case "deallocating":
-			return models.VirtualMachineCloudStateDeleting
+			// we intend to always 'deallocate' VMs for the 'stop' action
+			return models.VirtualMachineCloudStateStopping
 		case string(models.VirtualMachineCloudStateStopping):
+			// we avoid 'stopping' state in azure as this incurs costs, but a user shutdown can result in this state
 			return models.VirtualMachineCloudStateStopping
 		case string(models.VirtualMachineCloudStateRestarting):
 			return models.VirtualMachineCloudStateRestarting
@@ -447,10 +418,11 @@ const mpPrefix = "marketplace::" // shorthand for marketplace
 
 // translateImageID builds the ImageReference and optional Plan from the encoded ID.
 // Format:
-//   marketplace:
-//		"marketplace::<Publisher>::<Offer>::<SKU>::<Version>[::PlanName]"
-//   gallery: 
-//		"/subscriptions/<SubscriptionID/resourceGroups/<ResourceGroup>/providers/Microsoft.Compute/galleries/<ImageGalleryName/images/<ImageName>/versions/<version>"
+//
+//	  marketplace:
+//			"marketplace::<Publisher>::<Offer>::<SKU>::<Version>[::PlanName]"
+//	  gallery:
+//			"/subscriptions/<SubscriptionID/resourceGroups/<ResourceGroup>/providers/Microsoft.Compute/galleries/<ImageGalleryName/images/<ImageName>/versions/<version>"
 func translateImageID(ctx context.Context, imageID string) (*armcompute.ImageReference, *armcompute.Plan, error) {
 	log := logging.GetLogger(ctx)
 

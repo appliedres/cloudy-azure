@@ -68,34 +68,11 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 	nicName := fmt.Sprintf("%s-nic-primary", vm.ID)
 
 	fullSubnetId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s",
-		vmm.credentials.SubscriptionID, vmm.config.VnetResourceGroup, vmm.config.VnetId, subnetId)
+		vmm.Credentials.SubscriptionID, vmm.Config.VnetResourceGroup, vmm.Config.VnetId, subnetId)
 
-	dnsServers := []*string{}
-	if strings.EqualFold(vm.Template.OperatingSystem, models.VirtualMachineTemplateOperatingSystemWindows) {
-		dnsServers = vmm.config.DomainControllers
-	}
-
-	// apply VM info as tags to NIC
-	tags := map[string]*string{}
-	if vm.Name != "" {
-		tags[vmNameTagKey] = &vm.Name
-	}
-	if vm.CreatorID != "" {
-		tags[vmCreatorTagKey] = &vm.CreatorID
-	}
-	if vm.UserID != "" {
-		tags[vmUserTagKey] = &vm.UserID
-	}
-	if vm.TeamID != "" {
-		tags[vmTeamTagKey] = &vm.TeamID
-	}
-	for key, value := range vm.Tags {
-		tags[key] = value
-	}
-
-	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.config.VnetResourceGroup, nicName, armnetwork.Interface{
-		Location: &vmm.credentials.Region,
-		Tags:     tags,
+	poller, err := vmm.nicClient.BeginCreateOrUpdate(ctx, vmm.Config.VnetResourceGroup, nicName, armnetwork.Interface{
+		Location: &vmm.Credentials.Region,
+		Tags:     generateAzureTagsForVM(vm),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			EnableAcceleratedNetworking: vm.Template.AcceleratedNetworking,
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
@@ -111,7 +88,7 @@ func (vmm *AzureVirtualMachineManager) CreateNic(ctx context.Context, vm *models
 				},
 			},
 			DNSSettings: &armnetwork.InterfaceDNSSettings{
-				DNSServers: dnsServers,
+				DNSServers: vmm.Config.DomainControllers,
 			},
 		},
 	}, nil)
@@ -153,7 +130,7 @@ func (vmm *AzureVirtualMachineManager) DeleteNic(ctx context.Context, nic *model
 	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, fmt.Sprintf("DeleteNic starting: %s", nic.Name))
 
-	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.config.VnetResourceGroup, nic.Name, nil)
+	poller, err := vmm.nicClient.BeginDelete(ctx, vmm.Config.VnetResourceGroup, nic.Name, nil)
 	if err != nil {
 		return errors.Wrap(err, "DeleteNic.BeginDelete")
 	}
@@ -172,7 +149,7 @@ func (vmm *AzureVirtualMachineManager) findBestSubnet(ctx context.Context) (stri
 	bestSubnetId := ""
 	bestSubnetCount := 0
 
-	for _, subnetId := range vmm.config.SubnetIds {
+	for _, subnetId := range vmm.Config.SubnetIds {
 		subnetCount, err := vmm.getSubnetAvailableIps(ctx, subnetId)
 		if err != nil {
 			log.ErrorContext(ctx, fmt.Sprintf("error counting ips in subnet: %s", subnetId), logging.WithError(err))
@@ -194,8 +171,8 @@ func (vmm *AzureVirtualMachineManager) findBestSubnet(ctx context.Context) (stri
 
 func (vmm *AzureVirtualMachineManager) getSubnetAvailableIps(ctx context.Context, subnetId string) (int, error) {
 	res, err := vmm.subnetClient.Get(ctx,
-		vmm.config.VnetResourceGroup,
-		vmm.config.VnetId,
+		vmm.Config.VnetResourceGroup,
+		vmm.Config.VnetId,
 		subnetId,
 		&armnetwork.SubnetsClientGetOptions{Expand: nil})
 	if err != nil {

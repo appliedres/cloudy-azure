@@ -57,14 +57,14 @@ func initAVD() error {
 		Region:       "usgovvirginia",
 	}
 
-	config := AzureVirtualDesktopConfig{}
+	config := AzureVirtualDesktopManagerConfig{}
 
-	avd, err = NewAzureVirtualDesktopManager(ctx, &creds, &config)
+	avd, err = NewAzureVirtualDesktopManager(ctx, "unit_test", &creds, &config)
 	if err != nil {
 		return err
 	}
 
-	cred, err := cloudyazure.GetAzureClientSecretCredential(*avd.credentials)
+	cred, err := cloudyazure.GetAzureClientSecretCredential(*avd.Credentials)
 	if err != nil {
 		return err
 	}
@@ -133,34 +133,34 @@ func _TestRetrieveRegistrationToken(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	hostpools, err = avd.listHostPools(ctx, testConfig.ResourceGroupName, nil)
+	hostpools, err = avd.listHostPools(ctx, nil)
 	assert.Nil(t, err)
 	assert.NotZero(t, len(hostpools))
 
 	for i := 1; i < len(hostpools); i++ {
-		sessionHosts, err := avd.listSessionHosts(ctx, testConfig.ResourceGroupName, *hostpools[i].Name)
+		sessionHosts, err := avd.ListSessionHosts(ctx, *hostpools[i].Name)
 		assert.GreaterOrEqual(t, len(sessionHosts), 0)
 		assert.Nil(t, err)
 	}
 
-	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.ResourceGroupName, testConfig.Upn)
+	firstHostpool, err := avd.FindFirstAvailableHostPool(ctx, testConfig.Upn)
 	assert.Nil(t, err)
 	assert.NotEmpty(t, firstHostpool.Name)
 
 	if err == nil {
-		regToken, err = avd.RetrieveRegistrationToken(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
+		regToken, err = avd.RetrieveRegistrationToken(ctx, *firstHostpool.Name)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, regToken)
 	}
 
 	if err == nil {
-		sessionHost, err = avd.getAvailableSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name)
+		sessionHost, err = avd.getAvailableSessionHost(ctx, *firstHostpool.Name)
 		assert.Nil(t, err)
 		assert.NotEmpty(t, sessionHost)
 	}
 
 	if err == nil {
-		err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, *firstHostpool.Name, *sessionHost, testConfig.Upn)
+		err = avd.AssignSessionHost(ctx, *firstHostpool.Name, *sessionHost, testConfig.Upn)
 		assert.Nil(t, err)
 	}
 }
@@ -169,42 +169,45 @@ func _TestAssignSessionHost(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.AssignSessionHost(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.AssignSessionHost(ctx, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
-func _TestDeleteSessionHost(t *testing.T) {
-	err = initAVD()
-	assert.Nil(t, err)
+// FIXME: use session host obj in delete action
+// func _TestDeleteSessionHost(t *testing.T) {
+// 	err = initAVD()
+// 	assert.Nil(t, err)
 
-	err = avd.DeleteSessionHost(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost)
-	assert.Nil(t, err)
-}
+// 	sessionHost = avd.GetSessionHost(ctx, testConfig.SessionHost)
+
+// 	err = avd.DeleteSessionHost(ctx, sessionHost)
+// 	assert.Nil(t, err)
+// }
 
 func _TestDeleteUserSession(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.DeleteUserSession(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.DeleteUserSession(ctx, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
-func _TestDisconnecteUserSession(t *testing.T) {
+func _TestDisconnectUserSession(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.DisconnecteUserSession(ctx, testConfig.ResourceGroupName, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
+	err = avd.DisconnectUserSession(ctx, testConfig.HostPool, testConfig.SessionHost, testConfig.Upn)
 	assert.Nil(t, err)
 }
 
-func _TestAssignUsertoRoles(t *testing.T) {
+func _TestAssignUserToRoles(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	err = avd.AssignRoleToUser(ctx, testConfig.ResourceGroupName, testConfig.DesktopVirtualizationUserRoleId, testConfig.UserObjectId)
+	err = avd.AssignRoleToUser(ctx, testConfig.DesktopVirtualizationUserRoleId, testConfig.UserObjectId)
 	assert.Nil(t, err)
 
-	err = avd.AssignRoleToUser(ctx, testConfig.ResourceGroupName, testConfig.VirtualMachineUserLoginRoleId, testConfig.UserObjectId)
+	err = avd.AssignRoleToUser(ctx, testConfig.VirtualMachineUserLoginRoleId, testConfig.UserObjectId)
 	assert.Nil(t, err)
 }
 
@@ -348,7 +351,11 @@ func TestGenerateNextName(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			startTime := time.Now()
-			result, err := GenerateNextName(tc.existing, tc.maxSequences)
+			var lastExisting string
+			if len(tc.existing) > 0 {
+				lastExisting = tc.existing[len(tc.existing)-1]
+			}
+			result, err := GenerateNextName(lastExisting, tc.maxSequences)
 			elapsedTime := time.Since(startTime)
 
 			fmt.Printf("Test '%s' took %s\n", tc.name, elapsedTime)
