@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -18,7 +17,6 @@ import (
 	"github.com/appliedres/cloudy/datastore"
 	"github.com/appliedres/cloudy/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
@@ -34,7 +32,7 @@ func getCert(url string) ([]byte, error) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: true, // Skip verification for testing purposes
 			},
 		},
 	}
@@ -103,85 +101,85 @@ func (s *CosmosdbStrategy) WaitUntilReady(ctx context.Context, target wait.Strat
 	}
 }
 
-func TestCosmosLocalDBFactory(t *testing.T) {
-	key := "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
-	strategy := &CosmosdbStrategy{}
-	// endpoint := "https://localhost:8081/"
-	ctx := cloudy.StartContext()
-	req := testcontainers.ContainerRequest{
-		Image: "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest",
-		ExposedPorts: []string{
-			"8081/tcp",
-			"10250/tcp",
-			"10251/tcp",
-			"10252/tcp",
-			"10253/tcp",
-			"10254/tcp",
-			"10255/tcp",
-		},
-		// WaitingFor: wait.ForLog("11/11 partitions"),
-		WaitingFor: strategy,
-	}
+// func TestCosmosLocalDBFactory(t *testing.T) {
+// 	key := "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
+// 	strategy := &CosmosdbStrategy{}
+// 	// endpoint := "https://localhost:8081/"
+// 	ctx := cloudy.StartContext()
+// 	req := testcontainers.ContainerRequest{
+// 		Image: "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest",
+// 		ExposedPorts: []string{
+// 			"8081/tcp",
+// 			"10250/tcp",
+// 			"10251/tcp",
+// 			"10252/tcp",
+// 			"10253/tcp",
+// 			"10254/tcp",
+// 			"10255/tcp",
+// 		},
+// 		// WaitingFor: wait.ForLog("11/11 partitions"),
+// 		WaitingFor: strategy,
+// 	}
 
-	// docker run \
-	// --interactive \
-	// --tty \
-	// mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+// 	// docker run \
+// 	// --interactive \
+// 	// --tty \
+// 	// mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+// 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+// 		ContainerRequest: req,
+// 		Started:          true,
+// 	})
 
-	if err != nil {
-		log.Fatalf("Could not start cosmosdb: %s", err)
-	}
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			log.Fatalf("Could not stop cosmosdb: %s", err)
-		}
-	}()
+// 	if err != nil {
+// 		log.Fatalf("Could not start cosmosdb: %s", err)
+// 	}
+// 	defer func() {
+// 		if err := container.Terminate(ctx); err != nil {
+// 			log.Fatalf("Could not stop cosmosdb: %s", err)
+// 		}
+// 	}()
 
-	ip, err := container.Host(ctx)
-	if err != nil {
-		panic(err)
-	}
+// 	ip, err := container.Host(ctx)
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	mappedPort, err := container.MappedPort(ctx, "8081")
-	if err != nil {
-		panic(err)
-	}
+// 	mappedPort, err := container.MappedPort(ctx, "8081")
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	endpoint := fmt.Sprintf("https://%s:%s/", ip, mappedPort.Port())
-	ui := fmt.Sprintf("%v_explorer/index.html", endpoint)
+// 	endpoint := fmt.Sprintf("https://%s:%s/", ip, mappedPort.Port())
+// 	ui := fmt.Sprintf("%v_explorer/index.html", endpoint)
 
-	fmt.Printf("Endpoint : %v\n", endpoint)
-	fmt.Printf("UI : %v\n", ui)
+// 	fmt.Printf("Endpoint : %v\n", endpoint)
+// 	fmt.Printf("UI : %v\n", ui)
 
-	menv := cloudy.NewMapEnvironment()
-	menv.Set("DATATYPE_DRIVER", AzureCosmosDB)
-	menv.Set("DATATYPE_AZ_COSMOS_URL", endpoint)
-	menv.Set("DATATYPE_AZ_COSMOS_KEY", key)
+// 	menv := cloudy.NewMapEnvironment()
+// 	menv.Set("DATATYPE_DRIVER", AzureCosmosDB)
+// 	menv.Set("DATATYPE_AZ_COSMOS_URL", endpoint)
+// 	menv.Set("DATATYPE_AZ_COSMOS_KEY", key)
 
-	// SSL BROKE
-	env := cloudy.NewEnvironment(cloudy.NewHierarchicalEnvironment(menv))
-	cloudy.SetDefaultEnvironment(env)
+// 	// SSL BROKE
+// 	env := cloudy.NewEnvironment(cloudy.NewHierarchicalEnvironment(menv))
+// 	cloudy.SetDefaultEnvironment(env)
 
-	envSegment := env.Segment("DATATYPE")
-	ds, err := datastore.CreateJsonDatastore[datastore.TestItem](ctx, "testfactory", "ark", "id", envSegment)
-	if err != nil {
-		panic(err)
-	}
+// 	envSegment := env.Segment("DATATYPE")
+// 	ds, err := datastore.CreateJsonDatastore[datastore.TestItem](ctx, "testfactory", "ark", "id", envSegment)
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	assert.NotNil(t, ds)
-	assert.NotNil(t, ds)
-	err = ds.Open(ctx, nil)
-	if err != nil {
-		panic(err)
-	}
-	datastore.JsonDataStoreTest(t, ctx, ds)
+// 	assert.NotNil(t, ds)
+// 	assert.NotNil(t, ds)
+// 	err = ds.Open(ctx, nil)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	datastore.JsonDataStoreTest(t, ctx, ds)
 
-}
+// }
 
 func CreateCompleteEnvironment(envVar string, PrefixVar string, credentialPrefix string) *cloudy.Environment {
 	testutil.MustSetTestEnv()
@@ -210,34 +208,6 @@ func CreateCompleteEnvironment(envVar string, PrefixVar string, credentialPrefix
 	env := cloudy.NewEnvironment(cloudy.NewHierarchicalEnvironment(cloudy.NewTieredEnvironment(envServices...), prefix))
 	cloudy.SetDefaultEnvironment(env)
 	return env
-}
-
-func TestCosmosDBFactory(t *testing.T) {
-	menv := cloudy.NewMapEnvironment()
-	menv.Set("DATATYPE_DRIVER", AzureCosmosDB)
-	menv.Set("DATATYPE_AZ_COSMOS_URL", "testurl")
-	menv.Set("DATATYPE_AZ_COSMOS_KEY", base64.StdEncoding.EncodeToString([]byte("super-secret-key")))
-
-	env := cloudy.NewEnvironment(cloudy.NewHierarchicalEnvironment(menv))
-	cloudy.SetDefaultEnvironment(env)
-
-	envSegment := env.Segment("DATATYPE")
-
-	factory, err := datastore.UntypedJsonDataStoreFactoryProviders.NewFromEnv(envSegment, "DRIVER")
-	if err != nil {
-		panic(err)
-	}
-
-	ctx := cloudy.StartContext()
-	ds := factory.CreateJsonDatastore(ctx, "testfactory", "ark", "ID")
-	assert.NotNil(t, ds)
-
-	typedds, err := datastore.CreateJsonDatastore[TestItem](ctx, "testfactory", "ark", "ID", envSegment)
-	if err != nil {
-		panic(err)
-	}
-	assert.NotNil(t, typedds)
-
 }
 
 func TestCosmosDBCreateOne(t *testing.T) {

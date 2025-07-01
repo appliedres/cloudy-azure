@@ -7,54 +7,12 @@ import (
 	"time"
 
 	"github.com/appliedres/cloudy"
-	cloudyazure "github.com/appliedres/cloudy-azure"
 	"github.com/appliedres/cloudy/datastore"
 )
 
-func init() {
-	datastore.UntypedJsonDataStoreFactoryProviders.Register(AzureCosmosDB, &CosmosDBFactory{})
-}
-
-// FACTORY --------------------------------
-const AzureCosmosDB = "azure-cosmosdb"
-
-type CosmosFactoryConfig struct {
-	URL      string
-	Key      string
-	Creds    *cloudyazure.AzureCredentials
-	Database string
-}
-
-type CosmosDBFactory struct {
-	config *CosmosFactoryConfig
-}
-
-func (c *CosmosDBFactory) Create(cfg interface{}) (datastore.UntypedJsonDataStoreFactory, error) {
-	cloudy.Info(context.Background(), "CosmosDBFactory Create")
-	sec := cfg.(*CosmosFactoryConfig)
-	if sec == nil {
-		return nil, cloudy.ErrInvalidConfiguration
-	}
-	return &CosmosDBFactory{
-		config: cfg.(*CosmosFactoryConfig),
-	}, nil
-}
-
-func (c *CosmosDBFactory) FromEnv(env *cloudy.Environment) (interface{}, error) {
-	// creds := GetAzureCredentialsFromEnv(env)
-
-	cfg := &CosmosFactoryConfig{
-		URL:      env.Force("AZ_COSMOS_URL"),
-		Key:      env.Force("AZ_COSMOS_KEY"),
-		Database: env.Default("AZ_COSMOS_DB", "arkloud"),
-		// Creds:    &creds,
-	}
-	return cfg, nil
-}
-
-func (c *CosmosDBFactory) CreateJsonDatastore(ctx context.Context, typename string, prefix string, idField string) datastore.UntypedJsonDataStore {
-	return NewAzureCosmosDb(ctx, c.config.URL, c.config.Key, c.config.Database, typename, idField, typename, typename)
-}
+// func CreateJsonDatastore(ctx context.Context, typename string, prefix string, idField string) datastore.UntypedJsonDataStore {
+// 	return NewAzureCosmosDb(ctx, c.config.URL, c.config.Key, c.config.Database, typename, idField, typename, typename)
+// }
 
 // DATASTORE -------------------------------
 
