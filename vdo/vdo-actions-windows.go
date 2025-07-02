@@ -8,7 +8,7 @@ import (
 )
 
 // Creates a Windows VM
-func (vdo *VirtualDesktopOrchestrator) createWindowsVM(ctx context.Context, vm *cm.VirtualMachine, apiKeySecret *string) (*cm.VirtualMachine, error) {
+func (vdo *VirtualDesktopOrchestrator) createWindowsVM(ctx context.Context, vm *cm.VirtualMachine, apiKeySecret, agentBinaryURL *string) (*cm.VirtualMachine, error) {
 	log := logging.GetLogger(ctx)
 	log.DebugContext(ctx, "Creating Windows VM")
 
@@ -18,7 +18,7 @@ func (vdo *VirtualDesktopOrchestrator) createWindowsVM(ctx context.Context, vm *
 	}
 
 	log.DebugContext(ctx, "Running initial setup for Windows VM")
-	vm, err = vdo.virtualMachineSetupWindows(ctx, vm, apiKeySecret)
+	vm, err = vdo.virtualMachineSetupWindows(ctx, vm, apiKeySecret, agentBinaryURL)
 	if err != nil {
 		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Windows VM setup")
 	}

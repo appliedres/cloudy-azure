@@ -6,22 +6,26 @@ $AZURE_ARKLOUD_AGENT_URL = "!!AZURE_ARKLOUD_AGENT_URL"
 $ARKLOUD_API_URL         = "!!ARKLOUD_API_URL"
 $ARKLOUD_API_KEY         = "!!ARKLOUD_API_KEY"
 
+if (-not $AZURE_ARKLOUD_AGENT_URL) {
+    Exit-OnFailure "Could not find AZURE_ARKLOUD_AGENT_URL. Please set it in the script."
+}
 if (-not $ARKLOUD_API_URL) {
-    $ARKLOUD_API_URL = Read-Host "Enter Arkloud API URL (e.g. arkloud.example.com)"
+    Exit-OnFailure "ARKLOUD_API_URL is not set. Please set it in the script."
 }
 if (-not $ARKLOUD_API_KEY) {
-    $ARKLOUD_API_KEY = Read-Host "Enter Arkloud API Key" -AsSecureString | ConvertFrom-SecureString -AsPlainText
+    Exit-OnFailure "ARKLOUD_API_KEY is not set. Please set it in the script."
 }
 
-# 1) Set user-level environment variables (persist in HKCU\Environment)
+# Save for every account on the machine
 try {
-    $envPath = "HKCU:\Environment"
-    Set-ItemProperty -Path $envPath -Name "ARKLOUD_API_URL" -Value $ARKLOUD_API_URL
-    Set-ItemProperty -Path $envPath -Name "ARKLOUD_API_KEY" -Value $ARKLOUD_API_KEY
-    # make them available to the current session too:
+    [Environment]::SetEnvironmentVariable("ARKLOUD_API_URL", $ARKLOUD_API_URL, "Machine")
+    [Environment]::SetEnvironmentVariable("ARKLOUD_API_KEY", $ARKLOUD_API_KEY, "Machine")
+
+    # Also set for the current process so the immediate launch inherits them
     [Environment]::SetEnvironmentVariable("ARKLOUD_API_URL", $ARKLOUD_API_URL, "Process")
     [Environment]::SetEnvironmentVariable("ARKLOUD_API_KEY", $ARKLOUD_API_KEY, "Process")
-    Write-Host "Stored API URL and Key as user-level environment variables"
+
+    Write-Host "Stored API URL and Key as machine-level environment variables"
 } catch {
     Exit-OnFailure "Failed to write environment variables: $_"
 }
@@ -71,46 +75,48 @@ try {
 Unblock-File -Path (Join-Path $installDir "arkloudagent.exe")
 
 # --------------------------------------------------------------------------------
-# REGISTER AUTO-START (STARTUP FOLDER + RUN KEY FALLBACK)
+# REGISTER AUTO-START WITH WINDOWS SERVICE
 # --------------------------------------------------------------------------------
-# Create a shortcut in the user's Startup folder
-$startupFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
-if (-not (Test-Path $startupFolder)) {
-    New-Item -ItemType Directory -Path $startupFolder -Force | Out-Null
-}$shortcutPath  = Join-Path $startupFolder "ArkloudAgent.lnk"
+$serviceName = "ArkloudAgent"
+$exePath     = "`"$installDir\arkloudagent.exe`""
 
 try {
-    $shell    = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath     = Join-Path $installDir "arkloudagent.exe"
-    $shortcut.WorkingDirectory = $installDir
-    $shortcut.Save()
-    Write-Host "Startup shortcut created at $shortcutPath"
+    if (-not (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) {
+        New-Service -Name $serviceName -BinaryPathName $exePath -DisplayName "Arkloud Agent" -StartupType Automatic
+        Write-Host "Windows service '$serviceName' created"
+    } else {
+        sc.exe config $serviceName binPath= $exePath start= auto | Out-Null
+        Write-Host "Windows service '$serviceName' updated"
+    }
 } catch {
-    Exit-OnFailure "Failed to create startup shortcut. Error: $_"
+    Exit-OnFailure "Failed to create or update Windows service. Error: $_"
 }
 
 # --------------------------------------------------------------------------------
 # LAUNCH THE AGENT & VERIFY IT STARTS
 # --------------------------------------------------------------------------------
-Write-Host "Launching Arkloud Agent..."
+Write-Host "Starting Arkloud Agent service..."
 try {
-    $process = Start-Process -FilePath (Join-Path $installDir "arkloudagent.exe") -PassThru
+    Start-Service -Name $serviceName
 } catch {
-    Exit-OnFailure "Failed to start Arkloud Agent. Error: $_"
+    Exit-OnFailure "Failed to start Arkloud Agent service. Error: $_"
 }
 
-# Poll for the process to confirm startup
-$maxTries = 15
+# Poll for the service to confirm it is running
+$maxTries = 10
 $delay    = 2  # seconds
+
 for ($i = 0; $i -lt $maxTries; $i++) {
-    if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
-        Write-Host "Arkloud Agent is running (PID $($process.Id))."
+    $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -eq "Running") {
+        Write-Host "Arkloud Agent service is running."
         break
     }
+
     Start-Sleep -Seconds $delay
+
     if ($i -eq $maxTries - 1) {
-        Exit-OnFailure "Timed out waiting for Arkloud Agent to start."
+        Exit-OnFailure "Timed out waiting for Arkloud Agent service to reach the 'Running' state."
     }
 }
 

@@ -42,14 +42,9 @@ type SaltMinionInstallConfig struct {
 
 // ArkloudAgentConfig defines the settings required for Arkloud Agent installation
 type ArkloudAgentConfig struct {
-	ArkloudAgentInstallerFilename string
-
-	// TODO: deb/rhel installers
-
-	ArkloudApiUrl string
-	// ArkloudApiKey string
+	ArkloudApiUrl	string
 }
-	
+
 // InstallerBinaryStorageConfig defines the settings required for storing installer binaries
 type InstallerBinaryStorageConfig struct {
 	BlobStorageAccount string

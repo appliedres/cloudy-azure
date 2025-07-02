@@ -15,7 +15,12 @@ import (
 )
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
-func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(ctx context.Context, config VirtualDesktopOrchestratorConfig, hostPoolRegistrationToken, apiKeySecret *string) (*string, error) {
+func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(
+	ctx context.Context, 
+	config VirtualDesktopOrchestratorConfig, 
+	hostPoolRegistrationToken, 
+	apiKeySecret,
+	agentBinaryURL *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
 	// TODO: validate VDO config
@@ -54,7 +59,7 @@ func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(ctx context.Contex
 
 	// Agent Installation section
 	if config.ArkloudAgentInstall != nil && apiKeySecret != nil {
-		agentScript, err := GenerateInstallArkloudAgentScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.ArkloudAgentInstall, *apiKeySecret)
+		agentScript, err := GenerateInstallArkloudAgentScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.ArkloudAgentInstall, *apiKeySecret, *agentBinaryURL)
 		if err != nil {
 			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating Agent Install script component")
 		}
@@ -197,7 +202,6 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 
 	script := installSaltMinionTemplate
 
-	log.DebugContext(ctx, "Generated salt minion install script using Salt Master IP/hostname", "SaltMaster", saltConfig.SaltMaster)
 	replacements := map[string]string{
 		"$AZURE_SALT_MINION_URL": saltInstallerURL,
 		"$SALT_MASTER":           saltConfig.SaltMaster,
@@ -207,27 +211,20 @@ func GenerateInstallSaltMinionScript(ctx context.Context, creds *cloudyazure.Azu
 		script = strings.ReplaceAll(script, key, value)
 	}
 
-	log.DebugContext(ctx, fmt.Sprintf("Generated salt minion install script using Salt Master IP/hostname '%s'", saltConfig.SaltMaster))
+	log.DebugContext(ctx, "Generated salt minion install script using Salt Master IP/hostname", "SaltMasteR", saltConfig.SaltMaster)
 	return script, nil
 }
 
 //go:embed vm-setup-powershell/4_installArkloudAgent.ps1
 var installArkloudAgentTemplate string
 
-func GenerateInstallArkloudAgentScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, agentConfig *ArkloudAgentConfig, apiKeySecret string) (string, error) {
+func GenerateInstallArkloudAgentScript(ctx context.Context, creds *cloudyazure.AzureCredentials, storageAccountName, containerName string, agentConfig *ArkloudAgentConfig, apiKeySecret, agentBinaryURL string) (string, error) {
 	log := logging.GetLogger(ctx)
-
-	validFor := 1 * time.Hour
-
-	agentInstallerURL, err := storage.GenerateBlobSAS(ctx, creds, storageAccountName, containerName, agentConfig.ArkloudAgentInstallerFilename, validFor, sas.BlobPermissions{Read: true})
-	if err != nil {
-		return "", fmt.Errorf("failed to generate SAS for Salt Minion Installer: %w", err)
-	}
 
 	script := installArkloudAgentTemplate
 
 	replacements := map[string]string{
-		"!!AZURE_ARKLOUD_AGENT_URL": agentInstallerURL,
+		"!!AZURE_ARKLOUD_AGENT_URL": agentBinaryURL,
 		"!!ARKLOUD_API_URL": 	   	 agentConfig.ArkloudApiUrl,
 		"!!ARKLOUD_API_KEY":         apiKeySecret,
 	}
@@ -236,7 +233,7 @@ func GenerateInstallArkloudAgentScript(ctx context.Context, creds *cloudyazure.A
 		script = strings.ReplaceAll(script, key, value)
 	}
 
-	log.DebugContext(ctx, fmt.Sprintf("Generated arkloud agent install script", "ArkloudApiUrl", agentConfig.ArkloudApiUrl))
+	log.DebugContext(ctx, "Generated arkloud agent install script", "ArkloudApiUrl", agentConfig.ArkloudApiUrl)
 	return script, nil
 }
 
