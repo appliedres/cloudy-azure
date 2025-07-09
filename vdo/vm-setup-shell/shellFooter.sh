@@ -1,1 +1,0 @@
-log "Bootstrap finished OK"
