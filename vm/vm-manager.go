@@ -265,7 +265,7 @@ func (vmm *AzureVirtualMachineManager) executeRemoteCommand(ctx context.Context,
 	poller, err := vmm.vmClient.BeginRunCommand(ctx, vmm.Credentials.ResourceGroup, vmID, runCommandInput, nil)
 	if err != nil {
 		log.ErrorContext(ctx, fmt.Sprintf("Failed to execute remote %s script", label), "error", err)
-		return logging.LogAndWrapErr(ctx, log, err, fmt.Sprintf("failed to execute remote %s script", label))
+		return logging.LogMsgAndErr(ctx, log, err, fmt.Sprintf("failed to execute remote %s script", label))
 	}
 
 	log.DebugContext(ctx, fmt.Sprintf("%s command execution started successfully, polling for result", label))
@@ -299,7 +299,7 @@ func pollCommandExecution(ctx context.Context, response *runtime.Poller[armcompu
 				finalResult, err := response.Result(ctx)
 				if err != nil {
 					log.ErrorContext(ctx, "Failed to retrieve partial RunCommand result", "error", err)
-					return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve partial RunCommand result")
+					return armcompute.RunCommandResult{}, logging.LogMsgAndErr(ctx, log, err, "failed to retrieve partial RunCommand result")
 				}
 				return finalResult.RunCommandResult, nil
 			}
@@ -314,13 +314,13 @@ func pollCommandExecution(ctx context.Context, response *runtime.Poller[armcompu
 			_, err := response.Poll(ctx)
 			if err != nil {
 				log.ErrorContext(ctx, "Failed to retrieve RunCommand result", "error", err)
-				return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve RunCommand result")
+				return armcompute.RunCommandResult{}, logging.LogMsgAndErr(ctx, log, err, "failed to retrieve RunCommand result")
 			}
 			if response.Done() {
 				finalResult, err := response.Result(ctx)
 				if err != nil {
 					log.ErrorContext(ctx, "Failed to retrieve final RunCommand result", "error", err)
-					return armcompute.RunCommandResult{}, logging.LogAndWrapErr(ctx, log, err, "failed to retrieve final RunCommand result")
+					return armcompute.RunCommandResult{}, logging.LogMsgAndErr(ctx, log, err, "failed to retrieve final RunCommand result")
 				}
 				log.InfoContext(ctx, fmt.Sprintf("%s execution completed", label), "elapsed", time.Since(startTime))
 				return finalResult.RunCommandResult, nil
@@ -362,7 +362,7 @@ func processCommandResult(ctx context.Context, result armcompute.RunCommandResul
 					if strings.Contains(strings.ToLower(line), "error") {
 						err := fmt.Errorf("%s response contains an error: %s", label, line)
 						log.ErrorContext(ctx, safeLogContent)
-						return logging.LogAndWrapErr(ctx, log, err, fmt.Sprintf("%s script error detected", label))
+						return logging.LogMsgAndErr(ctx, log, err, fmt.Sprintf("%s script error detected", label))
 					}
 
 					log.InfoContext(ctx, safeLogContent)

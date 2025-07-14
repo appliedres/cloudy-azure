@@ -14,13 +14,13 @@ func (vdo *VirtualDesktopOrchestrator) createWindowsVM(ctx context.Context, vm *
 
 	vm, err := vdo.vmManager.CreateVirtualMachine(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed creating Windows VM")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed creating Windows VM")
 	}
 
 	log.DebugContext(ctx, "Running initial setup for Windows VM")
 	vm, err = vdo.virtualMachineSetupWindows(ctx, vm, apiKeySecret, agentBinaryURL)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Windows VM setup")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed during Windows VM setup")
 	}
 
 	return vm, err

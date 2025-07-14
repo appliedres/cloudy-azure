@@ -169,7 +169,7 @@ func (avd *AzureVirtualDesktopManager) Initialize(ctx context.Context) error {
 	// TODO: fix conflict of pooled vs personal host pools
 	_, _, err := avd.EnsurePooledStack(ctx, armdesktopvirtualization.LoadBalancerTypeBreadthFirst, 3)
 	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err, "Failed to ensure AVD pooled stack")
+		return logging.LogMsgAndErr(ctx, log, err, "Failed to ensure AVD pooled stack")
 	}
 
 	return nil
@@ -353,7 +353,7 @@ func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *mod
 	sessionHost, err := avd.WaitForSessionHost(ctx, hpName, vm.ID, 10*time.Minute)
 	if err != nil {
 		log.WarnContext(ctx, "Error waiting for session host", "Error", err)
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Waiting for session host to be ready")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "Waiting for session host to be ready")
 	}
 
 	log.DebugContext(ctx, "Session host ready", "SessionHostName", *sessionHost.Name)

@@ -58,16 +58,16 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 
 	// build setup script
 	vdoConfig := vdo.config
-	vdoConfig.SaltMinionInstall = nil // disable salt minion install
-	script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken, nil, nil)  // TODO: agent install on pooled session hosts
+	vdoConfig.SaltMinionInstall = nil                                                   // disable salt minion install
+	script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken, nil, nil) // TODO: agent install on pooled session hosts
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 	}
 
 	// run the setup script on the session host VM
 	err = vdo.vmManager.ExecuteRemotePowershell(ctx, sessionHostVM.ID, script, 20*time.Minute, 15*time.Second)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "Could not run powershell (AVD enabled)")
 	}
 
 	// wait for the session host to be registered with the host pool and 'ready'
@@ -75,7 +75,7 @@ func (vdo *VirtualDesktopOrchestrator) CreateSessionHost(ctx context.Context, ho
 	sessionHost, err := vdo.avdManager.WaitForSessionHost(ctx, hostPoolName, sessionHostVM.ID, 10*time.Minute)
 	if err != nil {
 		log.WarnContext(ctx, "Error waiting for session host", "Error", err)
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Waiting for session host to be ready")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "Waiting for session host to be ready")
 	}
 
 	return sessionHost, nil

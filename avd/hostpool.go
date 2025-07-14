@@ -60,7 +60,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 			// Attempt to create/renew
 			hp, updateErr := avd.UpdateHostPoolRegToken(ctx, hpName)
 			if updateErr != nil || hp == nil {
-				lastErr = logging.LogAndWrapErr(ctx, log, updateErr, "Failure while creating/renewing host pool token")
+				lastErr = logging.LogMsgAndErr(ctx, log, updateErr, "Failure while creating/renewing host pool token")
 				// Let the loop continue and try again
 				time.Sleep(3 * time.Second)
 				continue
@@ -70,7 +70,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 			time.Sleep(3 * time.Second)
 			tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, avd.Credentials.ResourceGroup, hpName, nil)
 			if err != nil || tokenResponse.Token == nil {
-				lastErr = logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after creating/renewing token")
+				lastErr = logging.LogMsgAndErr(ctx, log, err, "RetrieveRegistrationToken failure after creating/renewing token")
 				time.Sleep(3 * time.Second)
 				continue
 			}
@@ -87,7 +87,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 
 			hp, updateErr := avd.UpdateHostPoolRegToken(ctx, hpName)
 			if updateErr != nil || hp == nil {
-				lastErr = logging.LogAndWrapErr(ctx, log, updateErr, "Failure while renewing host pool token")
+				lastErr = logging.LogMsgAndErr(ctx, log, updateErr, "Failure while renewing host pool token")
 				time.Sleep(3 * time.Second)
 				continue
 			}
@@ -96,7 +96,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 			time.Sleep(3 * time.Second)
 			tokenResponse, err = avd.hostPoolsClient.RetrieveRegistrationToken(ctx, avd.Credentials.ResourceGroup, hpName, nil)
 			if err != nil || tokenResponse.Token == nil {
-				lastErr = logging.LogAndWrapErr(ctx, log, err, "RetrieveRegistrationToken failure after renewing token")
+				lastErr = logging.LogMsgAndErr(ctx, log, err, "RetrieveRegistrationToken failure after renewing token")
 				time.Sleep(3 * time.Second)
 				continue
 			}

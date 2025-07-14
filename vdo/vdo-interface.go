@@ -27,7 +27,7 @@ func (vdo *VirtualDesktopOrchestrator) CreateVirtualMachine(ctx context.Context,
 			return vdo.createBasicLinuxVM(ctx, vm)
 		}
 	default:
-		return nil, logging.LogAndWrapErr(ctx, log, nil, "CreateVirtualMachine failed: unsupported OS type")
+		return nil, logging.LogMsgAndErr(ctx, log, nil, "CreateVirtualMachine failed: unsupported OS type")
 	}
 }
 
@@ -39,7 +39,7 @@ func (vdo *VirtualDesktopOrchestrator) StartVirtualMachine(ctx context.Context, 
 	// Physically start the VM first
 	err := vdo.vmManager.StartVirtualMachine(ctx, vm.ID)
 	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err, "StartVirtualMachine failed")
+		return logging.LogMsgAndErr(ctx, log, err, "StartVirtualMachine failed")
 	}
 
 	switch vm.Template.OperatingSystem {
@@ -60,7 +60,7 @@ func (vdo *VirtualDesktopOrchestrator) StopVirtualMachine(ctx context.Context, v
 	// First stop the VM
 	err := vdo.vmManager.StopVirtualMachine(ctx, vm.ID)
 	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err, "StopVirtualMachine failed to stop VM")
+		return logging.LogMsgAndErr(ctx, log, err, "StopVirtualMachine failed to stop VM")
 	}
 
 	if linuxAVDEnabled &&
@@ -87,7 +87,7 @@ func (vdo *VirtualDesktopOrchestrator) DeleteVirtualMachine(ctx context.Context,
 
 	err := vdo.vmManager.DeleteVirtualMachine(ctx, vm.ID)
 	if err != nil {
-		return logging.LogAndWrapErr(ctx, log, err, "DeleteVirtualMachine failed during deletion")
+		return logging.LogMsgAndErr(ctx, log, err, "DeleteVirtualMachine failed during deletion")
 	}
 
 	return nil
@@ -100,7 +100,7 @@ func (vdo *VirtualDesktopOrchestrator) GetAllVirtualMachines(ctx context.Context
 
 	vms, err := vdo.vmManager.GetAllUserVirtualMachines(ctx, attrs, includeState)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "GetAllVirtualMachines failed")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "GetAllVirtualMachines failed")
 	}
 
 	log.DebugContext(ctx, "Retrieved VMs", "count", len(*vms))
@@ -114,7 +114,7 @@ func (vdo *VirtualDesktopOrchestrator) GetVirtualMachine(ctx context.Context, id
 
 	vm, err := vdo.vmManager.GetVirtualMachine(ctx, id, includeState)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "GetVirtualMachine failed")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "GetVirtualMachine failed")
 	}
 
 	return vm, nil
@@ -127,7 +127,7 @@ func (vdo *VirtualDesktopOrchestrator) UpdateVirtualMachine(ctx context.Context,
 
 	updatedVM, err := vdo.vmManager.UpdateVirtualMachine(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "UpdateVirtualMachine failed")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "UpdateVirtualMachine failed")
 	}
 
 	return updatedVM, nil
@@ -140,7 +140,7 @@ func (vdo *VirtualDesktopOrchestrator) GetAllVirtualMachineSizes(ctx context.Con
 
 	sizes, err := vdo.vmManager.GetAllVirtualMachineSizes(ctx)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "GetAllVirtualMachineSizes failed")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "GetAllVirtualMachineSizes failed")
 	}
 
 	log.DebugContext(ctx, "VM sizes retrieved", "count", len(sizes))
@@ -158,7 +158,7 @@ func (vdo *VirtualDesktopOrchestrator) GetVirtualMachineSizesForTemplate(ctx con
 
 	matches, worse, better, err = vdo.vmManager.GetVirtualMachineSizesForTemplate(ctx, template)
 	if err != nil {
-		logging.LogAndWrapErr(ctx, log, err, "GetVirtualMachineSizesForTemplate failed")
+		logging.LogMsgAndErr(ctx, log, err, "GetVirtualMachineSizesForTemplate failed")
 	}
 
 	return matches, worse, better, err
@@ -171,7 +171,7 @@ func (vdo *VirtualDesktopOrchestrator) GetVirtualMachineSizesWithUsage(ctx conte
 
 	sizes, err := vdo.vmManager.GetVirtualMachineSizesWithUsage(ctx)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "GetVirtualMachineSizesWithUsage failed")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "GetVirtualMachineSizesWithUsage failed")
 	}
 
 	log.DebugContext(ctx, "VM sizes with usage retrieved", "count", len(sizes))
@@ -185,7 +185,7 @@ func (vdo *VirtualDesktopOrchestrator) GetVirtualMachineUsage(ctx context.Contex
 
 	usage, err := vdo.vmManager.GetVirtualMachineUsage(ctx)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "GetVirtualMachineUsage failed")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "GetVirtualMachineUsage failed")
 	}
 
 	log.DebugContext(ctx, "VM usage retrieved", "familyCount", len(usage))
@@ -205,5 +205,5 @@ func getPrivateIPFromNICs(ctx context.Context, vmNICs []*models.VirtualMachineNi
 		}
 	}
 
-	return nil, logging.LogAndWrapErr(ctx, log, nil, "No valid private IP found in NICs")
+	return nil, logging.LogMsgAndErr(ctx, log, nil, "No valid private IP found in NICs")
 }

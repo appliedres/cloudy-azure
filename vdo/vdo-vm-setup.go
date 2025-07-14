@@ -25,34 +25,34 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupWindows(ctx context.Co
 
 		hostPoolNamePtr, hostPoolToken, err := vdo.avdManager.PreRegister(ctx, vm)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Pre-Register failed")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "AVD Pre-Register failed")
 		}
 
 		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, hostPoolToken, apiKeySecret, agentBinaryURL)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Could not build powershell script (AVD enabled)")
 		}
 
 		err = vdo.vmManager.ExecuteRemotePowershell(ctx, vm.ID, script, 20*time.Minute, 15*time.Second)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD enabled)")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Could not run powershell (AVD enabled)")
 		}
 
 		vm, err = vdo.avdManager.PostRegister(ctx, vm, *hostPoolNamePtr)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "AVD Post-Register VM")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "AVD Post-Register VM")
 		}
 
 	} else {
 		log.InfoContext(ctx, "Initial VM setup - AVD disabled")
 		script, err := vdo.buildSetupScriptWindows(ctx, vdoConfig, nil, apiKeySecret, agentBinaryURL)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Could not build powershell script (AVD disabled)")
 		}
 
 		err = vdo.vmManager.ExecuteRemotePowershell(ctx, vm.ID, script, 10*time.Minute, 15*time.Second)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run powershell (AVD disabled)")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Could not run powershell (AVD disabled)")
 
 		}
 	}
@@ -69,12 +69,12 @@ func (vdo *VirtualDesktopOrchestrator) virtualMachineSetupLinux(ctx context.Cont
 	// TODO: improve / remove online vs offline decision
 	shellScript, err := vdo.buildVirtualMachineSetupScriptLinuxOnline(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not build Linux setup script")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "Could not build Linux setup script")
 	}
 
 	err = vdo.vmManager.ExecuteRemoteShellScript(ctx, vm.ID, &shellScript, 10*time.Minute, 15*time.Second)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Could not run Linux setup script")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "Could not run Linux setup script")
 	}
 
 	log.InfoContext(ctx, "Initial Linux VM setup completed successfully")
@@ -96,7 +96,7 @@ func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinuxOfflin
 		cfg.SaltMinionInstall,
 	)
 	if err != nil {
-		return "", logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
+		return "", logging.LogMsgAndErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
 	}
 
 	return saltScript, nil
@@ -111,7 +111,7 @@ func (vdo *VirtualDesktopOrchestrator) buildVirtualMachineSetupScriptLinuxOnline
 
 	saltScript, err := GenerateInstallSaltMinionAndADJoinOnline(ctx, &cfg)
 	if err != nil {
-		return "", logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
+		return "", logging.LogMsgAndErr(ctx, log, err, "Generating Salt Minion Install script for Linux")
 	}
 
 	return saltScript, nil

@@ -22,31 +22,31 @@ func (vdo *VirtualDesktopOrchestrator) linuxAVDPostCreation(ctx context.Context,
 	// App Group
 	appGroup, err := vdo.avdManager.CreatePooledRemoteAppApplicationGroup(ctx, vm.ID, tags)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "create application group")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "create application group")
 	}
 
 	err = vdo.avdManager.AddApplicationGroupToWorkspace(
 		ctx, vdo.avdManager.Config.PooledWorkspaceNamePrefix+vdo.avdManager.Name, *appGroup.Name)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "add AG to workspace")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "add AG to workspace")
 	}
 
 	// RDP Remote App
 	privateIP, err := getPrivateIPFromNICs(ctx, vm.Nics)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "get private IP")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "get private IP")
 	}
 	appName := vm.ID + "-linux-avd"
 	rdpApp, err := vdo.avdManager.CreateRDPApplication(ctx, *appGroup.Name, appName, *privateIP)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "create RDP app")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "create RDP app")
 	}
 
 	// Generate connection URI
 	workspaceName := vdo.avdManager.Config.PooledWorkspaceNamePrefix + vdo.avdManager.Name
 	workspace, err := vdo.avdManager.GetWorkspaceByName(ctx, workspaceName)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "get workspace")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "get workspace")
 	}
 
 	url := vdo.avdManager.GenerateWindowsClientURI(

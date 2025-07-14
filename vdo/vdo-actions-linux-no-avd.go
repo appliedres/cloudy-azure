@@ -14,13 +14,13 @@ func (vdo *VirtualDesktopOrchestrator) createBasicLinuxVM(ctx context.Context, v
 
 	vm, err := vdo.vmManager.CreateVirtualMachine(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed creating Linux VM")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed creating Linux VM")
 	}
 
 	log.DebugContext(ctx, "Running initial setup for Linux VM")
 	vm, err = vdo.virtualMachineSetupLinux(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Linux VM setup")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed during Linux VM setup")
 	}
 
 	log.DebugContext(ctx, "Finished creating basic Linux VM")

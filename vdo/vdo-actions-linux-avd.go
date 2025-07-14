@@ -22,19 +22,19 @@ func (vdo *VirtualDesktopOrchestrator) createLinuxVMWithAVD(ctx context.Context,
 	log.DebugContext(ctx, "Creating Linux VM")
 	vm, err = vdo.vmManager.CreateVirtualMachine(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed creating Linux VM")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed creating Linux VM")
 	}
 
 	// run shell script on VM to install salt minion, etc
 	vm, err = vdo.virtualMachineSetupLinux(ctx, vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Linux VM setup")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed during Linux VM setup")
 	}
 
 	log.DebugContext(ctx, "Running post-create setup for Linux AVD")
 	vm, err = vdo.linuxAVDPostCreation(ctx, *vm)
 	if err != nil {
-		return nil, logging.LogAndWrapErr(ctx, log, err, "CreateVirtualMachine failed during Linux AVD post-create setup")
+		return nil, logging.LogMsgAndErr(ctx, log, err, "CreateVirtualMachine failed during Linux AVD post-create setup")
 	}
 
 	log.DebugContext(ctx, "Finished creating Linux VM with AVD")

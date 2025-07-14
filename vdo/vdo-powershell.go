@@ -16,16 +16,16 @@ import (
 
 // BuildVirtualMachineSetupScript dynamically constructs the PowerShell script
 func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(
-	ctx context.Context, 
-	config VirtualDesktopOrchestratorConfig, 
-	hostPoolRegistrationToken, 
+	ctx context.Context,
+	config VirtualDesktopOrchestratorConfig,
+	hostPoolRegistrationToken,
 	apiKeySecret,
 	agentBinaryURL *string) (*string, error) {
 	log := logging.GetLogger(ctx)
 
 	// TODO: validate VDO config
 	// if err := validateConfig(config, hostPoolRegistrationToken); err != nil {
-	// 	return nil, logging.LogAndWrapErr(ctx, log, err, "Validating config used in powershell builder")
+	// 	return nil, logging.LogMsgAndErr(ctx, log, err, "Validating config used in powershell builder")
 	// }
 
 	var scriptBuilder strings.Builder
@@ -43,7 +43,7 @@ func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(
 		avdScript, err := GenerateInstallAvdScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer,
 			&config.AVD.InstallerConfig, *hostPoolRegistrationToken)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating AVD Install script component")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Generating AVD Install script component")
 		}
 		scriptBuilder.WriteString(avdScript + "\n")
 	}
@@ -52,19 +52,23 @@ func (vdo VirtualDesktopOrchestrator) buildSetupScriptWindows(
 	if config.SaltMinionInstall != nil {
 		saltScript, err := GenerateInstallSaltMinionScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.SaltMinionInstall)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating Salt Minion Install script component")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Generating Salt Minion Install script component")
 		}
 		scriptBuilder.WriteString(saltScript + "\n")
-	} else {log.DebugContext(ctx, "Skipping Salt Minion installation, as no config was provided")}
+	} else {
+		log.DebugContext(ctx, "Skipping Salt Minion installation, as no config was provided")
+	}
 
 	// Agent Installation section
 	if config.ArkloudAgentInstall != nil && apiKeySecret != nil {
 		agentScript, err := GenerateInstallArkloudAgentScript(ctx, vdo.vmManager.Credentials, config.BinaryStorage.BlobStorageAccount, config.BinaryStorage.BlobContainer, config.ArkloudAgentInstall, *apiKeySecret, *agentBinaryURL)
 		if err != nil {
-			return nil, logging.LogAndWrapErr(ctx, log, err, "Generating Agent Install script component")
+			return nil, logging.LogMsgAndErr(ctx, log, err, "Generating Agent Install script component")
 		}
 		scriptBuilder.WriteString(agentScript + "\n")
-	} else {log.DebugContext(ctx, "Skipping Arkloud Agent installation, as no config was provided")}
+	} else {
+		log.DebugContext(ctx, "Skipping Arkloud Agent installation, as no config was provided")
+	}
 
 	// Restart system
 	scriptBuilder.WriteString(GenerateRestartScript() + "\n")
@@ -225,7 +229,7 @@ func GenerateInstallArkloudAgentScript(ctx context.Context, creds *cloudyazure.A
 
 	replacements := map[string]string{
 		"!!AZURE_ARKLOUD_AGENT_URL": agentBinaryURL,
-		"!!ARKLOUD_API_URL": 	   	 agentConfig.ArkloudApiUrl,
+		"!!ARKLOUD_API_URL":         agentConfig.ArkloudApiUrl,
 		"!!ARKLOUD_API_KEY":         apiKeySecret,
 	}
 
