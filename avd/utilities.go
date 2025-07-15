@@ -136,12 +136,12 @@ var phoneticIndex = func() map[string]int {
 	return m
 }()
 
-// sortHostPoolsByPhoneticSuffix sorts the slice in place so that the pools
+// SortHostPoolsByPhoneticSuffix sorts the slice in place so that the pools
 // are in phonetic order of the suffix:
 //
 //	ALPHA … ZULU           ← all single‑word names first
 //	ALPHA‑ALPHA … ZULU‑ZULU
-func (avd *AzureVirtualDesktopManager) sortHostPoolsByPhoneticSuffix(
+func (avd *AzureVirtualDesktopManager) SortHostPoolsByPhoneticSuffix(
 	hostPools []*armdesktopvirtualization.HostPool,
 ) {
 	sort.SliceStable(hostPools, func(i, j int) bool {

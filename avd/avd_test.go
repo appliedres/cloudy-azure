@@ -133,7 +133,7 @@ func _TestRetrieveRegistrationToken(t *testing.T) {
 	err = initAVD()
 	assert.Nil(t, err)
 
-	hostpools, err = avd.listHostPools(ctx, nil)
+	hostpools, err = avd.ListHostPools(ctx, nil)
 	assert.Nil(t, err)
 	assert.NotZero(t, len(hostpools))
 

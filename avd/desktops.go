@@ -108,7 +108,7 @@ func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, app
 	return desktops[0], nil
 }
 
-func (avd *AzureVirtualDesktopManager) renameDesktop(ctx context.Context, appGroupName, suffix string, desktopAppNamePrefix *string) (*armdesktopvirtualization.Desktop, error) {
+func (avd *AzureVirtualDesktopManager) RenameDesktop(ctx context.Context, appGroupName, suffix string, desktopAppNamePrefix *string) (*armdesktopvirtualization.Desktop, error) {
 	namePrefix := "vDesktop"
 	if desktopAppNamePrefix != nil {
 		namePrefix = *desktopAppNamePrefix

@@ -59,7 +59,7 @@ func (avd *AzureVirtualDesktopManager) EnsurePooledHostPoolForRemoteApps(
 	log.InfoContext(ctx, "Ensuring pooled (RemoteApps) host pool exists", "HostPoolName", wantedHPName)
 
 	// 1. List existing host pools
-	all, err := avd.listHostPools(ctx, nil)
+	all, err := avd.ListHostPools(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list host pools: %w", err)
 	}

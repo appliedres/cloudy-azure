@@ -13,7 +13,7 @@ import (
 
 func (avd *AzureVirtualDesktopManager) FindFirstAvailableHostPool(ctx context.Context, upn string) (*armdesktopvirtualization.HostPool, error) {
 	// Get all the host pools
-	all, err := avd.listHostPools(ctx, nil)
+	all, err := avd.ListHostPools(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (avd *AzureVirtualDesktopManager) DeleteHostPool(ctx context.Context, hpNam
 	return nil
 }
 
-func (avd *AzureVirtualDesktopManager) listHostPools(ctx context.Context, prefixFilter *string) ([]*armdesktopvirtualization.HostPool, error) {
+func (avd *AzureVirtualDesktopManager) ListHostPools(ctx context.Context, prefixFilter *string) ([]*armdesktopvirtualization.HostPool, error) {
 	pager := avd.hostPoolsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, &armdesktopvirtualization.HostPoolsClientListByResourceGroupOptions{})
 	var all []*armdesktopvirtualization.HostPool
 
