@@ -266,7 +266,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 		}
 
 		log.DebugContext(ctx, "Checking if host pool is empty", "hostPoolName", *hostPool.Name)
-		isEmpty, err := avd.isHostPoolEmpty(ctx, *hostPool.Name)
+		isEmpty, err := avd.IsHostPoolEmpty(ctx, *hostPool.Name)
 		if err != nil {
 			return fmt.Errorf("error checking if host pool %s is empty: %w", *hostPool.Name, err)
 		}
@@ -292,7 +292,7 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	log.InfoContext(ctx, "Deleting empty host pools", "hostPoolsToDelete", deleteHostPoolNames)
 	for _, hostPoolNameToDelete := range deleteHostPoolNames {
 		log.InfoContext(ctx, "Deleting host pool and its associated resources", "hostPoolName", hostPoolNameToDelete)
-		err := avd.deleteStack(ctx, hostPoolNameToDelete)
+		err := avd.DeleteStack(ctx, hostPoolNameToDelete)
 		if err != nil {
 			return fmt.Errorf("error deleting host pool %s and its associated resources: %w", hostPoolNameToDelete, err)
 		}
@@ -300,6 +300,34 @@ func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string)
 	}
 
 	log.InfoContext(ctx, "AVD Cleanup process completed successfully", "vmID", vmID)
+	return nil
+}
+
+// DeleteSessionHostByVMID deletes a session host for a given VM ID in a host pool.
+func DeleteSessionHostByVMID(ctx context.Context, avd *AzureVirtualDesktopManager, hostPoolName, vmID string) error {
+	log := logging.GetLogger(ctx)
+	sessionHostsPager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, hostPoolName, nil)
+	for sessionHostsPager.More() {
+		page, err := sessionHostsPager.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("error listing session hosts in host pool %s: %w", hostPoolName, err)
+		}
+		for _, sessionHost := range page.Value {
+			if sessionHost.Name != nil && strings.Contains(*sessionHost.Name, vmID) {
+				sessionHostParts := strings.Split(*sessionHost.Name, "/")
+				if len(sessionHostParts) != 2 {
+					return fmt.Errorf("found session host with VM ID in name, but its name format is invalid. sessionHost.Name=%s.", *sessionHost.Name)
+				}
+				sessionHostName := sessionHostParts[1]
+				log.InfoContext(ctx, "Found session host associated with VM; deleting", "sessionHost", sessionHostName, "hostPoolName", hostPoolName)
+				_, err := avd.sessionHostsClient.Delete(ctx, avd.Credentials.ResourceGroup, hostPoolName, sessionHostName, nil)
+				if err != nil {
+					return fmt.Errorf("error deleting session host %s in host pool %s: %w", sessionHostName, hostPoolName, err)
+				}
+				log.InfoContext(ctx, "Deleted session host", "sessionHost", sessionHostName, "hostPoolName", hostPoolName)
+			}
+		}
+	}
 	return nil
 }
 

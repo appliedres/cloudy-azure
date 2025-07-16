@@ -9,7 +9,7 @@ import (
 )
 
 // Helper to delete a host pool and its associated resources
-func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, targetHostPoolName string) error {
+func (avd *AzureVirtualDesktopManager) DeleteStack(ctx context.Context, targetHostPoolName string) error {
 	log := logging.GetLogger(ctx)
 	log.InfoContext(ctx, "Starting deletion of host pool and its associated resources", "hostPoolName", targetHostPoolName)
 
@@ -19,7 +19,7 @@ func (avd *AzureVirtualDesktopManager) deleteStack(ctx context.Context, targetHo
 
 	// Check if the host pool is empty
 	log.DebugContext(ctx, "Checking if host pool is empty", "hostPoolName", targetHostPoolName)
-	isEmpty, err := avd.isHostPoolEmpty(ctx, targetHostPoolName)
+	isEmpty, err := avd.IsHostPoolEmpty(ctx, targetHostPoolName)
 	if err != nil {
 		return err
 	}

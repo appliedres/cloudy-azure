@@ -117,7 +117,7 @@ func (avd *AzureVirtualDesktopManager) RetrieveRegistrationToken(ctx context.Con
 }
 
 // Helper to check if a host pool is empty
-func (avd *AzureVirtualDesktopManager) isHostPoolEmpty(ctx context.Context, hostPoolName string) (bool, error) {
+func (avd *AzureVirtualDesktopManager) IsHostPoolEmpty(ctx context.Context, hostPoolName string) (bool, error) {
 	sessionHostsPager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, hostPoolName, nil)
 	for sessionHostsPager.More() {
 		page, err := sessionHostsPager.NextPage(ctx)
