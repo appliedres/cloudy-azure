@@ -142,3 +142,15 @@ func (avd *AzureVirtualDesktopManager) GetWorkspaceByName(ctx context.Context, w
 	log.DebugContext(ctx, "Workspace found", "Workspace name", *workspace.Name)
 	return &workspace, nil
 }
+
+// DeleteWorkspace deletes a workspace by name in the resource group.
+func (avd *AzureVirtualDesktopManager) DeleteWorkspace(ctx context.Context, workspaceName string) error {
+	log := logging.GetLogger(ctx)
+	log.DebugContext(ctx, "Deleting workspace", "workspaceName", workspaceName)
+	_, err := avd.workspacesClient.Delete(ctx, avd.Credentials.ResourceGroup, workspaceName, nil)
+	if err != nil {
+		return fmt.Errorf("error deleting workspace %s: %w", workspaceName, err)
+	}
+	log.DebugContext(ctx, "Deleted workspace", "workspaceName", workspaceName)
+	return nil
+}

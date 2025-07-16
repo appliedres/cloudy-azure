@@ -3,7 +3,6 @@ package avd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/appliedres/cloudy/logging"
 )
@@ -30,7 +29,7 @@ func (avd *AzureVirtualDesktopManager) DeleteStack(ctx context.Context, targetHo
 
 	// Extract the suffix from the host pool name
 	log.DebugContext(ctx, "Extracting suffix from host pool name", "hostPoolName", targetHostPoolName)
-	suffix, err := avd.extractSuffixFromHostPoolName(targetHostPoolName)
+	suffix, err := avd.ExtractSuffixFromHostPoolName(targetHostPoolName)
 	if err != nil {
 		return err
 	}
@@ -38,43 +37,18 @@ func (avd *AzureVirtualDesktopManager) DeleteStack(ctx context.Context, targetHo
 
 	// Find associated app group
 	log.DebugContext(ctx, "Finding associated application group", "suffix", suffix)
-	targetAppGroupName := ""
-	appGroupsPager := avd.applicationGroupsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
-	for appGroupsPager.More() {
-		page, err := appGroupsPager.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("error listing application groups for host pool %s: %w", targetHostPoolName, err)
-		}
-		for _, appGroup := range page.Value {
-			if appGroup.Name != nil && strings.HasSuffix(*appGroup.Name, suffix) {
-				targetAppGroupName = *appGroup.Name
-				break
-			}
-		}
-	}
-	if targetAppGroupName == "" {
-		return fmt.Errorf("no associated application group found for host pool %s", targetHostPoolName)
+	targetAppGroupName, err := avd.FindApplicationGroupBySuffix(ctx, suffix)
+	if err != nil {
+		return fmt.Errorf("no associated application group found for host pool %s: %w", targetHostPoolName, err)
 	}
 	log.DebugContext(ctx, "Found associated application group", "appGroupName", targetAppGroupName)
 
 	// Find associated workspace
 	log.DebugContext(ctx, "Finding associated workspace", "suffix", suffix)
-	targetWorkspaceName := ""
-	workspacesPager := avd.workspacesClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
-	for workspacesPager.More() {
-		page, err := workspacesPager.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("error listing workspaces: %w", err)
-		}
-		for _, workspace := range page.Value {
-			if workspace.Name != nil && strings.HasSuffix(*workspace.Name, suffix) {
-				targetWorkspaceName = *workspace.Name
-				break
-			}
-		}
-	}
-	if targetWorkspaceName == "" {
-		return fmt.Errorf("no associated workspace found for host pool %s", targetHostPoolName)
+	targetWorkspaceName := avd.Config.PersonalWorkspaceNamePrefix + suffix
+	workspace, err := avd.GetWorkspaceByName(ctx, targetWorkspaceName)
+	if err != nil || workspace == nil {
+		return fmt.Errorf("no associated workspace found for host pool %s: %w", targetHostPoolName, err)
 	}
 	log.DebugContext(ctx, "Found associated workspace", "workspaceName", targetWorkspaceName)
 

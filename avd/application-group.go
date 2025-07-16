@@ -331,3 +331,20 @@ func (avd *AzureVirtualDesktopManager) objectIDFromUPN(
 	}
 	return *usr.GetId(), nil
 }
+
+// Find application group by suffix
+func (avd *AzureVirtualDesktopManager) FindApplicationGroupBySuffix(ctx context.Context, suffix string) (string, error) {
+	appGroupsPager := avd.applicationGroupsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
+	for appGroupsPager.More() {
+		page, err := appGroupsPager.NextPage(ctx)
+		if err != nil {
+			return "", fmt.Errorf("error listing application groups for suffix %s: %w", suffix, err)
+		}
+		for _, appGroup := range page.Value {
+			if appGroup.Name != nil && strings.HasSuffix(*appGroup.Name, suffix) {
+				return *appGroup.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no associated application group found for suffix %s", suffix)
+}

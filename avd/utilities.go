@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (avd *AzureVirtualDesktopManager) extractSuffixFromHostPoolName(hostPoolName string) (string, error) {
+func (avd *AzureVirtualDesktopManager) ExtractSuffixFromHostPoolName(hostPoolName string) (string, error) {
 	if strings.HasPrefix(hostPoolName, avd.Config.PersonalHostPoolNamePrefix) {
 		return strings.TrimPrefix(hostPoolName, avd.Config.PersonalHostPoolNamePrefix), nil
 	}
@@ -145,8 +145,8 @@ func (avd *AzureVirtualDesktopManager) SortHostPoolsByPhoneticSuffix(
 	hostPools []*armdesktopvirtualization.HostPool,
 ) {
 	sort.SliceStable(hostPools, func(i, j int) bool {
-		si, errI := avd.extractSuffixFromHostPoolName(*hostPools[i].Name)
-		sj, errJ := avd.extractSuffixFromHostPoolName(*hostPools[j].Name)
+		si, errI := avd.ExtractSuffixFromHostPoolName(*hostPools[i].Name)
+		sj, errJ := avd.ExtractSuffixFromHostPoolName(*hostPools[j].Name)
 
 		// If either suffix is invalid, keep original order deterministically
 		if errI != nil && errJ != nil {
