@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -21,7 +20,6 @@ import (
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 
 	"github.com/appliedres/cloudy/logging"
-	"github.com/appliedres/cloudy/models"
 
 	cloudyazure "github.com/appliedres/cloudy-azure"
 )
@@ -195,85 +193,6 @@ func (avd *AzureVirtualDesktopManager) ReleaseHostPoolLockForUser(ctx context.Co
 
 	lockKey := fmt.Sprintf("%s-%s", vmUserID, hostPoolName)
 	avd.lockMap.Delete(lockKey)
-}
-
-// After registering, the user must then be assigned to the new session host
-func (avd *AzureVirtualDesktopManager) PostRegister(ctx context.Context, vm *models.VirtualMachine, hpName string) (*models.VirtualMachine, error) {
-	log := logging.GetLogger(ctx)
-
-	log.InfoContext(ctx, "Starting PostRegister process", "VM", vm.ID, "HostPoolName", hpName)
-
-	// Release the lock acquired in pre-register
-	defer func() {
-		avd.ReleaseHostPoolLockForUser(ctx, vm.UserID, hpName)
-	}()
-
-	log.DebugContext(ctx, "Waiting for session host to be ready", "HostPoolName", hpName, "VM", vm.ID)
-	sessionHost, err := avd.WaitForSessionHost(ctx, hpName, vm.ID, 10*time.Minute)
-	if err != nil {
-		log.WarnContext(ctx, "Error waiting for session host", "Error", err)
-		return nil, logging.LogAndWrapErr(ctx, log, err, "Waiting for session host to be ready")
-	}
-
-	log.DebugContext(ctx, "Session host ready", "SessionHostName", *sessionHost.Name)
-
-	_, sessionHostName, _, err := avd.ParseSessionHostName(ctx, sessionHost)
-	if err != nil {
-		log.WarnContext(ctx, "Error parsing session host name", "Error", err)
-		return nil, err
-	}
-
-	// Assign session host to user
-	log.InfoContext(ctx, "Assigning session host to user", "SessionHostName", sessionHostName, "UserID", vm.UserID)
-	err = avd.AssignSessionHost(ctx, hpName, sessionHostName, vm.UserID)
-	if err != nil {
-		log.WarnContext(ctx, "Error assigning session host to user", "Error", err)
-		return nil, err
-	}
-
-	// Find desktop application group from host pool
-	log.DebugContext(ctx, "Retrieving desktop application group", "HostPoolName", hpName)
-	desktopApplicationGroup, err := avd.GetDesktopApplicationGroupFromHostpool(ctx, hpName)
-	if err != nil {
-		log.WarnContext(ctx, "Error retrieving desktop application group", "Error", err)
-		return nil, err
-	}
-
-	// Determine workspace from desktop application group
-	log.DebugContext(ctx, "Determining workspace from desktop application group")
-	workspacePathSegments := strings.Split(*desktopApplicationGroup.Properties.WorkspaceArmPath, "/")
-	workspaceName := workspacePathSegments[len(workspacePathSegments)-1]
-	log.DebugContext(ctx, "Parsed workspace name", "WorkspaceName", workspaceName)
-
-	workspace, err := avd.GetWorkspaceByName(ctx, workspaceName)
-	if err != nil {
-		log.WarnContext(ctx, "Error retrieving workspace", "Error", err)
-		return nil, err
-	}
-	workspaceID := *workspace.Properties.ObjectID
-	log.DebugContext(ctx, "Retrieved workspace ID", "WorkspaceID", workspaceID)
-
-	// Find the resource ID of the desktop application
-	log.DebugContext(ctx, "Retrieving desktop application", "DesktopApplicationGroup", *desktopApplicationGroup.Name)
-	desktop, err := avd.getSingleDesktop(ctx, *desktopApplicationGroup.Name)
-	if err != nil {
-		log.WarnContext(ctx, "Error retrieving desktop application", "Error", err)
-		return nil, err
-	}
-	resourceID := *desktop.Properties.ObjectID
-	log.DebugContext(ctx, "Retrieved desktop application resource ID", "ResourceID", resourceID)
-
-	// Generate connection URL
-	log.DebugContext(ctx, "Generating Windows client URI", "avdUriVersion", avd.Config.UriVersion, "UseMultiMon", avd.Config.UseMultipleMonitors)
-	connection := &models.VirtualMachineConnection{
-		RemoteDesktopProvider: "AVD",
-		URL:                   avd.GenerateWindowsClientURI(workspaceID, resourceID, vm.UserID, avd.Config.UriEnv, avd.Config.UriVersion, toBool(avd.Config.UseMultipleMonitors)),
-	}
-
-	vm.Connect = connection
-	log.InfoContext(ctx, "PostRegister process completed successfully", "VM", vm.ID)
-
-	return vm, nil
 }
 
 // To be completed when a VM is deleted.

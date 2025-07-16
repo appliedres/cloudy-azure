@@ -92,7 +92,7 @@ func (avd *AzureVirtualDesktopManager) listDesktops(ctx context.Context, appGrou
 	return allDesktops, nil
 }
 
-func (avd *AzureVirtualDesktopManager) getSingleDesktop(ctx context.Context, appGroupName string) (*armdesktopvirtualization.Desktop, error) {
+func (avd *AzureVirtualDesktopManager) GetSingleDesktop(ctx context.Context, appGroupName string) (*armdesktopvirtualization.Desktop, error) {
 	desktops, err := avd.listDesktops(ctx, appGroupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list desktops: %w", err)
