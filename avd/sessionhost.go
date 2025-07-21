@@ -120,6 +120,26 @@ func (avd *AzureVirtualDesktopManager) ListSessionHosts(ctx context.Context, hos
 	return all, nil
 }
 
+// ListAllSessionHosts returns all session hosts in all host pools in the resource group
+func (avd *AzureVirtualDesktopManager) ListAllSessionHosts(ctx context.Context) ([]*armdesktopvirtualization.SessionHost, error) {
+	var all []*armdesktopvirtualization.SessionHost
+	hostPools, err := avd.ListHostPools(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, hp := range hostPools {
+		pager := avd.sessionHostsClient.NewListPager(avd.Credentials.ResourceGroup, *hp.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				continue
+			}
+			all = append(all, page.Value...)
+		}
+	}
+	return all, nil
+}
+
 // only used if there is a pool of available VMs to assign to users
 func (avd *AzureVirtualDesktopManager) getAvailableSessionHost(ctx context.Context, hostPoolName string) (*string, error) {
 	sessions, err := avd.ListSessionHosts(ctx, hostPoolName)

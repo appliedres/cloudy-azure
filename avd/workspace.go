@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -153,4 +154,22 @@ func (avd *AzureVirtualDesktopManager) DeleteWorkspace(ctx context.Context, work
 	}
 	log.DebugContext(ctx, "Deleted workspace", "workspaceName", workspaceName)
 	return nil
+}
+
+// ListAllWorkspaces returns all workspaces in the resource group, optionally filtered by prefix
+func (avd *AzureVirtualDesktopManager) ListAllWorkspaces(ctx context.Context, prefixFilter *string) ([]*armdesktopvirtualization.Workspace, error) {
+	var all []*armdesktopvirtualization.Workspace
+	pager := avd.workspacesClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, workspace := range page.Value {
+			if prefixFilter == nil || (workspace.Name != nil && strings.HasPrefix(*workspace.Name, *prefixFilter)) {
+				all = append(all, workspace)
+			}
+		}
+	}
+	return all, nil
 }

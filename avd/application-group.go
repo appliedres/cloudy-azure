@@ -348,3 +348,21 @@ func (avd *AzureVirtualDesktopManager) FindApplicationGroupBySuffix(ctx context.
 	}
 	return "", fmt.Errorf("no associated application group found for suffix %s", suffix)
 }
+
+// ListAllApplicationGroups returns all application groups in the resource group, optionally filtered by prefix
+func (avd *AzureVirtualDesktopManager) ListAllApplicationGroups(ctx context.Context, prefixFilter *string) ([]*armdesktopvirtualization.ApplicationGroup, error) {
+	var all []*armdesktopvirtualization.ApplicationGroup
+	pager := avd.applicationGroupsClient.NewListByResourceGroupPager(avd.Credentials.ResourceGroup, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, group := range page.Value {
+			if prefixFilter == nil || (group.Name != nil && strings.HasPrefix(*group.Name, *prefixFilter)) {
+				all = append(all, group)
+			}
+		}
+	}
+	return all, nil
+}
