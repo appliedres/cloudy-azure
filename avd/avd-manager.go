@@ -170,31 +170,6 @@ func (avd *AzureVirtualDesktopManager) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// Lock key format: vm.UserID + hostPoolName
-func (avd *AzureVirtualDesktopManager) AcquireHostPoolLockForUser(ctx context.Context, vmUserID, hostPoolName string) bool {
-	log := logging.GetLogger(ctx)
-
-	lockKey := fmt.Sprintf("%s-%s", vmUserID, hostPoolName)
-	// Attempt to acquire the lock by checking if the key exists in the map
-	if _, exists := avd.lockMap.Load(lockKey); exists {
-		log.DebugContext(ctx, "Unable to acquire host pool lock for user", "lockKey", lockKey, "UserID", vmUserID, "HostPoolName", hostPoolName)
-		return false // The lock already exists, so the registration is in progress.
-	}
-	// If the lock doesn't exist, create it to block other requests.
-	avd.lockMap.Store(lockKey, struct{}{})
-	log.DebugContext(ctx, "Successfully acquired host pool lock for user", "UserID", vmUserID, "HostPoolName", hostPoolName)
-	return true
-}
-
-// Release the lock once the registration process is done.
-func (avd *AzureVirtualDesktopManager) ReleaseHostPoolLockForUser(ctx context.Context, vmUserID, hostPoolName string) {
-	log := logging.GetLogger(ctx)
-	log.DebugContext(ctx, "Releasing host pool lock for user", "UserID", vmUserID, "HostPoolName", hostPoolName)
-
-	lockKey := fmt.Sprintf("%s-%s", vmUserID, hostPoolName)
-	avd.lockMap.Delete(lockKey)
-}
-
 // To be completed when a VM is deleted.
 // Removes the session host and cleans up empty host pools / app groups / workspaces
 func (avd *AzureVirtualDesktopManager) Cleanup(ctx context.Context, vmID string) error {
